@@ -1,4 +1,3 @@
-
 'use strict';
 
 const express = require('express');
@@ -61,17 +60,17 @@ app.get('/', (req, res) => {
 // HELPERS
 // ==========================================
 
-const sendError = (res, status, message) => {
+function sendError(res, status, message) {
     return res.status(status).json({
         error: message
     });
-};
+}
 
-const cleanEmail = email => {
+function cleanEmail(email) {
     return String(email || '')
         .trim()
         .toLowerCase();
-};
+}
 
 const VALID_ROLES = [
     'STORE',
@@ -83,17 +82,26 @@ const VALID_ROLES = [
 
 function adminOnly(req, res, next) {
     if (req.user.role !== 'ADMIN') {
-        return sendError(res, 403, 'ADMIN access required');
+        return sendError(
+            res,
+            403,
+            'ADMIN access required'
+        );
     }
+
     next();
 }
 
 function requiredText(value, max = 255) {
-    if (typeof value !== 'string') return null;
+    if (typeof value !== 'string') {
+        return null;
+    }
 
     const text = value.trim();
 
-    return text && text.length <= max ? text : null;
+    return text && text.length <= max
+        ? text
+        : null;
 }
 
 function optionalText(value, max = 255) {
@@ -126,9 +134,11 @@ function optionalPrice(value) {
 
     const number = Number(value);
 
-    return Number.isFinite(number) &&
+    return (
+        Number.isFinite(number) &&
         number >= 0 &&
         number <= 999999999
+    )
         ? number
         : undefined;
 }
@@ -171,7 +181,6 @@ function databaseError(res, error, fallback) {
 // ==========================================
 
 app.post('/api/login', async (req, res) => {
-
     const email = cleanEmail(req.body.email);
     const password = req.body.password;
 
@@ -188,7 +197,6 @@ app.post('/api/login', async (req, res) => {
     }
 
     try {
-
         const response = await fetch(
             `${SUPABASE_URL}/auth/v1/token?grant_type=password`,
             {
@@ -208,7 +216,8 @@ app.post('/api/login', async (req, res) => {
 
         if (
             !response.ok ||
-            !result.access_token
+            !result.access_token ||
+            !result.user?.id
         ) {
             return sendError(
                 res,
@@ -252,7 +261,6 @@ app.post('/api/login', async (req, res) => {
         });
 
     } catch (error) {
-
         console.error('Login error:', error);
 
         sendError(
@@ -268,7 +276,6 @@ app.post('/api/login', async (req, res) => {
 // ==========================================
 
 async function authenticate(req, res, next) {
-
     const match = /^Bearer (.+)$/i.exec(
         req.headers.authorization || ''
     );
@@ -284,7 +291,6 @@ async function authenticate(req, res, next) {
     }
 
     try {
-
         const response = await fetch(
             `${SUPABASE_URL}/auth/v1/user`,
             {
@@ -349,7 +355,6 @@ async function authenticate(req, res, next) {
         next();
 
     } catch (error) {
-
         console.error(
             'Authentication error:',
             error
@@ -368,7 +373,6 @@ async function authenticate(req, res, next) {
 // ==========================================
 
 function storeScope(user, alias = 'm') {
-
     if (
         ['ADMIN', 'AOM', 'HEAD'].includes(user.role)
     ) {
@@ -379,7 +383,6 @@ function storeScope(user, alias = 'm') {
     }
 
     if (user.role === 'STORE') {
-
         return {
             sql: `
                 LOWER(${alias}.store_email) = LOWER($1)
@@ -393,7 +396,6 @@ function storeScope(user, alias = 'm') {
     }
 
     if (user.role === 'AS') {
-
         return {
             sql: `
                 EXISTS (
@@ -465,7 +467,6 @@ const monitoringEntries = `
 // ==========================================
 
 function expiryCategory(date) {
-
     const today = new Date();
 
     today.setUTCHours(0, 0, 0, 0);
@@ -497,643 +498,583 @@ app.get('/api/me', authenticate, (req, res) => {
 // GET ACTIVE SUPPLIERS
 // ==========================================
 
-app.get('/api/suppliers', authenticate, async (req, res) => {
+app.get(
+    '/api/suppliers',
+    authenticate,
+    async (req, res) => {
+        try {
+            const { rows } = await pool.query(`
+                SELECT supplier_name
+                FROM public.suppliers
+                WHERE status = 'ACTIVE'
+                ORDER BY supplier_name
+            `);
 
-    try {
+            res.json(rows);
 
-        const { rows } = await pool.query(
-            `
-            SELECT supplier_name
-            FROM public.suppliers
-            WHERE status = 'ACTIVE'
-            ORDER BY supplier_name
-            `
-        );
-
-        res.json(rows);
-
-    } catch (error) {
-
-        console.error(error);
-
-        sendError(
-            res,
-            500,
-            'Could not load suppliers'
-        );
+        } catch (error) {
+            databaseError(
+                res,
+                error,
+                'Could not load suppliers'
+            );
+        }
     }
-});
+);
 
 // ==========================================
 // SEARCH ACTIVE PRODUCTS
 // ==========================================
 
-app.get('/api/products', authenticate, async (req, res) => {
+app.get(
+    '/api/products',
+    authenticate,
+    async (req, res) => {
+        const supplier = String(
+            req.query.supplier || ''
+        ).slice(0, 255);
 
-    const supplier = String(
-        req.query.supplier || ''
-    );
+        const search = String(
+            req.query.search || ''
+        ).trim().slice(0, 100);
 
-    const search = String(
-        req.query.search || ''
-    ).trim().slice(0, 100);
+        try {
+            const { rows } = await pool.query(
+                `
+                SELECT
+                    product_id,
+                    sku,
+                    product_name,
+                    master_barcode,
+                    master_srp,
+                    supplier_name,
+                    shelf_life,
+                    condition,
+                    remarks,
+                    status
+                FROM public.products
+                WHERE status = 'ACTIVE'
+                  AND (
+                      $1 = ''
+                      OR supplier_name = $1
+                  )
+                  AND (
+                      $2 = ''
+                      OR sku ILIKE '%' || $2 || '%'
+                      OR product_name ILIKE '%' || $2 || '%'
+                      OR master_barcode ILIKE '%' || $2 || '%'
+                  )
+                ORDER BY
+                    product_name,
+                    product_id
+                LIMIT 300
+                `,
+                [supplier, search]
+            );
 
-    try {
+            res.json(rows);
 
-        const { rows } = await pool.query(
-            `
-            SELECT
-                product_id,
-                sku,
-                product_name,
-                master_barcode,
-                master_srp,
-                supplier_name,
-                shelf_life,
-                condition,
-                remarks,
-                status
-
-            FROM public.products
-
-            WHERE status = 'ACTIVE'
-
-              AND (
-                  $1 = ''
-                  OR supplier_name = $1
-              )
-
-              AND (
-                  $2 = ''
-                  OR sku ILIKE '%' || $2 || '%'
-                  OR product_name ILIKE '%' || $2 || '%'
-                  OR master_barcode ILIKE '%' || $2 || '%'
-              )
-
-            ORDER BY
-                product_name,
-                product_id
-
-            LIMIT 300
-            `,
-            [
-                supplier,
-                search
-            ]
-        );
-
-        res.json(rows);
-
-    } catch (error) {
-
-        console.error(error);
-
-        sendError(
-            res,
-            500,
-            'Could not load products'
-        );
+        } catch (error) {
+            databaseError(
+                res,
+                error,
+                'Could not load products'
+            );
+        }
     }
-});
+);
 
 // ==========================================
 // GET ACCESSIBLE STORES
 // ==========================================
 
-app.get('/api/stores', authenticate, async (req, res) => {
+app.get(
+    '/api/stores',
+    authenticate,
+    async (req, res) => {
+        try {
+            const user = req.user;
 
-    try {
-
-        const user = req.user;
-
-        let query = `
-            SELECT s.store_name
-            FROM public.stores s
-            WHERE s.status = 'ACTIVE'
-        `;
-
-        let args = [];
-
-        if (user.role === 'STORE') {
-
-            query += `
-                AND s.store_name = $1
-                AND LOWER(s.store_email) = LOWER($2)
+            let query = `
+                SELECT s.store_name
+                FROM public.stores s
+                WHERE s.status = 'ACTIVE'
             `;
 
-            args = [
-                user.store_name,
-                user.email
-            ];
+            let args = [];
 
-        } else if (user.role === 'AS') {
+            if (user.role === 'STORE') {
+                query += `
+                    AND s.store_name = $1
+                    AND LOWER(s.store_email) = LOWER($2)
+                `;
 
-            query += `
-                AND EXISTS (
-                    SELECT 1
-                    FROM public.as_store_assignments a
-                    WHERE a.store_id = s.store_id
-                      AND LOWER(a.as_email) = LOWER($1)
-                )
-            `;
+                args = [
+                    user.store_name,
+                    user.email
+                ];
 
-            args = [user.email];
+            } else if (user.role === 'AS') {
+                query += `
+                    AND EXISTS (
+                        SELECT 1
+                        FROM public.as_store_assignments a
+                        WHERE a.store_id = s.store_id
+                          AND LOWER(a.as_email) = LOWER($1)
+                    )
+                `;
+
+                args = [user.email];
+            }
+
+            query += ' ORDER BY s.store_name';
+
+            const { rows } = await pool.query(
+                query,
+                args
+            );
+
+            res.json(rows);
+
+        } catch (error) {
+            databaseError(
+                res,
+                error,
+                'Could not load stores'
+            );
         }
-
-        query += `
-            ORDER BY s.store_name
-        `;
-
-        const { rows } = await pool.query(
-            query,
-            args
-        );
-
-        res.json(rows);
-
-    } catch (error) {
-
-        console.error(error);
-
-        sendError(
-            res,
-            500,
-            'Could not load stores'
-        );
     }
-});
+);
 
 // ==========================================
 // GET MONITORING RECORDS
 // ==========================================
 
-app.get('/api/monitoring', authenticate, async (req, res) => {
+app.get(
+    '/api/monitoring',
+    authenticate,
+    async (req, res) => {
+        try {
+            const scope = storeScope(req.user);
 
-    try {
+            const { rows } = await pool.query(
+                `
+                SELECT *
+                FROM (${monitoringEntries}) m
+                WHERE ${scope.sql}
+                ORDER BY
+                    expiration_date ASC,
+                    store_name
+                LIMIT 10000
+                `,
+                scope.args
+            );
 
-        const scope = storeScope(req.user);
+            const records = rows.map(record => ({
+                ...record,
+                category: expiryCategory(
+                    record.expiration_date
+                )
+            }));
 
-        const { rows } = await pool.query(
-            `
-            SELECT *
-            FROM (${monitoringEntries}) m
-            WHERE ${scope.sql}
-            ORDER BY
-                expiration_date ASC,
-                store_name
-            LIMIT 10000
-            `,
-            scope.args
-        );
+            res.json(records);
 
-        const records = rows.map(record => ({
-            ...record,
-            category: expiryCategory(
-                record.expiration_date
-            )
-        }));
-
-        res.json(records);
-
-    } catch (error) {
-
-        console.error(error);
-
-        sendError(
-            res,
-            500,
-            'Could not load monitoring'
-        );
+        } catch (error) {
+            databaseError(
+                res,
+                error,
+                'Could not load monitoring'
+            );
+        }
     }
-});
+);
 
 // ==========================================
 // DASHBOARD SUMMARY
 // ==========================================
 
-app.get('/api/dashboard', authenticate, async (req, res) => {
+app.get(
+    '/api/dashboard',
+    authenticate,
+    async (req, res) => {
+        try {
+            const scope = storeScope(req.user);
 
-    try {
-
-        const scope = storeScope(req.user);
-
-        const { rows } = await pool.query(
-            `
-            SELECT expiration_date
-            FROM (${monitoringEntries}) m
-            WHERE ${scope.sql}
-            `,
-            scope.args
-        );
-
-        const counts = {
-            RED: 0,
-            BLUE: 0,
-            GREEN: 0,
-            EXPIRED: 0,
-            LATER: 0
-        };
-
-        for (const record of rows) {
-
-            const category = expiryCategory(
-                record.expiration_date
+            const { rows } = await pool.query(
+                `
+                SELECT expiration_date
+                FROM (${monitoringEntries}) m
+                WHERE ${scope.sql}
+                `,
+                scope.args
             );
 
-            counts[category]++;
+            const counts = {
+                RED: 0,
+                BLUE: 0,
+                GREEN: 0,
+                EXPIRED: 0,
+                LATER: 0
+            };
+
+            for (const record of rows) {
+                const category = expiryCategory(
+                    record.expiration_date
+                );
+
+                counts[category]++;
+            }
+
+            res.json(counts);
+
+        } catch (error) {
+            databaseError(
+                res,
+                error,
+                'Could not load dashboard'
+            );
         }
-
-        res.json(counts);
-
-    } catch (error) {
-
-        console.error(error);
-
-        sendError(
-            res,
-            500,
-            'Could not load dashboard'
-        );
     }
-});
+);
 
 // ==========================================
 // SAVE STORE MONITORING
 // ==========================================
 
-app.post('/api/store/monitoring', authenticate, async (req, res) => {
-
-    if (req.user.role !== 'STORE') {
-
-        return sendError(
-            res,
-            403,
-            'Only STORE accounts can encode monitoring'
-        );
-    }
-
-    const user = req.user;
-
-    const productId = Number(
-        req.body.product_id
-    );
-
-    if (
-        !Number.isSafeInteger(productId) ||
-        productId <= 0
-    ) {
-        return sendError(
-            res,
-            400,
-            'Invalid product'
-        );
-    }
-
-    const dates = [
-        req.body.exp1,
-        req.body.exp2,
-        req.body.exp3
-    ];
-
-    const quantities = [
-        req.body.qty1,
-        req.body.qty2,
-        req.body.qty3
-    ];
-
-    let hasValue = false;
-
-    for (let i = 0; i < 3; i++) {
-
-        const date = dates[i];
-        const qty = quantities[i];
-
-        if (
-            (date == null || date === '') &&
-            (qty == null || qty === '')
-        ) {
-            dates[i] = null;
-            quantities[i] = null;
-            continue;
-        }
-
-        if (
-            typeof date !== 'string' ||
-            !/^\d{4}-\d{2}-\d{2}$/.test(date) ||
-            Number.isNaN(
-                Date.parse(date + 'T00:00:00Z')
-            )
-        ) {
-            return sendError(
-                res,
-                400,
-                `Invalid expiration date ${i + 1}`
-            );
-        }
-
-        const number = Number(qty);
-
-        if (
-            !Number.isInteger(number) ||
-            number < 0 ||
-            number > 500
-        ) {
-            return sendError(
-                res,
-                400,
-                `Quantity ${i + 1} must be 0–500 pieces`
-            );
-        }
-
-        quantities[i] = number;
-        hasValue = true;
-    }
-
-    if (!hasValue) {
-
-        return sendError(
-            res,
-            400,
-            'Enter at least one expiration date and quantity'
-        );
-    }
-
-    const srp = (
-        req.body.srp == null ||
-        req.body.srp === ''
-    )
-        ? null
-        : Number(req.body.srp);
-
-    if (
-        srp !== null &&
-        (
-            !Number.isFinite(srp) ||
-            srp < 0
-        )
-    ) {
-        return sendError(
-            res,
-            400,
-            'Invalid retail price'
-        );
-    }
-
-    const barcode = String(
-        req.body.store_barcode || ''
-    ).trim().slice(0, 150);
-
-    try {
-
-        const storeResult = await pool.query(
-            `
-            SELECT store_name
-            FROM public.stores
-            WHERE LOWER(store_email) = LOWER($1)
-              AND store_name = $2
-              AND status = 'ACTIVE'
-            `,
-            [
-                user.email,
-                user.store_name
-            ]
-        );
-
-        if (!storeResult.rows.length) {
-
+app.post(
+    '/api/store/monitoring',
+    authenticate,
+    async (req, res) => {
+        if (req.user.role !== 'STORE') {
             return sendError(
                 res,
                 403,
-                'Store profile does not match registered store'
+                'Only STORE accounts can encode monitoring'
             );
         }
 
-        const productResult = await pool.query(
-            `
-            SELECT
-                product_id,
-                sku,
-                product_name,
-                supplier_name,
-                master_barcode,
-                master_srp
+        const user = req.user;
 
-            FROM public.products
-
-            WHERE product_id = $1
-              AND status = 'ACTIVE'
-            `,
-            [productId]
+        const productId = Number(
+            req.body.product_id
         );
 
-        if (!productResult.rows.length) {
-
+        if (
+            !Number.isSafeInteger(productId) ||
+            productId <= 0
+        ) {
             return sendError(
                 res,
-                404,
-                'Product not found'
+                400,
+                'Invalid product'
             );
         }
 
-        const product = productResult.rows[0];
+        const dates = [
+            req.body.exp1,
+            req.body.exp2,
+            req.body.exp3
+        ];
 
-        const { rows } = await pool.query(
-            `
-            INSERT INTO public.monitoring
+        const quantities = [
+            req.body.qty1,
+            req.body.qty2,
+            req.body.qty3
+        ];
+
+        let hasValue = false;
+
+        for (let i = 0; i < 3; i++) {
+            const date = dates[i];
+            const qty = quantities[i];
+
+            if (
+                (date == null || date === '') &&
+                (qty == null || qty === '')
+            ) {
+                dates[i] = null;
+                quantities[i] = null;
+                continue;
+            }
+
+            if (
+                typeof date !== 'string' ||
+                !/^\d{4}-\d{2}-\d{2}$/.test(date) ||
+                Number.isNaN(
+                    Date.parse(date + 'T00:00:00Z')
+                )
+            ) {
+                return sendError(
+                    res,
+                    400,
+                    `Invalid expiration date ${i + 1}`
+                );
+            }
+
+            const number = Number(qty);
+
+            if (
+                !Number.isInteger(number) ||
+                number < 0 ||
+                number > 500
+            ) {
+                return sendError(
+                    res,
+                    400,
+                    `Quantity ${i + 1} must be 0–500 pieces`
+                );
+            }
+
+            quantities[i] = number;
+            hasValue = true;
+        }
+
+        if (!hasValue) {
+            return sendError(
+                res,
+                400,
+                'Enter at least one expiration date and quantity'
+            );
+        }
+
+        const srp = (
+            req.body.srp == null ||
+            req.body.srp === ''
+        )
+            ? null
+            : Number(req.body.srp);
+
+        if (
+            srp !== null &&
             (
-                store_email,
-                store_name,
-                product_id,
-                sku,
-                product_name,
-                supplier,
-                store_barcode,
-                srp,
-                expiration_1,
-                qty_1,
-                expiration_2,
-                qty_2,
-                expiration_3,
-                qty_3,
-                updated_at,
-                updated_by
+                !Number.isFinite(srp) ||
+                srp < 0
             )
+        ) {
+            return sendError(
+                res,
+                400,
+                'Invalid retail price'
+            );
+        }
 
-            VALUES
-            (
-                $1, $2, $3, $4, $5,
-                $6, $7, $8, $9, $10,
-                $11, $12, $13, $14,
-                NOW(), $15
-            )
+        const barcode = String(
+            req.body.store_barcode || ''
+        ).trim().slice(0, 150);
 
-            ON CONFLICT (store_email, product_id)
+        try {
+            const storeResult = await pool.query(
+                `
+                SELECT store_name
+                FROM public.stores
+                WHERE LOWER(store_email) = LOWER($1)
+                  AND store_name = $2
+                  AND status = 'ACTIVE'
+                `,
+                [
+                    user.email,
+                    user.store_name
+                ]
+            );
 
-            DO UPDATE SET
+            if (!storeResult.rows.length) {
+                return sendError(
+                    res,
+                    403,
+                    'Store profile does not match registered store'
+                );
+            }
 
-                store_barcode = EXCLUDED.store_barcode,
-                srp = EXCLUDED.srp,
+            const productResult = await pool.query(
+                `
+                SELECT
+                    product_id,
+                    sku,
+                    product_name,
+                    supplier_name,
+                    master_barcode,
+                    master_srp
+                FROM public.products
+                WHERE product_id = $1
+                  AND status = 'ACTIVE'
+                `,
+                [productId]
+            );
 
-                expiration_1 = EXCLUDED.expiration_1,
-                qty_1 = EXCLUDED.qty_1,
+            if (!productResult.rows.length) {
+                return sendError(
+                    res,
+                    404,
+                    'Product not found'
+                );
+            }
 
-                expiration_2 = EXCLUDED.expiration_2,
-                qty_2 = EXCLUDED.qty_2,
+            const product = productResult.rows[0];
 
-                expiration_3 = EXCLUDED.expiration_3,
-                qty_3 = EXCLUDED.qty_3,
+            const { rows } = await pool.query(
+                `
+                INSERT INTO public.monitoring
+                (
+                    store_email,
+                    store_name,
+                    product_id,
+                    sku,
+                    product_name,
+                    supplier,
+                    store_barcode,
+                    srp,
+                    expiration_1,
+                    qty_1,
+                    expiration_2,
+                    qty_2,
+                    expiration_3,
+                    qty_3,
+                    updated_at,
+                    updated_by
+                )
+                VALUES
+                (
+                    $1, $2, $3, $4, $5,
+                    $6, $7, $8, $9, $10,
+                    $11, $12, $13, $14,
+                    NOW(), $15
+                )
+                ON CONFLICT (store_email, product_id)
+                DO UPDATE SET
+                    store_barcode = EXCLUDED.store_barcode,
+                    srp = EXCLUDED.srp,
+                    expiration_1 = EXCLUDED.expiration_1,
+                    qty_1 = EXCLUDED.qty_1,
+                    expiration_2 = EXCLUDED.expiration_2,
+                    qty_2 = EXCLUDED.qty_2,
+                    expiration_3 = EXCLUDED.expiration_3,
+                    qty_3 = EXCLUDED.qty_3,
+                    updated_at = NOW(),
+                    updated_by = EXCLUDED.updated_by
+                RETURNING monitoring_id
+                `,
+                [
+                    user.email,
+                    user.store_name,
+                    product.product_id,
+                    product.sku,
+                    product.product_name,
+                    product.supplier_name,
+                    barcode || product.master_barcode,
+                    srp === null
+                        ? product.master_srp
+                        : srp,
+                    dates[0],
+                    quantities[0],
+                    dates[1],
+                    quantities[1],
+                    dates[2],
+                    quantities[2],
+                    user.email
+                ]
+            );
 
-                updated_at = NOW(),
-                updated_by = EXCLUDED.updated_by
+            res.json({
+                message: 'Monitoring saved',
+                monitoring_id: rows[0].monitoring_id
+            });
 
-            RETURNING monitoring_id
-            `,
-            [
-                user.email,
-                user.store_name,
-
-                product.product_id,
-                product.sku,
-                product.product_name,
-                product.supplier_name,
-
-                barcode || product.master_barcode,
-
-                srp === null
-                    ? product.master_srp
-                    : srp,
-
-                dates[0],
-                quantities[0],
-
-                dates[1],
-                quantities[1],
-
-                dates[2],
-                quantities[2],
-
-                user.email
-            ]
-        );
-
-        res.json({
-            message: 'Monitoring saved',
-            monitoring_id: rows[0].monitoring_id
-        });
-
-    } catch (error) {
-
-        console.error(error);
-
-        sendError(
-            res,
-            500,
-            'Unable to save monitoring'
-        );
+        } catch (error) {
+            databaseError(
+                res,
+                error,
+                'Unable to save monitoring'
+            );
+        }
     }
-});
+);
 
 // ==========================================
 // EXPORT MONITORING TO EXCEL
 // ==========================================
 
-app.get('/api/export/monitoring', authenticate, async (req, res) => {
+app.get(
+    '/api/export/monitoring',
+    authenticate,
+    async (req, res) => {
+        try {
+            const scope = storeScope(req.user);
 
-    try {
+            const { rows } = await pool.query(
+                `
+                SELECT *
+                FROM (${monitoringEntries}) m
+                WHERE ${scope.sql}
+                ORDER BY
+                    store_name,
+                    expiration_date
+                LIMIT 50000
+                `,
+                scope.args
+            );
 
-        const scope = storeScope(req.user);
-
-        const { rows } = await pool.query(
-            `
-            SELECT *
-            FROM (${monitoringEntries}) m
-            WHERE ${scope.sql}
-
-            ORDER BY
-                store_name,
-                expiration_date
-
-            LIMIT 50000
-            `,
-            scope.args
-        );
-
-        const records = rows.map(record => ({
-
-            Store: record.store_name,
-
-            Supplier: record.supplier,
-
-            SKU: record.sku,
-
-            Product: record.product_name,
-
-            Barcode: record.store_barcode,
-
-            'Retail Price': record.srp,
-
-            'Expiration Date':
-                record.expiration_date
-                    ?.toISOString?.()
-                    .slice(0, 10)
-                || String(
+            const records = rows.map(record => ({
+                Store: record.store_name,
+                Supplier: record.supplier,
+                SKU: record.sku,
+                Product: record.product_name,
+                Barcode: record.store_barcode,
+                'Retail Price': record.srp,
+                'Expiration Date':
                     record.expiration_date
-                ).slice(0, 10),
+                        ?.toISOString?.()
+                        .slice(0, 10)
+                    || String(
+                        record.expiration_date
+                    ).slice(0, 10),
+                'Quantity (Pieces)': record.quantity,
+                Category: expiryCategory(
+                    record.expiration_date
+                ),
+                'Updated By': record.updated_by
+            }));
 
-            'Quantity (Pieces)': record.quantity,
+            const workbook = XLSX.utils.book_new();
 
-            Category: expiryCategory(
-                record.expiration_date
-            ),
+            const worksheet = XLSX.utils.json_to_sheet(
+                records.length
+                    ? records
+                    : [{ Message: 'No monitoring records' }]
+            );
 
-            'Updated By': record.updated_by
-        }));
+            XLSX.utils.book_append_sheet(
+                workbook,
+                worksheet,
+                'Monitoring'
+            );
 
-        const workbook = XLSX.utils.book_new();
+            const file = XLSX.write(
+                workbook,
+                {
+                    type: 'buffer',
+                    bookType: 'xlsx'
+                }
+            );
 
-        const worksheet = XLSX.utils.json_to_sheet(
-            records.length
-                ? records
-                : [{ Message: 'No monitoring records' }]
-        );
+            res.set({
+                'Content-Type':
+                    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                'Content-Disposition':
+                    'attachment; filename="NEMS_Monitoring.xlsx"',
+                'Cache-Control': 'no-store'
+            });
 
-        XLSX.utils.book_append_sheet(
-            workbook,
-            worksheet,
-            'Monitoring'
-        );
+            res.send(file);
 
-        const file = XLSX.write(
-            workbook,
-            {
-                type: 'buffer',
-                bookType: 'xlsx'
-            }
-        );
-
-        res.set({
-            'Content-Type':
-                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-
-            'Content-Disposition':
-                'attachment; filename="NEMS_Monitoring.xlsx"',
-
-            'Cache-Control': 'no-store'
-        });
-
-        res.send(file);
-
-    } catch (error) {
-
-        console.error(error);
-
-        sendError(
-            res,
-            500,
-            'Export failed'
-        );
+        } catch (error) {
+            databaseError(
+                res,
+                error,
+                'Export failed'
+            );
+        }
     }
-});
+);
 
 // ==========================================
 // DISABLE OUTDATED MASTERLIST IMPORT
@@ -1142,18 +1083,18 @@ app.get('/api/export/monitoring', authenticate, async (req, res) => {
 app.post(
     '/api/admin/import-excel',
     authenticate,
+    adminOnly,
     (req, res) => {
-
         return sendError(
             res,
             403,
-            'Master import disabled until safe product_id-based import is implemented'
+            'Master import disabled until safe preview and validation are implemented'
         );
     }
 );
 
 // ==========================================
-// ADMIN PRODUCT & SUPPLIER MANAGEMENT
+// ADMIN SUPPLIER MANAGEMENT
 // ==========================================
 
 // ADMIN: LIST ALL SUPPLIERS
@@ -1165,9 +1106,14 @@ app.get(
     async (req, res) => {
         try {
             const { rows } = await pool.query(`
-                SELECT supplier_id, supplier_name, status
+                SELECT
+                    supplier_id,
+                    supplier_name,
+                    status
                 FROM public.suppliers
-                ORDER BY supplier_name, supplier_id
+                ORDER BY
+                    supplier_name,
+                    supplier_id
             `);
 
             res.json(rows);
@@ -1189,7 +1135,6 @@ app.post(
     authenticate,
     adminOnly,
     async (req, res) => {
-
         const name = requiredText(
             req.body.supplier_name
         );
@@ -1203,8 +1148,8 @@ app.post(
         }
 
         try {
-
-            const { rows } = await pool.query(`
+            const { rows } = await pool.query(
+                `
                 INSERT INTO public.suppliers (
                     supplier_name,
                     status
@@ -1220,7 +1165,9 @@ app.post(
                     supplier_id,
                     supplier_name,
                     status
-            `, [name]);
+                `,
+                [name]
+            );
 
             if (!rows.length) {
                 return sendError(
@@ -1249,7 +1196,6 @@ app.patch(
     authenticate,
     adminOnly,
     async (req, res) => {
-
         const id = validId(req.params.id);
 
         const name = requiredText(
@@ -1271,15 +1217,17 @@ app.patch(
         }
 
         try {
-
-            const duplicate = await pool.query(`
+            const duplicate = await pool.query(
+                `
                 SELECT supplier_id
                 FROM public.suppliers
                 WHERE LOWER(TRIM(supplier_name)) =
                       LOWER(TRIM($1))
                   AND supplier_id <> $2
                 LIMIT 1
-            `, [name, id]);
+                `,
+                [name, id]
+            );
 
             if (duplicate.rows.length) {
                 return sendError(
@@ -1289,7 +1237,8 @@ app.patch(
                 );
             }
 
-            const { rows } = await pool.query(`
+            const { rows } = await pool.query(
+                `
                 UPDATE public.suppliers
                 SET
                     supplier_name = $1,
@@ -1299,7 +1248,9 @@ app.patch(
                     supplier_id,
                     supplier_name,
                     status
-            `, [name, status, id]);
+                `,
+                [name, status, id]
+            );
 
             if (!rows.length) {
                 return sendError(
@@ -1321,6 +1272,10 @@ app.patch(
     }
 );
 
+// ==========================================
+// ADMIN PRODUCT MANAGEMENT
+// ==========================================
+
 // ADMIN: LIST PRODUCTS INCLUDING LANDED COST
 
 app.get(
@@ -1328,14 +1283,13 @@ app.get(
     authenticate,
     adminOnly,
     async (req, res) => {
-
         try {
-
             const search = String(
                 req.query.search || ''
             ).trim().slice(0, 100);
 
-            const { rows } = await pool.query(`
+            const { rows } = await pool.query(
+                `
                 SELECT
                     product_id,
                     sku,
@@ -1358,7 +1312,9 @@ app.get(
                     OR master_barcode ILIKE '%' || $1 || '%'
                 ORDER BY product_id
                 LIMIT 3000
-            `, [search]);
+                `,
+                [search]
+            );
 
             res.json(rows);
 
@@ -1377,7 +1333,6 @@ app.get(
 // ==========================================
 
 function productInput(body) {
-
     const sku = requiredText(body.sku);
 
     const productName = requiredText(
@@ -1452,7 +1407,6 @@ function productInput(body) {
 }
 
 function productValues(p) {
-
     return [
         p.sku,
         p.productName,
@@ -1468,16 +1422,13 @@ function productValues(p) {
     ];
 }
 
-// ==========================================
 // ADMIN: ADD PRODUCT
-// ==========================================
 
 app.post(
     '/api/admin/products',
     authenticate,
     adminOnly,
     async (req, res) => {
-
         const p = productInput(req.body);
 
         if (!p) {
@@ -1489,8 +1440,8 @@ app.post(
         }
 
         try {
-
-            const { rows } = await pool.query(`
+            const { rows } = await pool.query(
+                `
                 INSERT INTO public.products (
                     sku,
                     product_name,
@@ -1512,7 +1463,9 @@ app.post(
                     product_id,
                     sku,
                     product_name
-            `, productValues(p));
+                `,
+                productValues(p)
+            );
 
             res.status(201).json(rows[0]);
 
@@ -1526,16 +1479,13 @@ app.post(
     }
 );
 
-// ==========================================
 // ADMIN: EDIT PRODUCT BY PRODUCT ID
-// ==========================================
 
 app.patch(
     '/api/admin/products/:id',
     authenticate,
     adminOnly,
     async (req, res) => {
-
         const id = validId(req.params.id);
 
         const p = productInput(req.body);
@@ -1549,8 +1499,8 @@ app.patch(
         }
 
         try {
-
-            const { rows } = await pool.query(`
+            const { rows } = await pool.query(
+                `
                 UPDATE public.products
                 SET
                     sku = $1,
@@ -1570,10 +1520,12 @@ app.patch(
                     sku,
                     product_name,
                     status
-            `, [
-                ...productValues(p),
-                id
-            ]);
+                `,
+                [
+                    ...productValues(p),
+                    id
+                ]
+            );
 
             if (!rows.length) {
                 return sendError(
@@ -1590,6 +1542,282 @@ app.patch(
                 res,
                 error,
                 'Could not update product'
+            );
+        }
+    }
+);
+
+// ==========================================
+// ACTIVITY HISTORY ACCESS CONTROL
+// ==========================================
+
+function historyScope(user) {
+    if (user.role === 'ADMIN') {
+        return {
+            sql: 'TRUE',
+            args: []
+        };
+    }
+
+    if (user.role === 'STORE') {
+        return {
+            sql: `
+                LOWER(h.store_email) = LOWER($1)
+                AND h.store_name = $2
+            `,
+            args: [
+                user.email,
+                user.store_name
+            ]
+        };
+    }
+
+    // Other roles are not granted activity-history
+    // access until their permissions are defined.
+
+    return null;
+}
+
+function historyQueryParameters(req, scope) {
+    const clauses = [scope.sql];
+    const args = [...scope.args];
+
+    function addCondition(value, sqlBuilder) {
+        if (!value) return;
+
+        args.push(value);
+
+        clauses.push(
+            sqlBuilder(`$${args.length}`)
+        );
+    }
+
+    const store = String(
+        req.query.store || ''
+    ).trim().slice(0, 255);
+
+    const supplier = String(
+        req.query.supplier || ''
+    ).trim().slice(0, 255);
+
+    const search = String(
+        req.query.search || ''
+    ).trim().slice(0, 100);
+
+    const action = String(
+        req.query.action || ''
+    ).trim().toUpperCase();
+
+    const from = String(
+        req.query.from || ''
+    ).trim();
+
+    const to = String(
+        req.query.to || ''
+    ).trim();
+
+    addCondition(
+        store,
+        p => `h.store_name = ${p}`
+    );
+
+    addCondition(
+        supplier,
+        p => `h.supplier = ${p}`
+    );
+
+    addCondition(
+        search,
+        p => `(
+            h.product_name ILIKE '%' || ${p} || '%'
+            OR h.sku ILIKE '%' || ${p} || '%'
+        )`
+    );
+
+    if (
+        ['INSERT', 'UPDATE', 'DELETE'].includes(action)
+    ) {
+        addCondition(
+            action,
+            p => `h.action = ${p}`
+        );
+    }
+
+    if (/^\d{4}-\d{2}-\d{2}$/.test(from)) {
+        addCondition(
+            from,
+            p => `h.changed_at >= ${p}::date`
+        );
+    }
+
+    if (/^\d{4}-\d{2}-\d{2}$/.test(to)) {
+        addCondition(
+            to,
+            p => `h.changed_at < (${p}::date + INTERVAL '1 day')`
+        );
+    }
+
+    return {
+        where: clauses.join(' AND '),
+        args
+    };
+}
+
+// ==========================================
+// FULL ACTIVITY HISTORY
+// ==========================================
+
+app.get(
+    '/api/history',
+    authenticate,
+    async (req, res) => {
+        const scope = historyScope(req.user);
+
+        if (!scope) {
+            return sendError(
+                res,
+                403,
+                'History access not available for this role'
+            );
+        }
+
+        const filters = historyQueryParameters(
+            req,
+            scope
+        );
+
+        const limit = Math.min(
+            Math.max(
+                parseInt(req.query.limit, 10) || 100,
+                1
+            ),
+            500
+        );
+
+        const page = Math.min(
+            Math.max(
+                parseInt(req.query.page, 10) || 1,
+                1
+            ),
+            100000
+        );
+
+        const offset = (page - 1) * limit;
+
+        try {
+            const countResult = await pool.query(
+                `
+                SELECT COUNT(*)::integer AS total
+                FROM public.nems_monitoring_history h
+                WHERE ${filters.where}
+                `,
+                filters.args
+            );
+
+            const dataArgs = [
+                ...filters.args,
+                limit,
+                offset
+            ];
+
+            const limitIndex = dataArgs.length - 1;
+            const offsetIndex = dataArgs.length;
+
+            const { rows } = await pool.query(
+                `
+                SELECT
+                    h.history_id,
+                    h.monitoring_id,
+                    h.store_email,
+                    h.store_name,
+                    h.supplier,
+                    h.product_id,
+                    h.sku,
+                    h.product_name,
+                    h.action,
+                    h.changed_by,
+                    h.old_values,
+                    h.new_values,
+                    h.changed_fields,
+                    h.changed_at
+                FROM public.nems_monitoring_history h
+                WHERE ${filters.where}
+                ORDER BY
+                    h.changed_at DESC,
+                    h.history_id DESC
+                LIMIT $${limitIndex}
+                OFFSET $${offsetIndex}
+                `,
+                dataArgs
+            );
+
+            res.json({
+                records: rows,
+                total: countResult.rows[0].total,
+                page,
+                limit
+            });
+
+        } catch (error) {
+            databaseError(
+                res,
+                error,
+                'Could not load activity history'
+            );
+        }
+    }
+);
+
+// ==========================================
+// RECENT DASHBOARD ACTIVITIES
+// ==========================================
+
+app.get(
+    '/api/history/recent',
+    authenticate,
+    async (req, res) => {
+        const scope = historyScope(req.user);
+
+        if (!scope) {
+            return sendError(
+                res,
+                403,
+                'History access not available for this role'
+            );
+        }
+
+        try {
+            const { rows } = await pool.query(
+                `
+                SELECT
+                    h.history_id,
+                    h.monitoring_id,
+                    h.store_name,
+                    h.store_email,
+                    h.supplier,
+                    h.sku,
+                    h.product_name,
+                    h.action,
+                    h.changed_by,
+                    h.changed_fields,
+                    h.changed_at
+                FROM public.nems_monitoring_history h
+                WHERE ${scope.sql}
+                ORDER BY
+                    h.changed_at DESC,
+                    h.history_id DESC
+                LIMIT 10
+                `,
+                scope.args
+            );
+
+            res.json(rows);
+
+        } catch (error) {
+            databaseError(
+                res,
+                error,
+                'Could not load recent activities'
             );
         }
     }
