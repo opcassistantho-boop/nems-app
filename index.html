@@ -1695,4 +1695,1069 @@ function renderSuppliers() {
 
     el('supplierCount').textContent =
         'Showing ' + rows.length +
-        ' of ' +
+        ' of ' + adminSuppliers.length +
+        ' suppliers';
+
+    el('supplierBody').innerHTML = rows.length
+        ? rows.map(s => `
+            <tr>
+                <td>
+                    ${escapeHtml(s.supplier_id)}
+                </td>
+
+                <td>
+                    ${escapeHtml(s.supplier_name)}
+                </td>
+
+                <td>
+                    ${escapeHtml(s.status)}
+                </td>
+
+                <td>
+                    <button
+                        class="small"
+                        onclick="editSupplier(${Number(s.supplier_id)})"
+                    >
+                        Edit
+                    </button>
+                </td>
+            </tr>
+        `).join('')
+        : `
+            <tr>
+                <td colspan="4">
+                    No suppliers found.
+                </td>
+            </tr>
+        `;
+}
+
+function newSupplier() {
+    el('supplierForm').reset();
+
+    el('supplierId').value = '';
+    el('supplierStatus').value = 'ACTIVE';
+
+    el('supplierEditorTitle').textContent =
+        'Add Supplier';
+
+    el('supplierEditor').classList.remove('hidden');
+
+    el('supplierEditor').scrollIntoView({
+        behavior:'smooth'
+    });
+}
+
+function editSupplier(id) {
+    const supplier = adminSuppliers.find(
+        s => Number(s.supplier_id) === id
+    );
+
+    if (!supplier) return;
+
+    el('supplierId').value =
+        supplier.supplier_id;
+
+    el('supplierName').value =
+        supplier.supplier_name;
+
+    el('supplierStatus').value =
+        supplier.status;
+
+    el('supplierEditorTitle').textContent =
+        'Edit Supplier #' + id;
+
+    el('supplierEditor').classList.remove('hidden');
+
+    el('supplierEditor').scrollIntoView({
+        behavior:'smooth'
+    });
+}
+
+function closeSupplierEditor() {
+    el('supplierEditor').classList.add('hidden');
+}
+
+el('supplierForm').addEventListener(
+    'submit',
+    async event => {
+        event.preventDefault();
+
+        const id = el('supplierId').value;
+        const name = el('supplierName').value.trim();
+        const status = el('supplierStatus').value;
+
+        if (
+            id &&
+            status === 'INACTIVE' &&
+            !confirm(
+                'Deactivate this supplier? Existing records will be preserved.'
+            )
+        ) {
+            return;
+        }
+
+        const button = el('supplierSaveBtn');
+        button.disabled = true;
+
+        try {
+            await api(
+                id
+                    ? '/api/admin/suppliers/' + id
+                    : '/api/admin/suppliers',
+                {
+                    method:id ? 'PATCH' : 'POST',
+                    body:JSON.stringify({
+                        supplier_name:name,
+                        status
+                    })
+                }
+            );
+
+            closeSupplierEditor();
+
+            await loadAdminSuppliers();
+
+            showMessage(
+                'Supplier saved successfully.'
+            );
+
+        } catch (error) {
+            showMessage(error.message, true);
+
+        } finally {
+            button.disabled = false;
+        }
+    }
+);
+
+// ==========================================
+// ADMIN PRODUCT MANAGEMENT
+// ==========================================
+
+async function loadAdminProducts() {
+    try {
+        adminProducts = await api(
+            '/api/admin/products'
+        );
+
+        renderProducts();
+
+    } catch (error) {
+        showMessage(error.message, true);
+    }
+}
+
+function renderProducts() {
+    const search = el('productSearch')
+        .value
+        .toLowerCase();
+
+    const status = el('productFilter').value;
+
+    const rows = adminProducts.filter(p => {
+        const text = [
+            p.sku,
+            p.product_name,
+            p.supplier_name,
+            p.master_barcode
+        ].join(' ').toLowerCase();
+
+        return (
+            text.includes(search) &&
+            (!status || p.status === status)
+        );
+    });
+
+    el('productCount').textContent =
+        'Showing ' + rows.length +
+        ' of ' + adminProducts.length +
+        ' products';
+
+    el('productBody').innerHTML = rows.length
+        ? rows.map(p => `
+            <tr>
+                <td>
+                    ${escapeHtml(p.product_id)}
+                </td>
+
+                <td>
+                    ${escapeHtml(p.sku)}
+                </td>
+
+                <td>
+                    ${escapeHtml(p.product_name)}
+                </td>
+
+                <td>
+                    ${escapeHtml(p.supplier_name)}
+                </td>
+
+                <td>
+                    ${escapeHtml(p.master_srp ?? '')}
+                </td>
+
+                <td>
+                    ${escapeHtml(p.landed_cost ?? '')}
+                </td>
+
+                <td>
+                    ${escapeHtml(p.status)}
+                </td>
+
+                <td>
+                    <button
+                        class="small"
+                        onclick="editProduct(${Number(p.product_id)})"
+                    >
+                        Edit
+                    </button>
+                </td>
+            </tr>
+        `).join('')
+        : `
+            <tr>
+                <td colspan="8">
+                    No products found.
+                </td>
+            </tr>
+        `;
+}
+
+async function fillSupplierOptions(selected = '') {
+    if (!adminSuppliers.length) {
+        adminSuppliers = await api(
+            '/api/admin/suppliers'
+        );
+    }
+
+    const names = adminSuppliers.filter(s =>
+        s.status === 'ACTIVE' ||
+        s.supplier_name === selected
+    );
+
+    el('pSupplier').innerHTML =
+        '<option value="">Select supplier</option>' +
+        names.map(s => `
+            <option value="${escapeHtml(s.supplier_name)}">
+                ${escapeHtml(s.supplier_name)}
+            </option>
+        `).join('');
+
+    el('pSupplier').value = selected;
+}
+
+async function newProduct() {
+    try {
+        el('productForm').reset();
+
+        el('productId').value = '';
+        el('pStatus').value = 'ACTIVE';
+
+        el('productEditorTitle').textContent =
+            'Add Product';
+
+        await fillSupplierOptions();
+
+        el('productEditor').classList.remove('hidden');
+
+        el('productEditor').scrollIntoView({
+            behavior:'smooth'
+        });
+
+    } catch (error) {
+        showMessage(error.message, true);
+    }
+}
+
+async function editProduct(id) {
+    const p = adminProducts.find(
+        item => Number(item.product_id) === id
+    );
+
+    if (!p) return;
+
+    try {
+        await fillSupplierOptions(
+            p.supplier_name
+        );
+
+        el('productId').value =
+            p.product_id;
+
+        el('pSku').value =
+            p.sku ?? '';
+
+        el('pName').value =
+            p.product_name ?? '';
+
+        el('pBarcode').value =
+            p.master_barcode ?? '';
+
+        el('pSrp').value =
+            p.master_srp ?? '';
+
+        el('pCost').value =
+            p.landed_cost ?? '';
+
+        el('pCategory').value =
+            p.category ?? '';
+
+        el('pCondition').value =
+            p.condition ?? '';
+
+        el('pShelfLife').value =
+            p.shelf_life ?? '';
+
+        el('pRemarks').value =
+            p.remarks ?? '';
+
+        el('pStatus').value =
+            p.status;
+
+        el('productEditorTitle').textContent =
+            'Edit Product #' + id;
+
+        el('productEditor').classList.remove('hidden');
+
+        el('productEditor').scrollIntoView({
+            behavior:'smooth'
+        });
+
+    } catch (error) {
+        showMessage(error.message, true);
+    }
+}
+
+function closeProductEditor() {
+    el('productEditor').classList.add('hidden');
+}
+
+el('productForm').addEventListener(
+    'submit',
+    async event => {
+        event.preventDefault();
+
+        const id = el('productId').value;
+        const status = el('pStatus').value;
+
+        if (
+            id &&
+            status === 'INACTIVE' &&
+            !confirm(
+                'Deactivate this product? Existing records will be preserved.'
+            )
+        ) {
+            return;
+        }
+
+        const payload = {
+            sku:el('pSku').value.trim(),
+            product_name:el('pName').value.trim(),
+            supplier_name:el('pSupplier').value,
+            master_barcode:el('pBarcode').value.trim(),
+            master_srp:el('pSrp').value,
+            landed_cost:el('pCost').value,
+            category:el('pCategory').value.trim(),
+            condition:el('pCondition').value.trim(),
+            shelf_life:el('pShelfLife').value.trim(),
+            remarks:el('pRemarks').value.trim(),
+            status
+        };
+
+        const button = el('productSaveBtn');
+        button.disabled = true;
+
+        try {
+            await api(
+                id
+                    ? '/api/admin/products/' + id
+                    : '/api/admin/products',
+                {
+                    method:id ? 'PATCH' : 'POST',
+                    body:JSON.stringify(payload)
+                }
+            );
+
+            closeProductEditor();
+
+            await loadAdminProducts();
+
+            showMessage(
+                'Product saved successfully.'
+            );
+
+        } catch (error) {
+            showMessage(error.message, true);
+
+        } finally {
+            button.disabled = false;
+        }
+    }
+);
+
+// ==========================================
+// STORE ENCODING
+// ==========================================
+
+async function loadEntrySuppliers() {
+    try {
+        const suppliers = await api(
+            '/api/suppliers'
+        );
+
+        el('entrySupplier').innerHTML =
+            '<option value="">All Suppliers</option>' +
+            suppliers.map(s => `
+                <option value="${escapeHtml(s.supplier_name)}">
+                    ${escapeHtml(s.supplier_name)}
+                </option>
+            `).join('');
+
+        await searchEntryProducts();
+
+    } catch (error) {
+        showMessage(error.message, true);
+    }
+}
+
+async function searchEntryProducts() {
+    try {
+        const supplier = el('entrySupplier').value;
+
+        const search = el('entrySearch')
+            .value
+            .trim();
+
+        const query = new URLSearchParams({
+            supplier,
+            search
+        });
+
+        entryProducts = await api(
+            '/api/products?' + query.toString()
+        );
+
+        el('entryProduct').innerHTML =
+            '<option value="">Select product</option>' +
+            entryProducts.map(p => `
+                <option value="${Number(p.product_id)}">
+                    ${escapeHtml(p.sku)}
+                    ·
+                    ${escapeHtml(p.product_name)}
+                </option>
+            `).join('');
+
+    } catch (error) {
+        showMessage(error.message, true);
+    }
+}
+
+el('entrySearch').addEventListener(
+    'input',
+    () => {
+        clearTimeout(entrySearchTimer);
+
+        entrySearchTimer = setTimeout(
+            searchEntryProducts,
+            350
+        );
+    }
+);
+
+el('entryProduct').addEventListener(
+    'change',
+    () => {
+        const id = Number(
+            el('entryProduct').value
+        );
+
+        const product = entryProducts.find(
+            p => Number(p.product_id) === id
+        );
+
+        if (!product) return;
+
+        el('entryBarcode').value =
+            product.master_barcode ?? '';
+
+        el('entrySrp').value =
+            product.master_srp ?? '';
+    }
+);
+
+el('storeForm').addEventListener(
+    'submit',
+    async event => {
+        event.preventDefault();
+
+        const payload = {
+            product_id:Number(
+                el('entryProduct').value
+            ),
+            store_barcode:el('entryBarcode').value,
+            srp:el('entrySrp').value,
+            exp1:el('exp1').value,
+            qty1:el('qty1').value,
+            exp2:el('exp2').value,
+            qty2:el('qty2').value,
+            exp3:el('exp3').value,
+            qty3:el('qty3').value
+        };
+
+        const button = el('storeSaveBtn');
+        button.disabled = true;
+
+        try {
+            await api(
+                '/api/store/monitoring',
+                {
+                    method:'POST',
+                    body:JSON.stringify(payload)
+                }
+            );
+
+            showMessage(
+                'Store monitoring saved successfully.'
+            );
+
+        } catch (error) {
+            showMessage(error.message, true);
+
+        } finally {
+            button.disabled = false;
+        }
+    }
+);
+
+// ==========================================
+// RECENT ACTIVITIES
+// ==========================================
+
+async function loadRecentActivities() {
+    if (
+        !['ADMIN','STORE'].includes(
+            currentUser?.role
+        )
+    ) {
+        return;
+    }
+
+    const accountAtStart = currentUser.email;
+
+    el('recentActivityList').innerHTML =
+        '<p class="muted">Loading recent activities...</p>';
+
+    try {
+        const records = await api(
+            '/api/history/recent'
+        );
+
+        if (
+            !currentUser ||
+            currentUser.email !== accountAtStart
+        ) {
+            return;
+        }
+
+        if (!records.length) {
+            el('recentActivityList').innerHTML = `
+                <p class="muted">
+                    No monitoring activity has been recorded yet.
+                    Future monitoring changes will appear here.
+                </p>
+            `;
+            return;
+        }
+
+        el('recentActivityList').innerHTML =
+            records.map(record => `
+                <div class="activityitem">
+
+                    <div class="activitytitle">
+                        ${actionBadge(record.action)}
+
+                        ${escapeHtml(
+                            record.product_name || record.sku || 'Product'
+                        )}
+                    </div>
+
+                    <div class="activitymeta">
+                        <b>Store:</b>
+                        ${escapeHtml(record.store_name || '—')}
+
+                        &nbsp; · &nbsp;
+
+                        <b>Supplier:</b>
+                        ${escapeHtml(record.supplier || '—')}
+                    </div>
+
+                    <div class="activitymeta">
+                        <b>Changed by:</b>
+                        ${escapeHtml(record.changed_by || '—')}
+
+                        &nbsp; · &nbsp;
+
+                        ${escapeHtml(
+                            dateTimeText(record.changed_at)
+                        )}
+                    </div>
+
+                </div>
+            `).join('');
+
+    } catch (error) {
+        if (
+            currentUser &&
+            currentUser.email === accountAtStart
+        ) {
+            el('recentActivityList').innerHTML = `
+                <p class="muted">
+                    ${escapeHtml(error.message)}
+                </p>
+            `;
+        }
+    }
+}
+
+// ==========================================
+// ACTIVITY HISTORY FILTERS
+// ==========================================
+
+async function initializeHistory() {
+    try {
+        await loadHistoryFilterOptions();
+        await loadHistory(1);
+
+    } catch (error) {
+        showMessage(error.message, true);
+    }
+}
+
+async function loadHistoryFilterOptions() {
+    const isAdmin =
+        currentUser?.role === 'ADMIN';
+
+    if (isAdmin) {
+        const stores = await api('/api/stores');
+
+        const selected = el('historyStore').value;
+
+        el('historyStore').innerHTML =
+            '<option value="">All Stores</option>' +
+            stores.map(s => `
+                <option value="${escapeHtml(s.store_name)}">
+                    ${escapeHtml(s.store_name)}
+                </option>
+            `).join('');
+
+        el('historyStore').value = selected;
+
+        if (
+            el('historyStore').value !== selected
+        ) {
+            el('historyStore').value = '';
+        }
+    }
+
+    const suppliers = await api('/api/suppliers');
+
+    const selectedSupplier =
+        el('historySupplier').value;
+
+    el('historySupplier').innerHTML =
+        '<option value="">All Suppliers</option>' +
+        suppliers.map(s => `
+            <option value="${escapeHtml(s.supplier_name)}">
+                ${escapeHtml(s.supplier_name)}
+            </option>
+        `).join('');
+
+    el('historySupplier').value =
+        selectedSupplier;
+
+    if (
+        el('historySupplier').value !==
+        selectedSupplier
+    ) {
+        el('historySupplier').value = '';
+    }
+}
+
+function resetHistoryFilters() {
+    el('historyStore').value = '';
+    el('historySupplier').value = '';
+    el('historyAction').value = '';
+    el('historySearch').value = '';
+    el('historyFrom').value = '';
+    el('historyTo').value = '';
+
+    loadHistory(1);
+}
+
+function buildHistoryQuery(page) {
+    const params = new URLSearchParams();
+
+    params.set('page', String(page));
+    params.set('limit', String(historyLimit));
+
+    if (currentUser?.role === 'ADMIN') {
+        const store = el('historyStore').value;
+
+        if (store) {
+            params.set('store', store);
+        }
+    }
+
+    const supplier =
+        el('historySupplier').value;
+
+    const action =
+        el('historyAction').value;
+
+    const search =
+        el('historySearch').value.trim();
+
+    const from =
+        el('historyFrom').value;
+
+    const to =
+        el('historyTo').value;
+
+    if (supplier) {
+        params.set('supplier', supplier);
+    }
+
+    if (action) {
+        params.set('action', action);
+    }
+
+    if (search) {
+        params.set('search', search);
+    }
+
+    if (from) {
+        params.set('from', from);
+    }
+
+    if (to) {
+        params.set('to', to);
+    }
+
+    return params.toString();
+}
+
+// ==========================================
+// FULL ACTIVITY HISTORY
+// ==========================================
+
+async function loadHistory(page = 1) {
+    if (
+        !['ADMIN','STORE'].includes(
+            currentUser?.role
+        )
+    ) {
+        return;
+    }
+
+    const requestNumber = ++historyRequestNumber;
+    const accountAtStart = currentUser.email;
+
+    el('historyBody').innerHTML = `
+        <tr>
+            <td colspan="7">
+                Loading activity history...
+            </td>
+        </tr>
+    `;
+
+    try {
+        const query = buildHistoryQuery(page);
+
+        const data = await api(
+            '/api/history?' + query
+        );
+
+        if (
+            requestNumber !== historyRequestNumber ||
+            !currentUser ||
+            currentUser.email !== accountAtStart
+        ) {
+            return;
+        }
+
+        historyRecords = data.records || [];
+        historyTotal = Number(data.total) || 0;
+        historyPage = Number(data.page) || page;
+
+        renderHistory();
+
+    } catch (error) {
+        if (
+            requestNumber !== historyRequestNumber
+        ) {
+            return;
+        }
+
+        el('historyBody').innerHTML = `
+            <tr>
+                <td colspan="7">
+                    ${escapeHtml(error.message)}
+                </td>
+            </tr>
+        `;
+
+        el('historyCount').textContent =
+            'Unable to load history.';
+
+        el('historyPageInfo').textContent = '';
+    }
+}
+
+function renderHistory() {
+    el('historyCount').textContent =
+        historyTotal +
+        ' monitoring history record(s) found.';
+
+    el('historyBody').innerHTML =
+        historyRecords.length
+            ? historyRecords.map((record,index) => `
+                <tr>
+                    <td>
+                        ${escapeHtml(
+                            dateTimeText(record.changed_at)
+                        )}
+                    </td>
+
+                    <td>
+                        ${escapeHtml(record.store_name || '—')}
+                    </td>
+
+                    <td>
+                        ${escapeHtml(record.supplier || '—')}
+                    </td>
+
+                    <td>
+                        <b>${escapeHtml(record.sku || '')}</b>
+                        <div>
+                            ${escapeHtml(record.product_name || '')}
+                        </div>
+                    </td>
+
+                    <td>
+                        ${actionBadge(record.action)}
+                    </td>
+
+                    <td>
+                        ${escapeHtml(record.changed_by || '—')}
+                    </td>
+
+                    <td>
+                        <button
+                            class="small"
+                            onclick="toggleHistoryDetails(${index})"
+                        >
+                            View Changes
+                        </button>
+                    </td>
+                </tr>
+
+                <tr
+                    id="historyDetail-${index}"
+                    class="hidden"
+                >
+                    <td colspan="7">
+                        ${historyDetailsHtml(record)}
+                    </td>
+                </tr>
+            `).join('')
+            : `
+                <tr>
+                    <td colspan="7">
+                        No matching activity history records.
+                    </td>
+                </tr>
+            `;
+
+    const totalPages = Math.max(
+        1,
+        Math.ceil(historyTotal / historyLimit)
+    );
+
+    el('historyPageInfo').textContent =
+        'Page ' + historyPage +
+        ' of ' + totalPages;
+
+    el('historyPrevious').disabled =
+        historyPage <= 1;
+
+    el('historyNext').disabled =
+        historyPage >= totalPages;
+}
+
+function toggleHistoryDetails(index) {
+    const row = el('historyDetail-' + index);
+
+    if (!row) return;
+
+    row.classList.toggle('hidden');
+}
+
+// ==========================================
+// OLD AND NEW VALUES
+// ==========================================
+
+function historyDetailsHtml(record) {
+    const oldValues = record.old_values || {};
+    const newValues = record.new_values || {};
+    const changedFields = record.changed_fields || {};
+
+    let fields = [];
+
+    if (record.action === 'UPDATE') {
+        fields = Object.keys(changedFields);
+
+    } else if (record.action === 'INSERT') {
+        fields = Object.keys(newValues).filter(
+            field => ![
+                'monitoring_id',
+                'updated_at',
+                'updated_by'
+            ].includes(field)
+        );
+
+    } else if (record.action === 'DELETE') {
+        fields = Object.keys(oldValues).filter(
+            field => ![
+                'monitoring_id',
+                'updated_at',
+                'updated_by'
+            ].includes(field)
+        );
+    }
+
+    const rows = fields.map(field => {
+        let before = oldValues[field];
+        let after = newValues[field];
+
+        if (
+            record.action === 'UPDATE' &&
+            changedFields[field]
+        ) {
+            before = changedFields[field].before;
+            after = changedFields[field].after;
+        }
+
+        return `
+            <tr>
+                <td>
+                    <b>${escapeHtml(fieldLabel(field))}</b>
+                </td>
+
+                <td class="changevalue">
+                    ${escapeHtml(displayValue(before))}
+                </td>
+
+                <td class="changevalue">
+                    ${escapeHtml(displayValue(after))}
+                </td>
+            </tr>
+        `;
+    }).join('');
+
+    return `
+        <div class="detailsbox">
+
+            <h3>
+                Monitoring Change Details
+            </h3>
+
+            <p class="muted">
+                <b>History ID:</b>
+                ${escapeHtml(record.history_id)}
+
+                &nbsp; · &nbsp;
+
+                <b>Monitoring ID:</b>
+                ${escapeHtml(record.monitoring_id || '—')}
+            </p>
+
+            <p class="muted">
+                <b>Action:</b>
+                ${escapeHtml(readableAction(record.action))}
+
+                &nbsp; · &nbsp;
+
+                <b>Changed by:</b>
+                ${escapeHtml(record.changed_by || '—')}
+            </p>
+
+            <p class="muted">
+                <b>Date:</b>
+                ${escapeHtml(
+                    dateTimeText(record.changed_at)
+                )}
+            </p>
+
+            <div class="tablewrap">
+                <table class="changetable">
+                    <thead>
+                        <tr>
+                            <th>Field</th>
+                            <th>Previous Value</th>
+                            <th>New Value</th>
+                        </tr>
+                    </thead>
+
+                    <tbody>
+                        ${rows || `
+                            <tr>
+                                <td colspan="3">
+                                    No field differences available.
+                                </td>
+                            </tr>
+                        `}
+                    </tbody>
+                </table>
+            </div>
+
+        </div>
+    `;
+}
+
+// ==========================================
+// HISTORY PAGINATION
+// ==========================================
+
+function changeHistoryPage(direction) {
+    const totalPages = Math.max(
+        1,
+        Math.ceil(historyTotal / historyLimit)
+    );
+
+    const nextPage = historyPage + direction;
+
+    if (
+        nextPage < 1 ||
+        nextPage > totalPages
+    ) {
+        return;
+    }
+
+    loadHistory(nextPage);
+}
+
+el('historySearch').addEventListener(
+    'keydown',
+    event => {
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            loadHistory(1);
+        }
+    }
+);
+
+</script>
+
+</body>
+</html>
