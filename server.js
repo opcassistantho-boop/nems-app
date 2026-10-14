@@ -8,7 +8,7 @@ const XLSX = require('xlsx');
 const app = express();
 
 app.disable('x-powered-by');
-app.use(express.json({ limit: '100kb' }));
+app.use(express.json({ limit: '12mb' }));
 
 // ==========================================
 // DATABASE CONNECTION
@@ -1826,6 +1826,170 @@ app.get(
 // ==========================================
 // START SERVER
 // ==========================================
+
+// ==========================================
+// ADMIN EXTENSIONS — protected endpoints
+// ==========================================
+const safeCell = v => {
+    const s = v == null ? '' : typeof v === 'object' ? JSON.stringify(v) : String(v);
+    return /^[\s]*[=+@\-\t\r]/.test(s) ? "'" + s : s;
+};
+function sendWorkbook(res, rows, name) {
+    const book = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(book, XLSX.utils.json_to_sheet(rows.map(row =>
+        Object.fromEntries(Object.entries(row).map(([k,v]) => [k,safeCell(v)]))
+    )), 'Records');
+    const data = XLSX.write(book, {type:'buffer',bookType:'xlsx'});
+    res.set('Content-Type','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.set('Content-Disposition',`attachment; filename="${name}"`);
+    res.send(data);
+}
+app.get('/api/history/export', authenticate, async (req,res) => {
+    const scope = historyScope(req.user);
+    if (!scope) return sendError(res,403,'Access denied');
+    try {
+        // Keep filtering consistent with the existing history endpoint.
+        const params = historyQueryParameters(req,scope);
+        const where = params.where || params.sql;
+        if (!where) return sendError(res,500,'History filters unavailable');
+        const {rows} = await pool.query(`SELECT changed_at,store_name,supplier,product_id,sku,product_name,action,changed_by,old_values,new_values,changed_fields FROM public.nems_monitoring_history h WHERE ${where} ORDER BY changed_at DESC LIMIT 50000`,params.args);
+        sendWorkbook(res,rows,'NEMS_Activity_Log.xlsx');
+    } catch(e) {databaseError(res,e,'Could not export history');}
+});
+app.get('/api/admin/users',authenticate,adminOnly,async(req,res)=>{
+    try {res.json((await pool.query('SELECT email,store_name,full_name,role,status,created_at FROM public.users ORDER BY email')).rows);}
+    catch(e){databaseError(res,e,'Could not load users');}
+});
+app.post('/api/admin/users',authenticate,adminOnly,async(req,res)=>{
+    const email=cleanEmail(req.body.email), role=String(req.body.role||'STORE').toUpperCase();
+    if(!email||!VALID_ROLES.includes(role)||role==='ADMIN')return sendError(res,400,'Invalid email or role');
+    try {const {rows}=await pool.query('INSERT INTO public.users(email,store_name,full_name,role,status) VALUES($1,$2,$3,$4,$5) RETURNING email,store_name,full_name,role,status',[email,optionalText(req.body.store_name),optionalText(req.body.full_name),role,'INACTIVE']);res.json(rows[0]);}
+    catch(e){databaseError(res,e,'Could not add user');}
+});
+app.patch('/api/admin/users/:email',authenticate,adminOnly,async(req,res)=>{
+    const email=cleanEmail(req.params.email);
+    try {
+        const existing=(await pool.query('SELECT role,auth_user_id FROM public.users WHERE email=$1',[email])).rows[0];
+        if(!existing)return sendError(res,404,'User not found');
+        if(existing.role==='ADMIN'||existing.auth_user_id)return sendError(res,403,'Linked login accounts cannot be edited here');
+        const role=String(req.body.role||'STORE').toUpperCase(),status=String(req.body.status||'INACTIVE').toUpperCase();
+        if(!VALID_ROLES.includes(role)||role==='ADMIN'||!['ACTIVE','INACTIVE'].includes(status))return sendError(res,400,'Invalid role or status');
+        const {rows}=await pool.query('UPDATE public.users SET store_name=$2,full_name=$3,role=$4,status=$5 WHERE email=$1 RETURNING email,store_name,full_name,role,status',[email,optionalText(req.body.store_name),optionalText(req.body.full_name),role,status]);res.json(rows[0]);
+    }catch(e){databaseError(res,e,'Could not update user');}
+});
+app.get('/api/admin/stores',authenticate,adminOnly,async(req,res)=>{
+    try{res.json((await pool.query('SELECT store_id,store_name,store_email,status,created_at FROM public.stores ORDER BY store_name')).rows);}catch(e){databaseError(res,e,'Could not load stores');}
+});
+app.post('/api/admin/stores',authenticate,adminOnly,async(req,res)=>{
+    const name=requiredText(req.body.store_name), email=cleanEmail(req.body.store_email);
+    if(!name)return sendError(res,400,'Store name required');
+    try{const {rows}=await pool.query('INSERT INTO public.stores(store_id,store_name,store_email,status) VALUES((SELECT COALESCE(MAX(store_id),0)+1 FROM public.stores),$1,$2,$3) RETURNING *',[name,email||null,'ACTIVE']);res.json(rows[0]);}catch(e){databaseError(res,e,'Could not add store');}
+});
+app.patch('/api/admin/stores/:id',authenticate,adminOnly,async(req,res)=>{
+    if(!validId(req.params.id))return sendError(res,400,'Invalid store ID');
+    const status=String(req.body.status||'ACTIVE').toUpperCase();if(!['ACTIVE','INACTIVE'].includes(status))return sendError(res,400,'Invalid status');
+    try{const {rows}=await pool.query('UPDATE public.stores SET status=$2 WHERE store_id=$1 RETURNING *',[req.params.id,status]);if(!rows.length)return sendError(res,404,'Store not found');res.json(rows[0]);}catch(e){databaseError(res,e,'Could not update store');}
+});
+app.get('/api/admin/assignments',authenticate,adminOnly,async(req,res)=>{
+    try{res.json((await pool.query(`SELECT a.*,s.store_name,p.supplier_name,(SELECT MAX(submitted_at) FROM public.nems_monitoring_submissions WHERE assignment_id=a.assignment_id) AS last_submitted_at FROM public.nems_task_assignments a JOIN public.stores s ON s.store_id=a.store_id JOIN public.suppliers p ON p.supplier_id=a.supplier_id ORDER BY s.store_name,p.supplier_name`)).rows);}catch(e){databaseError(res,e,'Could not load assignments');}
+});
+app.post('/api/admin/assignments',authenticate,adminOnly,async(req,res)=>{
+    if(!validId(req.body.store_id)||!validId(req.body.supplier_id))return sendError(res,400,'Select a store and supplier');
+    try{const {rows}=await pool.query(`INSERT INTO public.nems_task_assignments(store_id,supplier_id,assigned_by,due_date,status) VALUES($1,$2,$3,$4,'ACTIVE') ON CONFLICT(store_id,supplier_id) DO UPDATE SET status='ACTIVE',due_date=EXCLUDED.due_date RETURNING *`,[req.body.store_id,req.body.supplier_id,req.user.email,req.body.due_date||null]);res.json(rows[0]);}catch(e){databaseError(res,e,'Could not assign task');}
+});
+app.patch('/api/admin/assignments/:id',authenticate,adminOnly,async(req,res)=>{
+    if(!validId(req.params.id)||!['ACTIVE','CANCELLED'].includes(req.body.status))return sendError(res,400,'Invalid assignment');
+    try{const {rows}=await pool.query('UPDATE public.nems_task_assignments SET status=$2 WHERE assignment_id=$1 RETURNING *',[req.params.id,req.body.status]);res.json(rows[0]||{});}catch(e){databaseError(res,e,'Could not update assignment');}
+});
+app.get('/api/store/assignments',authenticate,async(req,res)=>{
+    if(req.user.role!=='STORE')return sendError(res,403,'Store only');
+    try{res.json((await pool.query(`SELECT a.assignment_id,a.due_date,a.status,p.supplier_name,(SELECT MAX(submitted_at) FROM public.nems_monitoring_submissions WHERE assignment_id=a.assignment_id) AS last_submitted_at FROM public.nems_task_assignments a JOIN public.stores s ON s.store_id=a.store_id JOIN public.suppliers p ON p.supplier_id=a.supplier_id WHERE LOWER(s.store_email)=LOWER($1) AND s.store_name=$2 AND a.status='ACTIVE' ORDER BY p.supplier_name`,[req.user.email,req.user.store_name])).rows);}catch(e){databaseError(res,e,'Could not load tasks');}
+});
+app.post('/api/store/assignments/:id/submit',authenticate,async(req,res)=>{
+    if(req.user.role!=='STORE'||!validId(req.params.id))return sendError(res,403,'Store only');
+    try{const {rows}=await pool.query(`INSERT INTO public.nems_monitoring_submissions(assignment_id,submitted_by,remarks) SELECT a.assignment_id,$2,$3 FROM public.nems_task_assignments a JOIN public.stores s ON s.store_id=a.store_id WHERE a.assignment_id=$1 AND a.status='ACTIVE' AND LOWER(s.store_email)=LOWER($2) AND s.store_name=$4 RETURNING *`,[req.params.id,req.user.email,optionalText(req.body.remarks,1000),req.user.store_name]);if(!rows.length)return sendError(res,403,'Assignment not available');res.json(rows[0]);}catch(e){databaseError(res,e,'Could not submit task');}
+});
+app.get('/api/conversations',authenticate,async(req,res)=>{
+    try{
+        const admin=req.user.role==='ADMIN',store=req.user.role==='STORE';if(!admin&&!store)return sendError(res,403,'Access denied');
+        const {rows}=await pool.query(`SELECT s.store_id,s.store_name,c.conversation_id,(SELECT MAX(created_at) FROM public.nems_messages WHERE conversation_id=c.conversation_id) last_message_at,(SELECT COUNT(*)::int FROM public.nems_messages WHERE conversation_id=c.conversation_id AND read_at IS NULL AND sender_role <> $1) unread_count FROM public.stores s LEFT JOIN public.nems_conversations c ON c.store_id=s.store_id WHERE $2::boolean OR (LOWER(s.store_email)=LOWER($3) AND s.store_name=$4) ORDER BY last_message_at DESC NULLS LAST,s.store_name`,[req.user.role,admin,req.user.email,req.user.store_name]);res.json(rows);
+    }catch(e){databaseError(res,e,'Could not load conversations');}
+});
+async function conversationAccess(req,res){
+    if(!validId(req.params.storeId)) {sendError(res,400,'Invalid store');return null;}
+    if(!['ADMIN','STORE'].includes(req.user.role)){sendError(res,403,'Access denied');return null;}
+    const {rows}=await pool.query('SELECT store_id,store_name,store_email FROM public.stores WHERE store_id=$1',[req.params.storeId]);
+    if(!rows.length){sendError(res,404,'Store not found');return null;}
+    if(req.user.role==='STORE'&&(cleanEmail(rows[0].store_email)!==req.user.email||rows[0].store_name!==req.user.store_name)){sendError(res,403,'Access denied');return null;}
+    return rows[0];
+}
+app.get('/api/conversations/:storeId/messages',authenticate,async(req,res)=>{
+    try{if(!await conversationAccess(req,res))return;const {rows}=await pool.query(`SELECT m.message_id,m.sender_email,m.sender_role,m.message_type,m.message_text,m.created_at,m.read_at FROM public.nems_messages m JOIN public.nems_conversations c ON c.conversation_id=m.conversation_id WHERE c.store_id=$1 ORDER BY m.created_at DESC LIMIT 200`,[req.params.storeId]);await pool.query(`UPDATE public.nems_messages m SET read_at=NOW() FROM public.nems_conversations c WHERE c.conversation_id=m.conversation_id AND c.store_id=$1 AND m.read_at IS NULL AND m.sender_role <> $2`,[req.params.storeId,req.user.role]);res.json(rows.reverse());}catch(e){databaseError(res,e,'Could not load messages');}
+});
+app.post('/api/conversations/:storeId/messages',authenticate,async(req,res)=>{
+    try{if(!await conversationAccess(req,res))return;const message=String(req.body.message_text||'').trim();if(!message||message.length>5000)return sendError(res,400,'Message must contain 1–5000 characters');const client=await pool.connect();try{await client.query('BEGIN');const conv=(await client.query('INSERT INTO public.nems_conversations(store_id) VALUES($1) ON CONFLICT(store_id) DO UPDATE SET updated_at=NOW() RETURNING conversation_id',[req.params.storeId])).rows[0];const {rows}=await client.query(`INSERT INTO public.nems_messages(conversation_id,sender_email,sender_role,message_type,message_text) VALUES($1,$2,$3,'DIRECT',$4) RETURNING *`,[conv.conversation_id,req.user.email,req.user.role,message]);await client.query('COMMIT');res.json(rows[0]);}catch(e){await client.query('ROLLBACK');throw e;}finally{client.release();}}catch(e){databaseError(res,e,'Could not send message');}
+});
+app.post('/api/admin/announcements',authenticate,adminOnly,async(req,res)=>{
+    const message=String(req.body.message_text||'').trim(),ids=req.body.store_ids;
+    if(!message||message.length>5000||!Array.isArray(ids)||!ids.length||ids.length>500||ids.some(id=>!validId(id)))return sendError(res,400,'Select stores and enter an announcement');
+    const client=await pool.connect();try{await client.query('BEGIN');let sent=0;for(const id of new Set(ids.map(Number))){const exists=await client.query('SELECT 1 FROM public.stores WHERE store_id=$1',[id]);if(!exists.rowCount)throw new Error('Unknown store ID: '+id);const conv=(await client.query('INSERT INTO public.nems_conversations(store_id) VALUES($1) ON CONFLICT(store_id) DO UPDATE SET updated_at=NOW() RETURNING conversation_id',[id])).rows[0];await client.query(`INSERT INTO public.nems_messages(conversation_id,sender_email,sender_role,message_type,message_text) VALUES($1,$2,'ADMIN','ANNOUNCEMENT',$3)`,[conv.conversation_id,req.user.email,message]);sent++;}await client.query('COMMIT');res.json({sent});}catch(e){await client.query('ROLLBACK');databaseError(res,e,'Could not send announcement');}finally{client.release();}
+});
+const importSpecs={
+ suppliers:{table:'suppliers',id:'supplier_id',cols:['supplier_id','supplier_name','status'],required:['supplier_name']},
+ products:{table:'products',id:'product_id',cols:['product_id','sku','product_name','supplier_name','master_barcode','master_srp','landed_cost','category','condition','remarks','shelf_life','status'],required:['sku','product_name','supplier_name']},
+ stores:{table:'stores',id:'store_id',cols:['store_id','store_name','store_email','status'],required:['store_name']},
+ users:{table:'users',id:'email',cols:['email','store_name','full_name','role','status'],required:['email']}
+};
+function validateImport(kind,rows){
+ const spec=importSpecs[kind];if(!spec)throw Error('Invalid import type');
+ if(!Array.isArray(rows)||!rows.length||rows.length>5000)throw Error('Import must contain 1–5000 rows');
+ const errors=[],seen=new Set();
+ rows.forEach((r,i)=>{
+  if(!r||typeof r!=='object'||Array.isArray(r)){errors.push(`Row ${i+2}: invalid data`);return;}
+  for(const k of spec.required)if(!String(r[k]??'').trim())errors.push(`Row ${i+2}: ${k} required`);
+  for(const k of Object.keys(r))if(!spec.cols.includes(k)&&String(r[k]??'').trim())errors.push(`Row ${i+2}: unknown column ${k}`);
+  const id=r[spec.id];if(id!==undefined&&id!==null&&String(id).trim()){
+   if(spec.id!=='email'&&!validId(id))errors.push(`Row ${i+2}: invalid ${spec.id}`);
+   const key=String(id).toLowerCase();if(seen.has(key))errors.push(`Row ${i+2}: duplicate ID in file`);seen.add(key);
+  }
+  if(kind==='users'&&r.role&&(!VALID_ROLES.includes(String(r.role).toUpperCase())||String(r.role).toUpperCase()==='ADMIN'))errors.push(`Row ${i+2}: ADMIN profiles cannot be imported`);
+  if(r.status&&!['ACTIVE','INACTIVE'].includes(String(r.status).toUpperCase()))errors.push(`Row ${i+2}: invalid status`);
+  if(kind==='products')for(const k of ['master_srp','landed_cost'])if(r[k]!==undefined&&String(r[k]).trim()&&(!Number.isFinite(Number(r[k]))||Number(r[k])<0))errors.push(`Row ${i+2}: invalid ${k}`);
+ });return errors.slice(0,150);
+}
+app.post('/api/admin/import/preview',express.json({limit:'12mb'}),authenticate,adminOnly,async(req,res)=>{
+ try{
+  const kind=String(req.body.kind||'');if(!importSpecs[kind])return sendError(res,400,'Invalid import type');
+  const buffer=Buffer.from(String(req.body.base64||''),'base64');if(!buffer.length||buffer.length>8*1024*1024)return sendError(res,400,'File must be 8MB or less');
+  const wb=XLSX.read(buffer,{type:'buffer',cellDates:false});const sheet=wb.Sheets[wb.SheetNames[0]];
+  const rows=XLSX.utils.sheet_to_json(sheet,{defval:'',raw:false}).map(row=>Object.fromEntries(Object.entries(row).map(([k,v])=>[k.trim().toLowerCase().replace(/\s+/g,'_'),String(v??'').trim()])));
+  const errors=validateImport(kind,rows);res.json({rows,errors,count:rows.length,valid:!errors.length});
+ }catch(e){sendError(res,400,e.message||'Invalid spreadsheet');}
+});
+app.post('/api/admin/import/confirm',express.json({limit:'12mb'}),authenticate,adminOnly,async(req,res)=>{
+ const kind=String(req.body.kind||''),rows=req.body.rows;
+ let errors;try{errors=validateImport(kind,rows);}catch(e){return sendError(res,400,e.message);}
+ if(errors.length)return sendError(res,400,errors.join('; '));
+ const spec=importSpecs[kind],client=await pool.connect();
+ try{
+  await client.query('BEGIN');let inserted=0,skipped=0;
+  for(const row of rows){
+   const cols=spec.cols.filter(c=>row[c]!==undefined&&row[c]!==null&&String(row[c]).trim()!=='');
+   if(kind==='users'){
+    row.email=cleanEmail(row.email);row.role=String(row.role||'STORE').toUpperCase();row.status='INACTIVE';
+    if(!cols.includes('role'))cols.push('role');if(!cols.includes('status'))cols.push('status');
+   }
+   if(!cols.includes(spec.id)&&spec.id!=='email'){
+    const next=(await client.query(`SELECT COALESCE(MAX(${spec.id}),0)+1 AS id FROM public.${spec.table}`)).rows[0].id;
+    row[spec.id]=next;cols.unshift(spec.id);
+   }
+   const vals=cols.map(c=>row[c]),placeholders=cols.map((_,i)=>'$'+(i+1));
+   const q=`INSERT INTO public.${spec.table}(${cols.join(',')}) VALUES(${placeholders.join(',')}) ON CONFLICT DO NOTHING RETURNING ${spec.id}`;
+   const result=await client.query(q,vals);if(result.rowCount)inserted++;else skipped++;
+  }
+  await client.query('COMMIT');res.json({inserted,skipped,total:rows.length});
+ }catch(e){await client.query('ROLLBACK');databaseError(res,e,'Import rolled back; no rows saved');}finally{client.release();}
+});
 
 const PORT = Number(
     process.env.PORT || 3000
