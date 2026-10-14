@@ -366,6 +366,21 @@ td button { margin:2px; }
         id="historyNavButton"
     >Activity History</button>
 </nav>
+<nav class="tabs adminOnly hidden">
+<button data-page="users" onclick="showPage('users')">Users</button>
+<button data-page="stores" onclick="showPage('stores')">Stores</button>
+<button data-page="import" onclick="showPage('import')">Import</button>
+<button data-page="assignments" onclick="showPage('assignments')">Task Assignment</button>
+<button data-page="submissions" onclick="showPage('submissions')">Submissions</button>
+</nav>
+<nav class="tabs"><button data-page="communication" class="chatOnly hidden" onclick="showPage('communication')">Communication</button><button data-page="tasks" class="storeOnly hidden" onclick="showPage('tasks')">My Tasks</button></nav>
+<section id="page-users" class="page hidden adminOnly"><div class="panel"><h2>User Management</h2><p class="muted">User profiles only. This does not create login credentials or invite stores.</p><input id="userSearch" placeholder="Search users" oninput="renderUsers()"><div class="tablewrap"><table><thead><tr><th>Email</th><th>Name</th><th>Store</th><th>Role</th><th>Status</th><th>Action</th></tr></thead><tbody id="usersBody"></tbody></table></div><h3>Add user profile</h3><form onsubmit="saveUser(event)"><div class="formgrid"><input id="newUserEmail" type="email" placeholder="Email" required><input id="newUserName" placeholder="Full name"><input id="newUserStore" placeholder="Store name"><select id="newUserRole"><option>STORE</option><option>AS</option><option>AOM</option><option>HEAD</option></select></div><button type="submit">Add inactive profile</button></form></div></section>
+<section id="page-stores" class="page hidden adminOnly"><div class="panel"><h2>Store Management</h2><input id="storeSearch" placeholder="Search stores" oninput="renderStores()"><div class="tablewrap"><table><thead><tr><th>ID</th><th>Store</th><th>Email</th><th>Status</th><th>Action</th></tr></thead><tbody id="storesBody"></tbody></table></div><h3>Add store</h3><form onsubmit="saveStore(event)"><div class="row"><input id="newStoreName" placeholder="Store name" required><input id="newStoreEmail" type="email" placeholder="Store email"><button>Add Store</button></div></form></div></section>
+<section id="page-import" class="page hidden adminOnly"><div class="panel"><h2>Excel Import</h2><p class="muted">Choose a spreadsheet with column headers matching database field names. Preview and validate before confirmation. Existing records are not overwritten. Imported users remain INACTIVE and receive no login credentials.</p><div class="row"><select id="importKind"><option value="products">Products</option><option value="suppliers">Suppliers</option><option value="users">Users</option><option value="stores">Stores</option></select><input id="importFile" type="file" accept=".xlsx,.xls"><button onclick="previewImport()">Preview & Validate</button></div><p id="importStatus"></p><div class="tablewrap" id="importPreview"></div><button id="importConfirm" class="green hidden" onclick="confirmImport()">Confirm Import</button></div></section>
+<section id="page-assignments" class="page hidden adminOnly"><div class="panel"><h2>Task Assignment</h2><div class="row"><select id="assignStore"></select><select id="assignSupplier"></select><input id="assignDue" type="date"><button onclick="createAssignment()">Assign Supplier</button></div><div class="tablewrap"><table><thead><tr><th>Store</th><th>Supplier</th><th>Due</th><th>Status</th><th>Last Submitted</th><th>Action</th></tr></thead><tbody id="assignBody"></tbody></table></div></div></section>
+<section id="page-submissions" class="page hidden adminOnly"><div class="panel"><h2>Monitoring Submission Tracking</h2><p>Each assigned supplier is tracked separately for each store. Saving monitoring is not submitting.</p><input id="submissionSearch" placeholder="Search store or supplier" oninput="renderSubmissions()"><div class="tablewrap"><table><thead><tr><th>Store</th><th>Supplier</th><th>Status</th><th>Submitted At</th></tr></thead><tbody id="submissionsBody"></tbody></table></div></div></section>
+<section id="page-tasks" class="page hidden storeOnly"><div class="panel"><h2>My Assigned Tasks</h2><p>Save monitoring records first. Click Submit only when your supplier monitoring is ready.</p><div class="tablewrap"><table><thead><tr><th>Supplier</th><th>Due Date</th><th>Last Submitted</th><th>Action</th></tr></thead><tbody id="tasksBody"></tbody></table></div></div></section>
+<section id="page-communication" class="page hidden chatOnly"><div class="panel"><h2>Communication & Chat History</h2><div class="row"><input id="chatSearch" placeholder="Search stores" oninput="renderChatStores()"><button onclick="loadChatStores()">Refresh</button></div><div class="row" style="align-items:flex-start"><div style="flex:1;min-width:220px;max-height:380px;overflow:auto" id="chatStores"></div><div style="flex:2;min-width:280px"><h3 id="chatTitle">Choose a store</h3><div id="chatMessages" style="height:300px;overflow:auto;background:#f5f8fc;padding:12px;border-radius:8px"></div><textarea id="chatText" placeholder="Write a message (max 5000 characters)" maxlength="5000"></textarea><button onclick="sendChat()">Send Message</button></div></div><div class="adminOnly hidden"><h3>Announcement</h3><p class="muted">Send to all stores or the selected store. Messages are saved in chat history; no email is sent.</p><select id="announcementTarget"><option value="all">All Stores</option><option value="selected">Selected Store</option></select><textarea id="announcementText" maxlength="5000" placeholder="Announcement"></textarea><button onclick="sendAnnouncement()">Send Announcement</button></div></div></section>
 
 <div id="notice" class="message hidden"></div>
 
@@ -957,6 +972,7 @@ td button { margin:2px; }
                 Refresh History
             </button>
 
+            <button onclick="downloadHistoryExcel()">Download Activity Log Excel</button>
             <button
                 class="secondary"
                 onclick="resetHistoryFilters()"
@@ -976,16 +992,12 @@ td button { margin:2px; }
                 id="historyStoreFilterBox"
             >
                 <label>Store</label>
-                <select id="historyStore">
-                    <option value="">All Stores</option>
-                </select>
+                <input id="historyStore" list="historyStoreList" placeholder="All Stores — type to search"><datalist id="historyStoreList"></datalist>
             </div>
 
             <div class="filteritem">
                 <label>Supplier</label>
-                <select id="historySupplier">
-                    <option value="">All Suppliers</option>
-                </select>
+                <input id="historySupplier" list="historySupplierList" placeholder="All Suppliers — type to search"><datalist id="historySupplierList"></datalist>
             </div>
 
             <div class="filteritem">
@@ -1392,6 +1404,7 @@ el('loginForm').addEventListener(
                     ? 'Your store monitoring additions, edits and deletions.'
                     : 'Monitoring changes across all stores. Filter by store, supplier, product, action or date.';
 
+            document.querySelectorAll('.chatOnly').forEach(node=>node.classList.toggle('hidden',!['ADMIN','STORE'].includes(currentUser.role)));
             showPage('dashboard');
 
         } catch (error) {
@@ -1438,7 +1451,7 @@ function logout() {
 function showPage(page) {
     const adminPages = [
         'products',
-        'suppliers'
+        'suppliers','users','stores','import','assignments','submissions'
     ];
 
     if (
@@ -1510,6 +1523,8 @@ function showPage(page) {
     if (page === 'history') {
         initializeHistory();
     }
+    const extra={users:loadUsers,stores:loadStores,assignments:loadAssignments,submissions:loadSubmissions,tasks:loadTasks,communication:loadChatStores};
+    if(extra[page])extra[page]();
 }
 
 // ==========================================
@@ -2343,8 +2358,7 @@ async function loadHistoryFilterOptions() {
 
         const selected = el('historyStore').value;
 
-        el('historyStore').innerHTML =
-            '<option value="">All Stores</option>' +
+        el('historyStoreList').innerHTML =
             stores.map(s => `
                 <option value="${escapeHtml(s.store_name)}">
                     ${escapeHtml(s.store_name)}
@@ -2365,8 +2379,7 @@ async function loadHistoryFilterOptions() {
     const selectedSupplier =
         el('historySupplier').value;
 
-    el('historySupplier').innerHTML =
-        '<option value="">All Suppliers</option>' +
+    el('historySupplierList').innerHTML =
         suppliers.map(s => `
             <option value="${escapeHtml(s.supplier_name)}">
                 ${escapeHtml(s.supplier_name)}
@@ -2756,6 +2769,34 @@ el('historySearch').addEventListener(
         }
     }
 );
+
+let managedUsers=[],managedStores=[],managedAssignments=[],managedTasks=[],chatStores=[],chatStoreId=null,importRows=[];
+const h = escapeHtml;
+function addonError(e){showMessage(e.message||String(e),true);}
+async function loadUsers(){try{managedUsers=await api('/api/admin/users');renderUsers();}catch(e){addonError(e);}}
+function renderUsers(){const q=el('userSearch').value.toLowerCase();el('usersBody').innerHTML=managedUsers.filter(u=>[u.email,u.full_name,u.store_name,u.role].join(' ').toLowerCase().includes(q)).map(u=>`<tr><td>${h(u.email)}</td><td>${h(u.full_name)}</td><td>${h(u.store_name)}</td><td>${h(u.role)}</td><td>${h(u.status)}</td><td>${u.role==='ADMIN'?'Protected':`<button class="small" onclick="editUser('${encodeURIComponent(u.email)}')">Edit</button>`}</td></tr>`).join('');}
+async function saveUser(e){e.preventDefault();try{await api('/api/admin/users',{method:'POST',body:JSON.stringify({email:el('newUserEmail').value,full_name:el('newUserName').value,store_name:el('newUserStore').value,role:el('newUserRole').value})});await loadUsers();showMessage('Inactive profile added; no login account created.');}catch(err){addonError(err);}}
+async function editUser(encoded){const u=managedUsers.find(x=>x.email===decodeURIComponent(encoded));if(!u)return;const full_name=prompt('Full name',u.full_name||'');if(full_name===null)return;const store_name=prompt('Store name',u.store_name||'');if(store_name===null)return;const role=prompt('Role (STORE, AS, AOM, HEAD)',u.role);if(role===null)return;const status=prompt('Status (ACTIVE, INACTIVE)',u.status);if(status===null)return;if(!confirm('Update profile? This will NOT create a login account.'))return;try{await api('/api/admin/users/'+encodeURIComponent(u.email),{method:'PATCH',body:JSON.stringify({full_name,store_name,role,status})});await loadUsers();showMessage('Profile updated.');}catch(e){addonError(e);}}
+async function loadStores(){try{managedStores=await api('/api/admin/stores');renderStores();}catch(e){addonError(e);}}
+function renderStores(){const q=el('storeSearch').value.toLowerCase();el('storesBody').innerHTML=managedStores.filter(s=>[s.store_name,s.store_email,s.store_id].join(' ').toLowerCase().includes(q)).map(s=>`<tr><td>${h(s.store_id)}</td><td>${h(s.store_name)}</td><td>${h(s.store_email)}</td><td>${h(s.status)}</td><td><button class="small" onclick="editStore(${Number(s.store_id)})">Change Status</button></td></tr>`).join('');}
+async function saveStore(e){e.preventDefault();try{await api('/api/admin/stores',{method:'POST',body:JSON.stringify({store_name:el('newStoreName').value,store_email:el('newStoreEmail').value})});await loadStores();showMessage('Store added.');}catch(err){addonError(err);}}
+async function editStore(id){const s=managedStores.find(x=>Number(x.store_id)===id);if(!s)return;const status=prompt('Status (ACTIVE or INACTIVE)',s.status);if(!status)return;try{await api('/api/admin/stores/'+id,{method:'PATCH',body:JSON.stringify({status})});await loadStores();showMessage('Store status updated.');}catch(e){addonError(e);}}
+async function previewImport(){const file=el('importFile').files[0];if(!file)return showMessage('Choose an Excel file first.',true);if(file.size>8*1024*1024)return showMessage('Maximum file size is 8MB.',true);el('importConfirm').classList.add('hidden');importRows=[];try{const b64=await new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(String(r.result).split(',')[1]);r.onerror=reject;r.readAsDataURL(file);});const result=await api('/api/admin/import/preview',{method:'POST',body:JSON.stringify({kind:el('importKind').value,base64:b64})});importRows=result.rows;el('importStatus').textContent=`${result.count} rows. ${result.errors.length} validation errors. ${result.errors.join(' | ')}`;const keys=Object.keys(importRows[0]||{});el('importPreview').innerHTML=`<table><thead><tr>${keys.map(k=>`<th>${h(k)}</th>`).join('')}</tr></thead><tbody>${importRows.slice(0,20).map(row=>`<tr>${keys.map(k=>`<td>${h(row[k])}</td>`).join('')}</tr>`).join('')}</tbody></table><p>Showing first 20 rows of ${result.count}</p>`;if(result.valid)el('importConfirm').classList.remove('hidden');}catch(e){addonError(e);}}
+async function confirmImport(){if(!importRows.length||!confirm(`Import ${importRows.length} rows? Existing records will not be overwritten.`))return;el('importConfirm').disabled=true;try{const result=await api('/api/admin/import/confirm',{method:'POST',body:JSON.stringify({kind:el('importKind').value,rows:importRows})});el('importStatus').textContent=`Completed: ${result.inserted} added; ${result.skipped} already present/skipped.`;el('importConfirm').classList.add('hidden');importRows=[];showMessage('Import completed.');}catch(e){addonError(e);}finally{el('importConfirm').disabled=false;}}
+async function loadAssignments(){try{const [a,s,p]=await Promise.all([api('/api/admin/assignments'),api('/api/admin/stores'),api('/api/admin/suppliers')]);managedAssignments=a;el('assignStore').innerHTML=s.map(x=>`<option value="${Number(x.store_id)}">${h(x.store_name)}</option>`).join('');el('assignSupplier').innerHTML=p.map(x=>`<option value="${Number(x.supplier_id)}">${h(x.supplier_name)}</option>`).join('');renderAssignments();}catch(e){addonError(e);}}
+function renderAssignments(){el('assignBody').innerHTML=managedAssignments.map(a=>`<tr><td>${h(a.store_name)}</td><td>${h(a.supplier_name)}</td><td>${h(dateText(a.due_date))}</td><td>${h(a.status)}</td><td>${h(dateTimeText(a.last_submitted_at)||'Not Submitted')}</td><td><button class="small" onclick="toggleAssignment(${Number(a.assignment_id)},'${a.status==='ACTIVE'?'CANCELLED':'ACTIVE'}')">${a.status==='ACTIVE'?'Cancel':'Reactivate'}</button></td></tr>`).join('');renderSubmissions();}
+async function createAssignment(){try{await api('/api/admin/assignments',{method:'POST',body:JSON.stringify({store_id:el('assignStore').value,supplier_id:el('assignSupplier').value,due_date:el('assignDue').value})});await loadAssignments();showMessage('Task assigned.');}catch(e){addonError(e);}}
+async function toggleAssignment(id,status){if(!confirm(`Change assignment to ${status}?`))return;try{await api('/api/admin/assignments/'+id,{method:'PATCH',body:JSON.stringify({status})});await loadAssignments();}catch(e){addonError(e);}}
+async function loadSubmissions(){try{managedAssignments=await api('/api/admin/assignments');renderSubmissions();}catch(e){addonError(e);}}
+function renderSubmissions(){const q=el('submissionSearch').value.toLowerCase();el('submissionsBody').innerHTML=managedAssignments.filter(a=>a.status==='ACTIVE'&&[a.store_name,a.supplier_name].join(' ').toLowerCase().includes(q)).map(a=>`<tr><td>${h(a.store_name)}</td><td>${h(a.supplier_name)}</td><td><b>${a.last_submitted_at?'Submitted':'Not Submitted'}</b></td><td>${h(dateTimeText(a.last_submitted_at)||'—')}</td></tr>`).join('');}
+async function loadTasks(){try{managedTasks=await api('/api/store/assignments');el('tasksBody').innerHTML=managedTasks.map(t=>`<tr><td>${h(t.supplier_name)}</td><td>${h(dateText(t.due_date))}</td><td>${h(dateTimeText(t.last_submitted_at)||'Not Submitted')}</td><td><button onclick="submitTask(${Number(t.assignment_id)})">Submit Monitoring</button></td></tr>`).join('');}catch(e){addonError(e);}}
+async function submitTask(id){if(!confirm('Submit monitoring for this supplier? Saving and submitting are separate actions.'))return;try{await api('/api/store/assignments/'+id+'/submit',{method:'POST',body:'{}'});await loadTasks();showMessage('Supplier monitoring submitted.');}catch(e){addonError(e);}}
+async function loadChatStores(){try{chatStores=await api('/api/conversations');renderChatStores();if(chatStoreId)await selectChat(chatStoreId);}catch(e){addonError(e);}}
+function renderChatStores(){const q=el('chatSearch').value.toLowerCase();el('chatStores').innerHTML=chatStores.filter(s=>s.store_name.toLowerCase().includes(q)).map(s=>`<button class="secondary" style="display:block;width:100%;margin:4px 0;text-align:left" onclick="selectChat(${Number(s.store_id)})">${h(s.store_name)} ${s.unread_count?'('+Number(s.unread_count)+' unread)':''}</button>`).join('');}
+async function selectChat(id){chatStoreId=id;const s=chatStores.find(x=>Number(x.store_id)===id);el('chatTitle').textContent=s?.store_name||'Conversation';try{const msgs=await api('/api/conversations/'+id+'/messages');el('chatMessages').innerHTML=msgs.map(m=>`<div class="activityitem"><b>${h(m.sender_role)}</b> · ${h(dateTimeText(m.created_at))}<p>${h(m.message_text)}</p></div>`).join('')||'<p>No messages yet.</p>';el('chatMessages').scrollTop=el('chatMessages').scrollHeight;}catch(e){addonError(e);}}
+async function sendChat(){if(!chatStoreId)return showMessage('Choose a store first.',true);try{await api('/api/conversations/'+chatStoreId+'/messages',{method:'POST',body:JSON.stringify({message_text:el('chatText').value})});el('chatText').value='';await selectChat(chatStoreId);}catch(e){addonError(e);}}
+async function sendAnnouncement(){const ids=el('announcementTarget').value==='all'?chatStores.map(s=>s.store_id):[chatStoreId].filter(Boolean);if(!ids.length)return showMessage('Choose a store first.',true);if(!confirm(`Send announcement to ${ids.length} store(s)?`))return;try{const result=await api('/api/admin/announcements',{method:'POST',body:JSON.stringify({store_ids:ids,message_text:el('announcementText').value})});el('announcementText').value='';showMessage(`Announcement sent to ${result.sent} stores.`);if(chatStoreId)await selectChat(chatStoreId);}catch(e){addonError(e);}}
+async function downloadHistoryExcel(){try{const query=buildHistoryQuery(1);const response=await api('/api/history/export?'+query);const blob=await response.blob(),url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='NEMS_Activity_Log.xlsx';document.body.appendChild(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);}catch(e){addonError(e);}}
 
 </script>
 
