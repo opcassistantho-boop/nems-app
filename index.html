@@ -5,10 +5,9 @@
 
 <meta charset="UTF-8">
 
-<meta name="viewport"
-content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-<title>NEMS | Near Expiry Monitoring System</title>
+<title>CARD INDOGROSIR | NEMS</title>
 
 <style>
 
@@ -96,15 +95,13 @@ select {
 
 .grid {
     display: grid;
-    grid-template-columns:
-        repeat(auto-fit, minmax(200px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
     gap: 15px;
 }
 
 .stats {
     display: grid;
-    grid-template-columns:
-        repeat(4, minmax(120px, 1fr));
+    grid-template-columns: repeat(4, minmax(120px, 1fr));
     gap: 12px;
     margin-bottom: 20px;
 }
@@ -234,8 +231,7 @@ th {
 @media(max-width:700px) {
 
     .stats {
-        grid-template-columns:
-            repeat(2, 1fr);
+        grid-template-columns: repeat(2, 1fr);
     }
 
     header strong {
@@ -252,7 +248,7 @@ th {
 <header>
 
     <strong>
-        CARD INDO GROSIR · NEMS
+        CARD INDOGROSIR · NEMS
     </strong>
 
     <div>
@@ -330,52 +326,24 @@ th {
 
 <div class="stats">
 
-    <button
-        class="stat red"
-        data-filter="RED">
-
+    <button class="stat red" data-filter="RED">
         <b id="count-red">0</b>
-
-        <small>
-            RED · Within 30 Days
-        </small>
-
+        <small>RED · Within 30 Days</small>
     </button>
 
-    <button
-        class="stat blue"
-        data-filter="BLUE">
-
+    <button class="stat blue" data-filter="BLUE">
         <b id="count-blue">0</b>
-
-        <small>
-            BLUE · 31–60 Days
-        </small>
-
+        <small>BLUE · 31–60 Days</small>
     </button>
 
-    <button
-        class="stat green"
-        data-filter="GREEN">
-
+    <button class="stat green" data-filter="GREEN">
         <b id="count-green">0</b>
-
-        <small>
-            GREEN · 61–90 Days
-        </small>
-
+        <small>GREEN · 61–90 Days</small>
     </button>
 
-    <button
-        class="stat dark"
-        data-filter="EXPIRED">
-
+    <button class="stat dark" data-filter="EXPIRED">
         <b id="count-expired">0</b>
-
-        <small>
-            EXPIRED PRODUCTS
-        </small>
-
+        <small>EXPIRED PRODUCTS</small>
     </button>
 
 </div>
@@ -441,9 +409,7 @@ th {
         <table>
 
             <thead>
-
                 <tr>
-
                     <th>Category</th>
                     <th>Store</th>
                     <th>Supplier</th>
@@ -451,37 +417,28 @@ th {
                     <th>Expiration</th>
                     <th>Qty (pcs)</th>
                     <th>Last Edited</th>
-
                 </tr>
-
             </thead>
 
             <tbody id="records">
-
                 <tr>
                     <td colspan="7">
                         No records loaded.
                     </td>
                 </tr>
-
             </tbody>
 
         </table>
 
     </div>
 
-    <p
-        id="records-count"
-        class="muted">
-    </p>
+    <p id="records-count" class="muted"></p>
 
 </div>
 
 <!-- STORE MONITORING ENTRY -->
 
-<div
-    id="entry-card"
-    class="card hidden">
+<div id="entry-card" class="card hidden">
 
     <h2>
         Store · Near Expiry Encoding
@@ -499,78 +456,49 @@ th {
     <div class="grid">
 
         <div>
-
-            <label>
-                Select Supplier
-            </label>
-
+            <label>Select Supplier</label>
             <select id="supplier">
-
                 <option value="">
                     Choose Supplier
                 </option>
-
             </select>
-
         </div>
 
         <div>
-
-            <label>
-                Search Product
-            </label>
-
+            <label>Search Product</label>
             <input
                 id="product-search"
                 placeholder="SKU, Product Name or Barcode">
-
         </div>
 
     </div>
 
     <br>
 
-    <label>
-        Select Product
-    </label>
+    <label>Select Product</label>
 
     <select id="product">
-
         <option value="">
             Choose Product
         </option>
-
     </select>
 
-    <p
-        id="product-info"
-        class="muted">
-    </p>
+    <p id="product-info" class="muted"></p>
 
     <div class="grid">
 
         <div>
-
-            <label>
-                Store Barcode
-            </label>
-
+            <label>Store Barcode</label>
             <input id="barcode">
-
         </div>
 
         <div>
-
-            <label>
-                Store Retail Price
-            </label>
-
+            <label>Store Retail Price</label>
             <input
                 id="srp"
                 type="number"
                 min="0"
                 step="0.01">
-
         </div>
 
     </div>
@@ -582,81 +510,45 @@ th {
     <div class="grid">
 
         <div>
-
-            <label>
-                Expiration Date 1
-            </label>
-
-            <input
-                type="date"
-                id="exp1">
-
+            <label>Expiration Date 1</label>
+            <input type="date" id="exp1">
         </div>
 
         <div>
-
-            <label>
-                Quantity 1 (Pieces)
-            </label>
-
+            <label>Quantity 1 (Pieces)</label>
             <input
                 type="number"
                 min="0"
                 max="500"
                 id="qty1">
-
         </div>
 
         <div>
-
-            <label>
-                Expiration Date 2
-            </label>
-
-            <input
-                type="date"
-                id="exp2">
-
+            <label>Expiration Date 2</label>
+            <input type="date" id="exp2">
         </div>
 
         <div>
-
-            <label>
-                Quantity 2 (Pieces)
-            </label>
-
+            <label>Quantity 2 (Pieces)</label>
             <input
                 type="number"
                 min="0"
                 max="500"
                 id="qty2">
-
         </div>
 
         <div>
-
-            <label>
-                Expiration Date 3
-            </label>
-
-            <input
-                type="date"
-                id="exp3">
-
+            <label>Expiration Date 3</label>
+            <input type="date" id="exp3">
         </div>
 
         <div>
-
-            <label>
-                Quantity 3 (Pieces)
-            </label>
-
+            <label>Quantity 3 (Pieces)</label>
             <input
                 type="number"
                 min="0"
                 max="500"
                 id="qty3">
-
         </div>
 
     </div>
@@ -667,10 +559,7 @@ th {
         SAVE MONITORING
     </button>
 
-    <p
-        id="save-msg"
-        class="message">
-    </p>
+    <p id="save-msg" class="message"></p>
 
 </div>
 
@@ -708,13 +597,10 @@ let allRecords = [];
 let shownProducts = [];
 
 const $ = id => document.getElementById(id);
-
 const val = id => $(id).value;
 
 const fmtDate = date => {
-    return date
-        ? String(date).slice(0, 10)
-        : '';
+    return date ? String(date).slice(0, 10) : '';
 };
 
 function msg(id, text, good = false) {
@@ -726,9 +612,7 @@ function msg(id, text, good = false) {
         (good ? 'success' : 'danger');
 }
 
-// ======================================
 // API REQUESTS
-// ======================================
 
 async function api(url, options = {}) {
 
@@ -737,22 +621,16 @@ async function api(url, options = {}) {
     };
 
     if (token) {
-        headers.Authorization =
-            'Bearer ' + token;
+        headers.Authorization = 'Bearer ' + token;
     }
 
-    const response = await fetch(
-        url,
-        {
-            ...options,
-            headers
-        }
-    );
+    const response = await fetch(url, {
+        ...options,
+        headers
+    });
 
     if (response.status === 401) {
-
         logout();
-
         throw Error(
             'Session expired. Please sign in again.'
         );
@@ -762,7 +640,6 @@ async function api(url, options = {}) {
         .catch(() => ({}));
 
     if (!response.ok) {
-
         throw Error(
             data.error || 'Request failed'
         );
@@ -771,9 +648,7 @@ async function api(url, options = {}) {
     return data;
 }
 
-// ======================================
 // LOGOUT
-// ======================================
 
 function logout() {
 
@@ -781,49 +656,38 @@ function logout() {
     user = null;
 
     $('app').classList.add('hidden');
-
     $('login-card').classList.remove('hidden');
-
     $('logout').classList.add('hidden');
 
     $('who').textContent = 'Not signed in';
-
     $('password').value = '';
 }
 
 $('logout').onclick = logout;
 
-// ======================================
 // LOGIN
-// ======================================
 
 $('login-form').onsubmit = async event => {
 
     event.preventDefault();
 
-    msg(
-        'login-msg',
-        'Signing in...'
-    );
+    msg('login-msg', 'Signing in...');
 
     try {
 
-        const result = await api(
-            '/api/login',
-            {
-                method: 'POST',
+        const result = await api('/api/login', {
 
-                headers: {
-                    'Content-Type':
-                        'application/json'
-                },
+            method: 'POST',
 
-                body: JSON.stringify({
-                    email: val('email'),
-                    password: val('password')
-                })
-            }
-        );
+            headers: {
+                'Content-Type': 'application/json'
+            },
+
+            body: JSON.stringify({
+                email: val('email'),
+                password: val('password')
+            })
+        });
 
         token = result.token;
         user = result.user;
@@ -832,16 +696,12 @@ $('login-form').onsubmit = async event => {
             `${user.email} (${user.role})`;
 
         $('login-card').classList.add('hidden');
-
         $('app').classList.remove('hidden');
-
         $('logout').classList.remove('hidden');
 
         if (user.role === 'STORE') {
 
-            $('entry-card').classList.remove(
-                'hidden'
-            );
+            $('entry-card').classList.remove('hidden');
 
             $('store-label').textContent =
                 'Store: ' + user.store_name;
@@ -850,96 +710,70 @@ $('login-form').onsubmit = async event => {
 
         } else {
 
-            $('entry-card').classList.add(
-                'hidden'
-            );
+            $('entry-card').classList.add('hidden');
         }
 
         await refresh();
 
     } catch (error) {
 
-        msg(
-            'login-msg',
-            error.message
-        );
+        msg('login-msg', error.message);
     }
 };
 
-// ======================================
 // REFRESH DASHBOARD
-// ======================================
 
 async function refresh() {
 
     try {
 
         const [counts, rows] = await Promise.all([
-
             api('/api/dashboard'),
-
             api('/api/monitoring')
-
         ]);
 
-        for (
-            const key of [
-                'red',
-                'blue',
-                'green',
-                'expired'
-            ]
-        ) {
+        for (const key of [
+            'red',
+            'blue',
+            'green',
+            'expired'
+        ]) {
 
             $('count-' + key).textContent =
                 counts[key.toUpperCase()] || 0;
         }
 
         allRecords = rows;
-
         render();
 
     } catch (error) {
-
         alert(error.message);
     }
 }
 
 $('refresh').onclick = refresh;
 
-// ======================================
 // DASHBOARD CATEGORY BUTTONS
-// ======================================
 
-for (
-    const button of document.querySelectorAll(
-        '[data-filter]'
-    )
-) {
+for (const button of document.querySelectorAll(
+    '[data-filter]'
+)) {
 
     button.onclick = () => {
-
-        $('category').value =
-            button.dataset.filter;
-
+        $('category').value = button.dataset.filter;
         render();
     };
 }
 
 $('category').onchange = render;
-
 $('filter-text').oninput = render;
 
-// ======================================
 // DISPLAY MONITORING RECORDS
-// ======================================
 
 function render() {
 
     const category = val('category');
-
-    const search = val('filter-text')
-        .toLowerCase();
+    const search = val('filter-text').toLowerCase();
 
     const rows = allRecords.filter(record => {
 
@@ -964,19 +798,15 @@ function render() {
     });
 
     const body = $('records');
-
     body.replaceChildren();
 
     if (!rows.length) {
 
         const tr = body.insertRow();
-
         const td = tr.insertCell();
 
         td.colSpan = 7;
-
-        td.textContent =
-            'No matching records.';
+        td.textContent = 'No matching records.';
     }
 
     for (const record of rows) {
@@ -984,21 +814,13 @@ function render() {
         const tr = body.insertRow();
 
         const values = [
-
             record.category,
-
             record.store_name,
-
             record.supplier,
-
             `${record.sku} — ${record.product_name}`,
-
             fmtDate(record.expiration_date),
-
             record.quantity,
-
             record.updated_by || ''
-
         ];
 
         values.forEach((value, index) => {
@@ -1007,20 +829,17 @@ function render() {
 
             if (index === 0) {
 
-                const badge =
-                    document.createElement('span');
+                const badge = document.createElement('span');
 
                 badge.className =
                     'pill ' + record.category;
 
                 badge.textContent = value;
-
                 td.append(badge);
 
             } else {
 
-                td.textContent =
-                    value ?? '';
+                td.textContent = value ?? '';
             }
         });
     }
@@ -1029,21 +848,14 @@ function render() {
         `Showing ${rows.length} records`;
 }
 
-// ======================================
 // LOAD SUPPLIERS
-// ======================================
 
 async function loadSuppliers() {
 
-    const suppliers = await api(
-        '/api/suppliers'
-    );
+    const suppliers = await api('/api/suppliers');
 
     $('supplier').replaceChildren(
-        new Option(
-            'Choose Supplier',
-            ''
-        )
+        new Option('Choose Supplier', '')
     );
 
     for (const supplier of suppliers) {
@@ -1057,9 +869,7 @@ async function loadSuppliers() {
     }
 }
 
-// ======================================
 // PRODUCT SEARCH
-// ======================================
 
 let searchTimer;
 
@@ -1069,16 +879,12 @@ $('product-search').oninput = () => {
 
     clearTimeout(searchTimer);
 
-    searchTimer = setTimeout(
-        loadProducts,
-        250
-    );
+    searchTimer = setTimeout(loadProducts, 250);
 };
 
 async function loadProducts() {
 
     const supplier = val('supplier');
-
     const search = val('product-search');
 
     if (!supplier && !search) {
@@ -1086,10 +892,7 @@ async function loadProducts() {
         shownProducts = [];
 
         $('product').replaceChildren(
-            new Option(
-                'Choose Product',
-                ''
-            )
+            new Option('Choose Product', '')
         );
 
         return;
@@ -1107,10 +910,7 @@ async function loadProducts() {
         );
 
         $('product').replaceChildren(
-            new Option(
-                'Choose Product',
-                ''
-            )
+            new Option('Choose Product', '')
         );
 
         for (const product of shownProducts) {
@@ -1122,10 +922,7 @@ async function loadProducts() {
                 `ID ${product.product_id}`;
 
             $('product').add(
-                new Option(
-                    label,
-                    product.product_id
-                )
+                new Option(label, product.product_id)
             );
         }
 
@@ -1135,24 +932,17 @@ async function loadProducts() {
                 : '';
 
     } catch (error) {
-
-        msg(
-            'save-msg',
-            error.message
-        );
+        msg('save-msg', error.message);
     }
 }
 
-// ======================================
 // PRODUCT INFORMATION
-// ======================================
 
 $('product').onchange = () => {
 
     const product = shownProducts.find(
         product =>
-            String(product.product_id) ===
-            val('product')
+            String(product.product_id) === val('product')
     );
 
     $('product-info').textContent = product
@@ -1162,9 +952,7 @@ $('product').onchange = () => {
         : '';
 };
 
-// ======================================
 // SAVE MONITORING
-// ======================================
 
 $('save').onclick = async () => {
 
@@ -1177,41 +965,29 @@ $('save').onclick = async () => {
     }
 
     const body = {
-
-        product_id: Number(
-            val('product')
-        ),
-
+        product_id: Number(val('product')),
         store_barcode: val('barcode'),
-
         srp: val('srp')
-
     };
 
     for (let i = 1; i <= 3; i++) {
 
-        body['exp' + i] =
-            val('exp' + i);
-
-        body['qty' + i] =
-            val('qty' + i);
+        body['exp' + i] = val('exp' + i);
+        body['qty' + i] = val('qty' + i);
     }
 
     try {
 
-        await api(
-            '/api/store/monitoring',
-            {
-                method: 'POST',
+        await api('/api/store/monitoring', {
 
-                headers: {
-                    'Content-Type':
-                        'application/json'
-                },
+            method: 'POST',
 
-                body: JSON.stringify(body)
-            }
-        );
+            headers: {
+                'Content-Type': 'application/json'
+            },
+
+            body: JSON.stringify(body)
+        });
 
         msg(
             'save-msg',
@@ -1222,17 +998,11 @@ $('save').onclick = async () => {
         await refresh();
 
     } catch (error) {
-
-        msg(
-            'save-msg',
-            error.message
-        );
+        msg('save-msg', error.message);
     }
 };
 
-// ======================================
 // EXCEL EXPORT
-// ======================================
 
 $('export').onclick = async () => {
 
@@ -1242,8 +1012,7 @@ $('export').onclick = async () => {
             '/api/export/monitoring',
             {
                 headers: {
-                    Authorization:
-                        'Bearer ' + token
+                    Authorization: 'Bearer ' + token
                 }
             }
         );
@@ -1258,16 +1027,12 @@ $('export').onclick = async () => {
         }
 
         const blob = await response.blob();
-
         const url = URL.createObjectURL(blob);
 
-        const link =
-            document.createElement('a');
+        const link = document.createElement('a');
 
         link.href = url;
-
-        link.download =
-            'NEMS_Monitoring.xlsx';
+        link.download = 'NEMS_Monitoring.xlsx';
 
         link.click();
 
@@ -1277,7 +1042,6 @@ $('export').onclick = async () => {
         );
 
     } catch (error) {
-
         alert(error.message);
     }
 };
