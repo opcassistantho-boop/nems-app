@@ -1,1194 +1,907 @@
+
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-<title>CARD INDOGROSIR | NEMS</title>
-
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CARD INDOGROSIR · NEMS</title>
 <style>
-* {
-    box-sizing: border-box;
-}
-
-body {
-    margin: 0;
-    background: #f1f5f9;
-    color: #1c2d45;
-    font-family: Arial, sans-serif;
-}
-
-header {
-    background: #103568;
-    color: white;
-    padding: 18px 5%;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 12px;
-}
-
-header strong {
-    font-size: 21px;
-}
-
-main {
-    max-width: 1200px;
-    margin: 28px auto;
-    padding: 0 18px;
-}
-
-.card {
-    background: white;
-    padding: 22px;
-    border-radius: 12px;
-    box-shadow: 0 3px 12px #0f172a12;
-    margin-bottom: 20px;
-}
-
-.hidden {
-    display: none !important;
-}
-
-h2 {
-    margin: 0 0 14px;
-}
-
-button {
-    background: #174d94;
-    color: white;
-    border: none;
-    border-radius: 8px;
-    padding: 11px 16px;
-    cursor: pointer;
-    font-weight: bold;
-}
-
-button:hover {
-    filter: brightness(0.92);
-}
-
-button:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-}
-
-.secondary {
-    background: #64748b;
-}
-
-label {
-    display: block;
-    font-weight: bold;
-    font-size: 13px;
-    margin-bottom: 6px;
-}
-
-input,
-select {
-    width: 100%;
-    padding: 10px;
-    border: 1px solid #cbd5e1;
-    border-radius: 7px;
-    background: white;
-    font-size: 14px;
-}
-
-.grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 15px;
-}
-
-.stats {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(120px, 1fr));
-    gap: 12px;
-    margin-bottom: 20px;
-}
-
-.stat {
-    color: white;
-    text-align: left;
-    padding: 20px;
-    border-radius: 12px;
-    cursor: pointer;
-}
-
-.stat b {
-    font-size: 32px;
-    display: block;
-}
-
-.stat small {
-    font-size: 13px;
-}
-
-.red {
-    background: #bb3038;
-}
-
-.blue {
-    background: #2360bb;
-}
-
-.green {
-    background: #178653;
-}
-
-.dark {
-    background: #424b5e;
-}
-
-.toolbar {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
-    align-items: center;
-    margin-bottom: 15px;
-}
-
-.toolbar > * {
-    flex: 1;
-    min-width: 130px;
-}
-
-.tablewrap {
-    overflow: auto;
-    max-height: 530px;
-}
-
-table {
-    border-collapse: collapse;
-    width: 100%;
-    font-size: 13px;
-}
-
-td,
-th {
-    padding: 11px;
-    border-bottom: 1px solid #e2e8f0;
-    text-align: left;
-}
-
-th {
-    position: sticky;
-    top: 0;
-    background: #edf2f9;
-}
-
-#login-card {
-    max-width: 440px;
-    margin: 80px auto;
-}
-
-.muted {
-    color: #64748b;
-    font-size: 13px;
-}
-
-.message {
-    font-weight: bold;
-    font-size: 13px;
-    margin-top: 12px;
-    overflow-wrap: anywhere;
-}
-
-.danger {
-    color: #b91c1c;
-}
-
-.success {
-    color: #167746;
-}
-
-.pill {
-    padding: 3px 8px;
-    border-radius: 20px;
-    color: white;
-    font-weight: bold;
-    font-size: 11px;
-}
-
-.pill.RED {
-    background: #bb3038;
-}
-
-.pill.BLUE {
-    background: #2360bb;
-}
-
-.pill.GREEN {
-    background: #178653;
-}
-
-.pill.EXPIRED {
-    background: #424b5e;
-}
-
-.pill.LATER {
-    background: #94a3b8;
-}
-
-@media (max-width: 700px) {
-    .stats {
-        grid-template-columns: repeat(2, 1fr);
-    }
-
-    header strong {
-        font-size: 15px;
-    }
-}
+:root{--navy:#123464;--blue:#20569b;--bg:#f0f4f8;--border:#d7e0eb;--text:#142b47}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:14px Arial,sans-serif}
+header{background:var(--navy);color:white;padding:17px max(20px,5%);display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+header h1{font-size:20px;margin:0}
+header small{font-size:13px}
+button{border:0;background:var(--blue);color:white;padding:11px 17px;border-radius:7px;cursor:pointer;font-weight:bold}
+button:hover{filter:brightness(1.1)}
+button:disabled{opacity:.5;cursor:not-allowed}
+button.secondary{background:#66778e}
+button.danger{background:#b52e3c}
+button.green{background:#138258}
+button.small{padding:7px 11px;font-size:12px}
+input,select,textarea{width:100%;border:1px solid #c9d5e2;border-radius:6px;padding:11px;font:inherit;background:white;color:var(--text)}
+textarea{min-height:76px}
+label{display:block;font-weight:bold;font-size:12px;margin-bottom:6px}
+main{max-width:1200px;margin:25px auto;padding:0 16px}
+.panel{background:white;border-radius:11px;padding:20px;margin-bottom:18px;box-shadow:0 3px 12px #16345810}
+.panel h2{margin:0 0 18px;font-size:21px}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.row>*{flex:1}
+.row button{flex:0 0 auto}
+.tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px}
+.tabs button{background:#e2e9f2;color:var(--navy)}
+.tabs button.active{background:var(--navy);color:white}
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:11px;margin-bottom:18px}
+.metric{color:white;padding:20px;border-radius:10px}
+.metric strong{display:block;font-size:30px}
+.metric small{font-weight:bold}
+.red{background:#b72c39}.blue{background:#2760b5}.greenbg{background:#158353}.gray{background:#424e64}
+.tablewrap{overflow:auto;width:100%}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{text-align:left;padding:11px 9px;border-bottom:1px solid #e1e8f0;vertical-align:top}
+th{background:#eaf0f7;white-space:nowrap}
+td button{margin:2px}
+.muted{color:#62738a;font-size:12px}
+.hidden{display:none!important}
+.formgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.formgrid .wide{grid-column:1/-1}
+.formactions{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}
+.message{padding:12px;border-radius:7px;margin-bottom:15px;background:#e8f1fc;color:#163e70}
+.message.error{background:#ffe8e8;color:#a1192c}
+#loginPanel{max-width:420px;margin:75px auto}
+#loginPanel input{margin-bottom:13px}
+#loginPanel button{width:100%}
+#loginPanel h2{text-align:center}
+.countline{margin-top:12px}
+@media(max-width:800px){.grid{grid-template-columns:repeat(2,1fr)}.formgrid{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:500px){.grid,.formgrid{grid-template-columns:1fr}header h1{font-size:17px}.panel{padding:14px}}
 </style>
 </head>
-
 <body>
 
 <header>
-    <strong>CARD INDOGROSIR · NEMS</strong>
-
-    <div>
-        <span id="who">Not signed in</span>
-
-        <button
-            id="logout"
-            class="secondary hidden"
-            type="button">
-            Log out
-        </button>
-    </div>
+<h1>CARD INDOGROSIR · NEMS</h1>
+<div class="row" style="flex:0 1 auto">
+<small id="accountLabel"></small>
+<button id="logoutBtn" class="secondary small hidden" onclick="logout()">Log out</button>
+</div>
 </header>
 
 <main>
 
-<!-- LOGIN -->
-
-<section id="login-card" class="card">
-
-    <h2>System Login</h2>
-
-    <p class="muted">
-        Near Expiry Monitoring System
-    </p>
-
-    <form id="login-form">
-
-        <label for="email">
-            Official Email
-        </label>
-
-        <input
-            id="email"
-            type="email"
-            required
-            autocomplete="username">
-
-        <br><br>
-
-        <label for="password">
-            Password
-        </label>
-
-        <input
-            id="password"
-            type="password"
-            required
-            autocomplete="current-password">
-
-        <br><br>
-
-        <button id="login-button" type="submit">
-            SIGN IN
-        </button>
-
-        <p
-            id="login-msg"
-            class="message danger"
-            role="alert">
-        </p>
-
-    </form>
-
+<section id="loginPanel" class="panel">
+<h2>NEMS Login</h2>
+<div id="loginMessage" class="message hidden"></div>
+<form id="loginForm">
+<label>Email Address</label>
+<input id="loginEmail" type="email" autocomplete="username" required>
+<label>Password</label>
+<input id="loginPassword" type="password" autocomplete="current-password" required>
+<button type="submit" id="loginBtn">Log in</button>
+</form>
 </section>
 
-<!-- MAIN APPLICATION -->
+<div id="application" class="hidden">
+<nav id="navigation" class="tabs">
+<button data-page="dashboard" onclick="showPage('dashboard')">Dashboard</button>
+<button data-page="monitoring" onclick="showPage('monitoring')">Monitoring</button>
+<button data-page="products" class="adminOnly hidden" onclick="showPage('products')">Products</button>
+<button data-page="suppliers" class="adminOnly hidden" onclick="showPage('suppliers')">Suppliers</button>
+<button data-page="storeentry" class="storeOnly hidden" onclick="showPage('storeentry')">Store Encoding</button>
+</nav>
 
-<section id="app" class="hidden">
+<div id="notice" class="message hidden"></div>
 
-<!-- DASHBOARD -->
-
-<div class="stats">
-
-    <button
-        class="stat red"
-        data-filter="RED"
-        type="button">
-        <b id="count-red">0</b>
-        <small>RED · Within 30 Days</small>
-    </button>
-
-    <button
-        class="stat blue"
-        data-filter="BLUE"
-        type="button">
-        <b id="count-blue">0</b>
-        <small>BLUE · 31–60 Days</small>
-    </button>
-
-    <button
-        class="stat green"
-        data-filter="GREEN"
-        type="button">
-        <b id="count-green">0</b>
-        <small>GREEN · 61–90 Days</small>
-    </button>
-
-    <button
-        class="stat dark"
-        data-filter="EXPIRED"
-        type="button">
-        <b id="count-expired">0</b>
-        <small>EXPIRED PRODUCTS</small>
-    </button>
-
+<section id="page-dashboard" class="page">
+<div class="grid">
+<div class="metric red"><strong id="countRed">0</strong><small>RED · Within 30 Days</small></div>
+<div class="metric blue"><strong id="countBlue">0</strong><small>BLUE · 31–60 Days</small></div>
+<div class="metric greenbg"><strong id="countGreen">0</strong><small>GREEN · 61–90 Days</small></div>
+<div class="metric gray"><strong id="countExpired">0</strong><small>EXPIRED PRODUCTS</small></div>
 </div>
-
-<!-- MONITORING TABLE -->
-
-<div class="card">
-
-    <div class="toolbar">
-
-        <h2 style="flex:3">
-            Monitoring Records
-        </h2>
-
-        <button id="refresh" type="button">
-            Refresh
-        </button>
-
-        <button id="export" type="button">
-            Download Excel
-        </button>
-
-    </div>
-
-    <div class="toolbar">
-
-        <select id="category">
-
-            <option value="">
-                All Categories
-            </option>
-
-            <option value="RED">
-                Red · 0–30 Days
-            </option>
-
-            <option value="BLUE">
-                Blue · 31–60 Days
-            </option>
-
-            <option value="GREEN">
-                Green · 61–90 Days
-            </option>
-
-            <option value="EXPIRED">
-                Expired
-            </option>
-
-            <option value="LATER">
-                Over 90 Days
-            </option>
-
-        </select>
-
-        <input
-            id="filter-text"
-            placeholder="Search store, SKU, product or supplier">
-
-    </div>
-
-    <div class="tablewrap">
-
-        <table>
-
-            <thead>
-                <tr>
-                    <th>Category</th>
-                    <th>Store</th>
-                    <th>Supplier</th>
-                    <th>SKU / Product</th>
-                    <th>Expiration</th>
-                    <th>Qty (pcs)</th>
-                    <th>Last Edited</th>
-                </tr>
-            </thead>
-
-            <tbody id="records">
-                <tr>
-                    <td colspan="7">
-                        No records loaded.
-                    </td>
-                </tr>
-            </tbody>
-
-        </table>
-
-    </div>
-
-    <p id="records-count" class="muted"></p>
-
+<div class="panel">
+<h2>Near Expiry Dashboard</h2>
+<p>Monitoring records are categorized by expiration date. Products beyond 90 days are tracked separately.</p>
+<div class="row">
+<button onclick="refreshDashboard()">Refresh Dashboard</button>
+<button class="secondary" onclick="showPage('monitoring')">View Monitoring Records</button>
 </div>
-
-<!-- STORE MONITORING ENTRY -->
-
-<div id="entry-card" class="card hidden">
-
-    <h2>
-        Store · Near Expiry Encoding
-    </h2>
-
-    <p class="muted">
-        IMPORTANT: Enter quantities in individual
-        pieces, not cases or boxes.
-        Products with the same SKU may have
-        different packaging.
-    </p>
-
-    <p id="store-label"></p>
-
-    <div class="grid">
-
-        <div>
-            <label for="supplier">
-                Select Supplier
-            </label>
-
-            <select id="supplier">
-                <option value="">
-                    Choose Supplier
-                </option>
-            </select>
-        </div>
-
-        <div>
-            <label for="product-search">
-                Search Product
-            </label>
-
-            <input
-                id="product-search"
-                placeholder="SKU, Product Name or Barcode">
-        </div>
-
-    </div>
-
-    <br>
-
-    <label for="product">
-        Select Product
-    </label>
-
-    <select id="product">
-        <option value="">
-            Choose Product
-        </option>
-    </select>
-
-    <p id="product-info" class="muted"></p>
-
-    <div class="grid">
-
-        <div>
-            <label for="barcode">
-                Store Barcode
-            </label>
-
-            <input id="barcode">
-        </div>
-
-        <div>
-            <label for="srp">
-                Store Retail Price
-            </label>
-
-            <input
-                id="srp"
-                type="number"
-                min="0"
-                step="0.01">
-        </div>
-
-    </div>
-
-    <br>
-
-    <div class="grid">
-
-        <div>
-            <label for="exp1">
-                Expiration Date 1
-            </label>
-            <input type="date" id="exp1">
-        </div>
-
-        <div>
-            <label for="qty1">
-                Quantity 1 (Pieces)
-            </label>
-            <input
-                type="number"
-                min="0"
-                max="500"
-                id="qty1">
-        </div>
-
-        <div>
-            <label for="exp2">
-                Expiration Date 2
-            </label>
-            <input type="date" id="exp2">
-        </div>
-
-        <div>
-            <label for="qty2">
-                Quantity 2 (Pieces)
-            </label>
-            <input
-                type="number"
-                min="0"
-                max="500"
-                id="qty2">
-        </div>
-
-        <div>
-            <label for="exp3">
-                Expiration Date 3
-            </label>
-            <input type="date" id="exp3">
-        </div>
-
-        <div>
-            <label for="qty3">
-                Quantity 3 (Pieces)
-            </label>
-            <input
-                type="number"
-                min="0"
-                max="500"
-                id="qty3">
-        </div>
-
-    </div>
-
-    <br>
-
-    <button id="save" type="button">
-        SAVE MONITORING
-    </button>
-
-    <p
-        id="save-msg"
-        class="message"
-        role="status">
-    </p>
-
 </div>
-
-<!-- FUTURE FEATURES -->
-
-<div class="card">
-
-    <h2>
-        Additional NEMS Features
-    </h2>
-
-    <p class="muted">
-        Consolidation Management,
-        AS Assignments,
-        Admin Product Management,
-        Supplier Reminders,
-        Activity History,
-        and Consolidation Excel Export
-        will be added in the next development phase.
-    </p>
-
+<div class="panel adminOnly hidden">
+<h2>ADMIN Management</h2>
+<p>Manage the existing product and supplier masterlists without deleting or reimporting them.</p>
+<div class="row">
+<button onclick="showPage('products')">Manage Products</button>
+<button onclick="showPage('suppliers')">Manage Suppliers</button>
 </div>
-
+<p class="muted">User Management, Store Management, Consolidation and Activity Log will be developed in later stages.</p>
+</div>
 </section>
 
+<section id="page-monitoring" class="page hidden">
+<div class="panel">
+<div class="row">
+<h2>Monitoring Records</h2>
+<button onclick="loadMonitoring()">Refresh</button>
+<button onclick="downloadMonitoring()">Download Excel</button>
+</div>
+<div class="row" style="margin-bottom:14px">
+<select id="monitorCategory" onchange="renderMonitoring()">
+<option value="">All Categories</option>
+<option>EXPIRED</option><option>RED</option><option>BLUE</option><option>GREEN</option><option>LATER</option>
+</select>
+<input id="monitorSearch" placeholder="Search store, SKU, product or supplier" oninput="renderMonitoring()">
+</div>
+<div class="tablewrap">
+<table>
+<thead><tr><th>Category</th><th>Store</th><th>Supplier</th><th>SKU / Product</th><th>Expiration</th><th>Qty (pcs)</th><th>Last Edited</th></tr></thead>
+<tbody id="monitorBody"></tbody>
+</table>
+</div>
+<p id="monitorCount" class="muted countline"></p>
+</div>
+</section>
+
+<section id="page-suppliers" class="page hidden adminOnly">
+<div class="panel">
+<div class="row">
+<h2>Supplier Management</h2>
+<button class="green" onclick="newSupplier()">+ Add Supplier</button>
+</div>
+<div class="row">
+<input id="supplierSearch" placeholder="Search suppliers" oninput="renderSuppliers()">
+<select id="supplierFilter" onchange="renderSuppliers()">
+<option value="">All Statuses</option>
+<option>ACTIVE</option><option>INACTIVE</option>
+</select>
+<button onclick="loadAdminSuppliers()">Refresh</button>
+</div>
+<p id="supplierCount" class="muted"></p>
+<div class="tablewrap">
+<table>
+<thead><tr><th>ID</th><th>Supplier Name</th><th>Status</th><th>Actions</th></tr></thead>
+<tbody id="supplierBody"></tbody>
+</table>
+</div>
+</div>
+<div id="supplierEditor" class="panel hidden">
+<h2 id="supplierEditorTitle">Add Supplier</h2>
+<form id="supplierForm">
+<input type="hidden" id="supplierId">
+<div class="formgrid">
+<div>
+<label>Supplier Name *</label>
+<input id="supplierName" maxlength="255" required>
+</div>
+<div>
+<label>Status</label>
+<select id="supplierStatus">
+<option>ACTIVE</option><option>INACTIVE</option>
+</select>
+</div>
+</div>
+<div class="formactions">
+<button type="submit" id="supplierSaveBtn">Save Supplier</button>
+<button type="button" class="secondary" onclick="closeSupplierEditor()">Cancel</button>
+</div>
+</form>
+</div>
+</section>
+
+<section id="page-products" class="page hidden adminOnly">
+<div class="panel">
+<div class="row">
+<h2>Product Management</h2>
+<button class="green" onclick="newProduct()">+ Add Product</button>
+</div>
+<div class="row">
+<input id="productSearch" placeholder="Search SKU, product, supplier or barcode" oninput="renderProducts()">
+<select id="productFilter" onchange="renderProducts()">
+<option value="">All Statuses</option>
+<option>ACTIVE</option><option>INACTIVE</option>
+</select>
+<button onclick="loadAdminProducts()">Refresh</button>
+</div>
+<p class="muted">Products are identified by their unique Product ID. Duplicate SKUs are preserved. Landed cost is ADMIN-only.</p>
+<p id="productCount" class="muted"></p>
+<div class="tablewrap">
+<table>
+<thead><tr><th>ID</th><th>SKU</th><th>Product</th><th>Supplier</th><th>SRP</th><th>Landed Cost</th><th>Status</th><th>Actions</th></tr></thead>
+<tbody id="productBody"></tbody>
+</table>
+</div>
+</div>
+
+<div id="productEditor" class="panel hidden">
+<h2 id="productEditorTitle">Add Product</h2>
+<form id="productForm">
+<input type="hidden" id="productId">
+<div class="formgrid">
+<div><label>SKU *</label><input id="pSku" required maxlength="255"></div>
+<div><label>Product Name *</label><input id="pName" required maxlength="255"></div>
+<div><label>Supplier *</label><select id="pSupplier" required></select></div>
+<div><label>Master Barcode</label><input id="pBarcode" maxlength="255"></div>
+<div><label>Master SRP (₱)</label><input id="pSrp" type="number" min="0" step="0.01"></div>
+<div><label>Landed Cost (₱) · ADMIN ONLY</label><input id="pCost" type="number" min="0" step="0.01"></div>
+<div><label>Category</label><input id="pCategory" maxlength="255"></div>
+<div><label>Condition</label><input id="pCondition" maxlength="255"></div>
+<div><label>Shelf Life</label><input id="pShelfLife" maxlength="1000"></div>
+<div><label>Status</label><select id="pStatus"><option>ACTIVE</option><option>INACTIVE</option></select></div>
+<div class="wide"><label>Remarks</label><textarea id="pRemarks" maxlength="10000"></textarea></div>
+</div>
+<div class="formactions">
+<button type="submit" id="productSaveBtn">Save Product</button>
+<button type="button" class="secondary" onclick="closeProductEditor()">Cancel</button>
+</div>
+</form>
+</div>
+</section>
+
+<section id="page-storeentry" class="page hidden storeOnly">
+<div class="panel">
+<h2>Store Monitoring Encoding</h2>
+<p class="muted">Select a product, then enter up to three expiration dates and quantities in pieces (0–500).</p>
+<form id="storeForm">
+<div class="formgrid">
+<div><label>Supplier</label><select id="entrySupplier" onchange="searchEntryProducts()"></select></div>
+<div><label>Search SKU or Product</label><input id="entrySearch" placeholder="Type product or SKU"></div>
+<div><label>Product *</label><select id="entryProduct" required></select></div>
+<div><label>Store Barcode</label><input id="entryBarcode"></div>
+<div><label>Store SRP (₱)</label><input id="entrySrp" type="number" min="0" step="0.01"></div>
+</div>
+<h3>Expiration Dates and Quantities</h3>
+<div class="formgrid">
+<div><label>Expiration Date 1</label><input id="exp1" type="date"></div>
+<div><label>Quantity 1 (pcs)</label><input id="qty1" type="number" min="0" max="500" step="1"></div>
+<div></div>
+<div><label>Expiration Date 2</label><input id="exp2" type="date"></div>
+<div><label>Quantity 2 (pcs)</label><input id="qty2" type="number" min="0" max="500" step="1"></div>
+<div></div>
+<div><label>Expiration Date 3</label><input id="exp3" type="date"></div>
+<div><label>Quantity 3 (pcs)</label><input id="qty3" type="number" min="0" max="500" step="1"></div>
+</div>
+<div class="formactions"><button type="submit">Save Monitoring</button></div>
+</form>
+</div>
+</section>
+
+</div>
 </main>
 
 <script>
 'use strict';
 
 let token = '';
-let user = null;
-let allRecords = [];
-let shownProducts = [];
+let currentUser = null;
+let monitoring = [];
+let adminSuppliers = [];
+let adminProducts = [];
+let entryProducts = [];
+let entrySearchTimer = null;
 
-const $ = id => document.getElementById(id);
-const val = id => $(id).value;
+const el = id => document.getElementById(id);
 
-const fmtDate = date => {
-    return date ? String(date).slice(0, 10) : '';
-};
-
-function msg(id, text, good = false) {
-    $(id).textContent = text;
-
-    $(id).className =
-        'message ' +
-        (good ? 'success' : 'danger');
+function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, ch => ({
+        '&':'&amp;',
+        '<':'&lt;',
+        '>':'&gt;',
+        '"':'&quot;',
+        "'":'&#39;'
+    })[ch]);
 }
 
-// API REQUESTS
-// FIXED: Login errors now display the server's actual message.
+function showMessage(message, error = false) {
+    const box = el('notice');
+    box.textContent = message;
+    box.className = 'message' + (error ? ' error' : '');
+    box.scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+
+function clearMessage() {
+    el('notice').classList.add('hidden');
+}
 
 async function api(url, options = {}) {
+    const headers = {...(options.headers || {})};
 
-    const headers = {
-        ...(options.headers || {})
-    };
+    if (token) headers.Authorization = 'Bearer ' + token;
 
-    if (token) {
-        headers.Authorization = 'Bearer ' + token;
+    if (options.body && !(options.body instanceof FormData)) {
+        headers['Content-Type'] = 'application/json';
     }
 
     let response;
 
     try {
-        response = await fetch(url, {
-            ...options,
-            headers
-        });
+        response = await fetch(url, {...options, headers});
     } catch (error) {
-        throw Error(
-            'Cannot connect to the NEMS server. ' +
-            'Please check your internet connection.'
-        );
+        throw new Error('Network unavailable. Please try again.');
     }
 
-    const data = await response.json()
-        .catch(() => ({}));
+    const type = response.headers.get('content-type') || '';
+
+    let result;
+
+    if (type.includes('application/json')) {
+        result = await response.json();
+    } else if (response.ok) {
+        return response;
+    } else {
+        result = {error:'Server returned an unexpected response'};
+    }
 
     if (!response.ok) {
-
-        // A failed first login is NOT an expired session.
-        if (
-            response.status === 401 &&
-            url !== '/api/login'
-        ) {
+        if (response.status === 401 && url !== '/api/login') {
             logout();
-
-            throw Error(
-                'Session expired. Please sign in again.'
-            );
         }
-
-        // Show the real error from the server.
-        throw Error(
-            data.error ||
-            data.message ||
-            `Request failed (HTTP ${response.status})`
-        );
+        throw new Error(result.error || 'Request failed');
     }
 
-    return data;
+    return result;
 }
 
-// LOGOUT
-
-function logout() {
-
-    token = '';
-    user = null;
-    allRecords = [];
-    shownProducts = [];
-
-    $('app').classList.add('hidden');
-    $('login-card').classList.remove('hidden');
-    $('logout').classList.add('hidden');
-
-    $('who').textContent = 'Not signed in';
-    $('password').value = '';
-}
-
-$('logout').onclick = logout;
-
-// LOGIN
-
-$('login-form').onsubmit = async event => {
-
+el('loginForm').addEventListener('submit', async event => {
     event.preventDefault();
 
-    const loginButton = $('login-button');
+    const btn = el('loginBtn');
+    const message = el('loginMessage');
 
-    loginButton.disabled = true;
-
-    msg('login-msg', 'Signing in...');
+    btn.disabled = true;
+    message.classList.add('hidden');
 
     try {
-
         const result = await api('/api/login', {
-
-            method: 'POST',
-
-            headers: {
-                'Content-Type': 'application/json'
-            },
-
-            body: JSON.stringify({
-                email: val('email').trim(),
-                password: val('password')
+            method:'POST',
+            body:JSON.stringify({
+                email:el('loginEmail').value.trim(),
+                password:el('loginPassword').value
             })
         });
 
-        if (!result.token || !result.user) {
-            throw Error(
-                'Login response is incomplete. ' +
-                'Please check the server configuration.'
-            );
-        }
-
         token = result.token;
-        user = result.user;
+        currentUser = result.user;
 
-        $('who').textContent =
-            `${user.email} (${user.role})`;
+        el('loginPassword').value = '';
+        el('loginPanel').classList.add('hidden');
+        el('application').classList.remove('hidden');
+        el('logoutBtn').classList.remove('hidden');
 
-        $('login-card').classList.add('hidden');
-        $('app').classList.remove('hidden');
-        $('logout').classList.remove('hidden');
+        el('accountLabel').textContent =
+            currentUser.email + ' (' + currentUser.role + ')';
 
-        msg('login-msg', '');
-
-        if (user.role === 'STORE') {
-
-            $('entry-card').classList.remove('hidden');
-
-            $('store-label').textContent =
-                'Store: ' + (user.store_name || '');
-
-            await loadSuppliers();
-
-        } else {
-
-            $('entry-card').classList.add('hidden');
-        }
-
-        await refresh();
-
-    } catch (error) {
-
-        // If login failed, stay on the login screen.
-        if (!token) {
-            $('login-card').classList.remove('hidden');
-            $('app').classList.add('hidden');
-        }
-
-        msg('login-msg', error.message);
-
-    } finally {
-
-        loginButton.disabled = false;
-    }
-};
-
-// REFRESH DASHBOARD
-
-async function refresh() {
-
-    try {
-
-        const [counts, rows] = await Promise.all([
-            api('/api/dashboard'),
-            api('/api/monitoring')
-        ]);
-
-        for (const key of [
-            'red',
-            'blue',
-            'green',
-            'expired'
-        ]) {
-
-            $('count-' + key).textContent =
-                counts[key.toUpperCase()] || 0;
-        }
-
-        allRecords = Array.isArray(rows) ? rows : [];
-
-        render();
-
-    } catch (error) {
-
-        alert(error.message);
-    }
-}
-
-$('refresh').onclick = refresh;
-
-// DASHBOARD CATEGORY BUTTONS
-
-for (
-    const button of document.querySelectorAll(
-        '[data-filter]'
-    )
-) {
-
-    button.onclick = () => {
-
-        $('category').value = button.dataset.filter;
-
-        render();
-    };
-}
-
-$('category').onchange = render;
-$('filter-text').oninput = render;
-
-// DISPLAY MONITORING RECORDS
-
-function render() {
-
-    const category = val('category');
-
-    const search = val('filter-text')
-        .toLowerCase()
-        .trim();
-
-    const rows = allRecords.filter(record => {
-
-        const categoryMatch =
-            !category ||
-            record.category === category;
-
-        const searchMatch =
-            !search ||
-            [
-                record.store_name,
-                record.sku,
-                record.product_name,
-                record.supplier
-            ].some(value =>
-                String(value || '')
-                    .toLowerCase()
-                    .includes(search)
+        document.querySelectorAll('.adminOnly').forEach(node => {
+            node.classList.toggle(
+                'hidden',
+                currentUser.role !== 'ADMIN'
             );
+        });
 
-        return categoryMatch && searchMatch;
+        document.querySelectorAll('.storeOnly').forEach(node => {
+            node.classList.toggle(
+                'hidden',
+                currentUser.role !== 'STORE'
+            );
+        });
+
+        showPage('dashboard');
+
+    } catch (error) {
+        message.textContent = error.message;
+        message.className = 'message error';
+    } finally {
+        btn.disabled = false;
+    }
+});
+
+function logout() {
+    token = '';
+    currentUser = null;
+    monitoring = [];
+    adminProducts = [];
+    adminSuppliers = [];
+
+    el('accountLabel').textContent = '';
+    el('application').classList.add('hidden');
+    el('loginPanel').classList.remove('hidden');
+    el('logoutBtn').classList.add('hidden');
+    clearMessage();
+}
+
+function showPage(page) {
+    const adminPages = ['products','suppliers'];
+
+    if (
+        adminPages.includes(page) &&
+        currentUser?.role !== 'ADMIN'
+    ) return;
+
+    if (
+        page === 'storeentry' &&
+        currentUser?.role !== 'STORE'
+    ) return;
+
+    document.querySelectorAll('.page').forEach(node => {
+        node.classList.add('hidden');
     });
 
-    const body = $('records');
+    el('page-' + page).classList.remove('hidden');
 
-    body.replaceChildren();
+    document.querySelectorAll('[data-page]').forEach(btn => {
+        btn.classList.toggle(
+            'active',
+            btn.dataset.page === page
+        );
+    });
 
-    if (!rows.length) {
+    clearMessage();
 
-        const tr = body.insertRow();
-
-        const td = tr.insertCell();
-
-        td.colSpan = 7;
-
-        td.textContent = 'No matching records.';
-    }
-
-    for (const record of rows) {
-
-        const tr = body.insertRow();
-
-        const values = [
-            record.category,
-            record.store_name,
-            record.supplier,
-            `${record.sku} — ${record.product_name}`,
-            fmtDate(record.expiration_date),
-            record.quantity,
-            record.updated_by || ''
-        ];
-
-        values.forEach((value, index) => {
-
-            const td = tr.insertCell();
-
-            if (index === 0) {
-
-                const badge =
-                    document.createElement('span');
-
-                badge.className =
-                    'pill ' + record.category;
-
-                badge.textContent = value || '';
-
-                td.append(badge);
-
-            } else {
-
-                td.textContent = value ?? '';
-            }
-        });
-    }
-
-    $('records-count').textContent =
-        `Showing ${rows.length} records`;
+    if (page === 'dashboard') refreshDashboard();
+    if (page === 'monitoring') loadMonitoring();
+    if (page === 'products') loadAdminProducts();
+    if (page === 'suppliers') loadAdminSuppliers();
+    if (page === 'storeentry') loadEntrySuppliers();
 }
 
-// LOAD SUPPLIERS
+async function refreshDashboard() {
+    try {
+        const data = await api('/api/dashboard');
+        el('countRed').textContent = data.RED ?? 0;
+        el('countBlue').textContent = data.BLUE ?? 0;
+        el('countGreen').textContent = data.GREEN ?? 0;
+        el('countExpired').textContent = data.EXPIRED ?? 0;
+    } catch (error) {
+        showMessage(error.message, true);
+    }
+}
 
-async function loadSuppliers() {
+async function loadMonitoring() {
+    try {
+        monitoring = await api('/api/monitoring');
+        renderMonitoring();
+    } catch (error) {
+        showMessage(error.message, true);
+    }
+}
 
-    const suppliers = await api('/api/suppliers');
+function dateText(value) {
+    if (!value) return '';
+    return String(value).slice(0,10);
+}
 
-    $('supplier').replaceChildren(
-        new Option('Choose Supplier', '')
+function renderMonitoring() {
+    const category = el('monitorCategory').value;
+    const search = el('monitorSearch').value.trim().toLowerCase();
+
+    const rows = monitoring.filter(item => {
+        const matchesCategory = !category ||
+            item.category === category;
+
+        const text = [
+            item.store_name,
+            item.sku,
+            item.product_name,
+            item.supplier
+        ].join(' ').toLowerCase();
+
+        return matchesCategory && text.includes(search);
+    });
+
+    el('monitorBody').innerHTML = rows.length
+        ? rows.map(item => `
+            <tr>
+                <td>${escapeHtml(item.category)}</td>
+                <td>${escapeHtml(item.store_name)}</td>
+                <td>${escapeHtml(item.supplier)}</td>
+                <td><b>${escapeHtml(item.sku)}</b>
+                    <div>${escapeHtml(item.product_name)}</div></td>
+                <td>${escapeHtml(dateText(item.expiration_date))}</td>
+                <td>${escapeHtml(item.quantity)}</td>
+                <td>${escapeHtml(dateText(item.updated_at))}</td>
+            </tr>
+        `).join('')
+        : '<tr><td colspan="7">No matching records.</td></tr>';
+
+    el('monitorCount').textContent =
+        'Showing ' + rows.length + ' records';
+}
+
+async function downloadMonitoring() {
+    try {
+        const response = await api('/api/export/monitoring');
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+
+        link.href = url;
+        link.download = 'NEMS_Monitoring.xlsx';
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (error) {
+        showMessage(error.message, true);
+    }
+}
+
+// ==========================================
+// ADMIN SUPPLIER MANAGEMENT
+// ==========================================
+
+async function loadAdminSuppliers() {
+    try {
+        adminSuppliers = await api('/api/admin/suppliers');
+        renderSuppliers();
+    } catch (error) {
+        showMessage(error.message, true);
+    }
+}
+
+function renderSuppliers() {
+    const search = el('supplierSearch').value.toLowerCase();
+    const status = el('supplierFilter').value;
+
+    const rows = adminSuppliers.filter(s =>
+        s.supplier_name.toLowerCase().includes(search) &&
+        (!status || s.status === status)
     );
 
-    for (const supplier of suppliers) {
+    el('supplierCount').textContent =
+        'Showing ' + rows.length +
+        ' of ' + adminSuppliers.length + ' suppliers';
 
-        $('supplier').add(
-            new Option(
-                supplier.supplier_name,
-                supplier.supplier_name
-            )
+    el('supplierBody').innerHTML = rows.length
+        ? rows.map(s => `
+            <tr>
+                <td>${escapeHtml(s.supplier_id)}</td>
+                <td>${escapeHtml(s.supplier_name)}</td>
+                <td>${escapeHtml(s.status)}</td>
+                <td><button class="small" onclick="editSupplier(${Number(s.supplier_id)})">Edit</button></td>
+            </tr>
+        `).join('')
+        : '<tr><td colspan="4">No suppliers found.</td></tr>';
+}
+
+function newSupplier() {
+    el('supplierForm').reset();
+    el('supplierId').value = '';
+    el('supplierStatus').value = 'ACTIVE';
+    el('supplierEditorTitle').textContent = 'Add Supplier';
+    el('supplierEditor').classList.remove('hidden');
+    el('supplierEditor').scrollIntoView({behavior:'smooth'});
+}
+
+function editSupplier(id) {
+    const supplier = adminSuppliers.find(
+        s => Number(s.supplier_id) === id
+    );
+
+    if (!supplier) return;
+
+    el('supplierId').value = supplier.supplier_id;
+    el('supplierName').value = supplier.supplier_name;
+    el('supplierStatus').value = supplier.status;
+    el('supplierEditorTitle').textContent =
+        'Edit Supplier #' + id;
+
+    el('supplierEditor').classList.remove('hidden');
+    el('supplierEditor').scrollIntoView({behavior:'smooth'});
+}
+
+function closeSupplierEditor() {
+    el('supplierEditor').classList.add('hidden');
+}
+
+el('supplierForm').addEventListener('submit', async event => {
+    event.preventDefault();
+
+    const id = el('supplierId').value;
+    const name = el('supplierName').value.trim();
+    const status = el('supplierStatus').value;
+
+    if (
+        id &&
+        status === 'INACTIVE' &&
+        !confirm('Deactivate this supplier? Existing records will be preserved.')
+    ) return;
+
+    const button = el('supplierSaveBtn');
+    button.disabled = true;
+
+    try {
+        await api(
+            id
+                ? '/api/admin/suppliers/' + id
+                : '/api/admin/suppliers',
+            {
+                method:id ? 'PATCH' : 'POST',
+                body:JSON.stringify({
+                    supplier_name:name,
+                    status
+                })
+            }
         );
+
+        closeSupplierEditor();
+        await loadAdminSuppliers();
+        showMessage('Supplier saved successfully.');
+
+    } catch (error) {
+        showMessage(error.message, true);
+    } finally {
+        button.disabled = false;
+    }
+});
+
+// ==========================================
+// ADMIN PRODUCT MANAGEMENT
+// ==========================================
+
+async function loadAdminProducts() {
+    try {
+        adminProducts = await api('/api/admin/products');
+        renderProducts();
+    } catch (error) {
+        showMessage(error.message, true);
     }
 }
 
-// PRODUCT SEARCH
+function renderProducts() {
+    const search = el('productSearch').value.toLowerCase();
+    const status = el('productFilter').value;
 
-let searchTimer;
-let productRequestId = 0;
+    const rows = adminProducts.filter(p => {
+        const text = [
+            p.sku,
+            p.product_name,
+            p.supplier_name,
+            p.master_barcode
+        ].join(' ').toLowerCase();
 
-$('supplier').onchange = loadProducts;
+        return text.includes(search) &&
+            (!status || p.status === status);
+    });
 
-$('product-search').oninput = () => {
+    el('productCount').textContent =
+        'Showing ' + rows.length +
+        ' of ' + adminProducts.length + ' products';
 
-    clearTimeout(searchTimer);
+    el('productBody').innerHTML = rows.length
+        ? rows.map(p => `
+            <tr>
+                <td>${escapeHtml(p.product_id)}</td>
+                <td>${escapeHtml(p.sku)}</td>
+                <td>${escapeHtml(p.product_name)}</td>
+                <td>${escapeHtml(p.supplier_name)}</td>
+                <td>${escapeHtml(p.master_srp ?? '')}</td>
+                <td>${escapeHtml(p.landed_cost ?? '')}</td>
+                <td>${escapeHtml(p.status)}</td>
+                <td><button class="small" onclick="editProduct(${Number(p.product_id)})">Edit</button></td>
+            </tr>
+        `).join('')
+        : '<tr><td colspan="8">No products found.</td></tr>';
+}
 
-    searchTimer = setTimeout(loadProducts, 250);
-};
-
-async function loadProducts() {
-
-    const requestId = ++productRequestId;
-
-    const supplier = val('supplier');
-
-    const search = val('product-search');
-
-    if (!supplier && !search) {
-
-        shownProducts = [];
-
-        $('product').replaceChildren(
-            new Option('Choose Product', '')
-        );
-
-        $('product-info').textContent = '';
-
-        return;
+async function fillSupplierOptions(selected = '') {
+    if (!adminSuppliers.length) {
+        adminSuppliers = await api('/api/admin/suppliers');
     }
 
-    try {
+    const names = adminSuppliers.filter(s =>
+        s.status === 'ACTIVE' ||
+        s.supplier_name === selected
+    );
 
-        const params = new URLSearchParams({
+    el('pSupplier').innerHTML =
+        '<option value="">Select supplier</option>' +
+        names.map(s => `
+            <option value="${escapeHtml(s.supplier_name)}">
+                ${escapeHtml(s.supplier_name)}
+            </option>
+        `).join('');
+
+    el('pSupplier').value = selected;
+}
+
+async function newProduct() {
+    try {
+        el('productForm').reset();
+        el('productId').value = '';
+        el('pStatus').value = 'ACTIVE';
+        el('productEditorTitle').textContent = 'Add Product';
+
+        await fillSupplierOptions();
+
+        el('productEditor').classList.remove('hidden');
+        el('productEditor').scrollIntoView({behavior:'smooth'});
+    } catch (error) {
+        showMessage(error.message, true);
+    }
+}
+
+async function editProduct(id) {
+    const p = adminProducts.find(
+        item => Number(item.product_id) === id
+    );
+
+    if (!p) return;
+
+    try {
+        await fillSupplierOptions(p.supplier_name);
+
+        el('productId').value = p.product_id;
+        el('pSku').value = p.sku ?? '';
+        el('pName').value = p.product_name ?? '';
+        el('pBarcode').value = p.master_barcode ?? '';
+        el('pSrp').value = p.master_srp ?? '';
+        el('pCost').value = p.landed_cost ?? '';
+        el('pCategory').value = p.category ?? '';
+        el('pCondition').value = p.condition ?? '';
+        el('pShelfLife').value = p.shelf_life ?? '';
+        el('pRemarks').value = p.remarks ?? '';
+        el('pStatus').value = p.status;
+
+        el('productEditorTitle').textContent =
+            'Edit Product #' + id;
+
+        el('productEditor').classList.remove('hidden');
+        el('productEditor').scrollIntoView({behavior:'smooth'});
+
+    } catch (error) {
+        showMessage(error.message, true);
+    }
+}
+
+function closeProductEditor() {
+    el('productEditor').classList.add('hidden');
+}
+
+el('productForm').addEventListener('submit', async event => {
+    event.preventDefault();
+
+    const id = el('productId').value;
+    const status = el('pStatus').value;
+
+    if (
+        id &&
+        status === 'INACTIVE' &&
+        !confirm('Deactivate this product? Existing records will be preserved.')
+    ) return;
+
+    const payload = {
+        sku:el('pSku').value.trim(),
+        product_name:el('pName').value.trim(),
+        supplier_name:el('pSupplier').value,
+        master_barcode:el('pBarcode').value.trim(),
+        master_srp:el('pSrp').value,
+        landed_cost:el('pCost').value,
+        category:el('pCategory').value.trim(),
+        condition:el('pCondition').value.trim(),
+        shelf_life:el('pShelfLife').value.trim(),
+        remarks:el('pRemarks').value.trim(),
+        status
+    };
+
+    const button = el('productSaveBtn');
+    button.disabled = true;
+
+    try {
+        await api(
+            id
+                ? '/api/admin/products/' + id
+                : '/api/admin/products',
+            {
+                method:id ? 'PATCH' : 'POST',
+                body:JSON.stringify(payload)
+            }
+        );
+
+        closeProductEditor();
+        await loadAdminProducts();
+        showMessage('Product saved successfully.');
+
+    } catch (error) {
+        showMessage(error.message, true);
+    } finally {
+        button.disabled = false;
+    }
+});
+
+// ==========================================
+// STORE ENCODING
+// ==========================================
+
+async function loadEntrySuppliers() {
+    try {
+        const suppliers = await api('/api/suppliers');
+
+        el('entrySupplier').innerHTML =
+            '<option value="">All Suppliers</option>' +
+            suppliers.map(s => `
+                <option value="${escapeHtml(s.supplier_name)}">
+                    ${escapeHtml(s.supplier_name)}
+                </option>
+            `).join('');
+
+        await searchEntryProducts();
+
+    } catch (error) {
+        showMessage(error.message, true);
+    }
+}
+
+async function searchEntryProducts() {
+    try {
+        const supplier = el('entrySupplier').value;
+        const search = el('entrySearch').value.trim();
+
+        const query = new URLSearchParams({
             supplier,
             search
         });
 
-        const products = await api(
-            '/api/products?' + params.toString()
+        entryProducts = await api(
+            '/api/products?' + query.toString()
         );
 
-        // Ignore outdated search results.
-        if (requestId !== productRequestId) {
-            return;
-        }
-
-        shownProducts = Array.isArray(products)
-            ? products
-            : [];
-
-        $('product').replaceChildren(
-            new Option('Choose Product', '')
-        );
-
-        for (const product of shownProducts) {
-
-            const label =
-                `${product.sku} · ` +
-                `${product.product_name} · ` +
-                `${product.master_barcode || 'No barcode'} · ` +
-                `ID ${product.product_id}`;
-
-            $('product').add(
-                new Option(label, product.product_id)
-            );
-        }
-
-        $('product-info').textContent =
-            shownProducts.length === 300
-                ? 'Showing first 300 results. Narrow your search.'
-                : '';
+        el('entryProduct').innerHTML =
+            '<option value="">Select product</option>' +
+            entryProducts.map(p => `
+                <option value="${Number(p.product_id)}">
+                    ${escapeHtml(p.sku)} · ${escapeHtml(p.product_name)}
+                </option>
+            `).join('');
 
     } catch (error) {
-
-        if (requestId === productRequestId) {
-            msg('save-msg', error.message);
-        }
+        showMessage(error.message, true);
     }
 }
 
-// PRODUCT INFORMATION
+el('entrySearch').addEventListener('input', () => {
+    clearTimeout(entrySearchTimer);
+    entrySearchTimer = setTimeout(searchEntryProducts, 350);
+});
 
-$('product').onchange = () => {
-
-    const product = shownProducts.find(
-        item =>
-            String(item.product_id) === val('product')
+el('entryProduct').addEventListener('change', () => {
+    const id = Number(el('entryProduct').value);
+    const product = entryProducts.find(
+        p => Number(p.product_id) === id
     );
 
-    $('product-info').textContent = product
-        ? `Shelf Life: ${product.shelf_life || '-'} | ` +
-          `Condition: ${product.condition || '-'} | ` +
-          `Remarks: ${product.remarks || '-'}`
-        : '';
-};
+    if (!product) return;
 
-// SAVE MONITORING
+    el('entryBarcode').value = product.master_barcode ?? '';
+    el('entrySrp').value = product.master_srp ?? '';
+});
 
-$('save').onclick = async () => {
+el('storeForm').addEventListener('submit', async event => {
+    event.preventDefault();
 
-    if (user?.role !== 'STORE') {
-        return msg(
-            'save-msg',
-            'Only STORE accounts can save monitoring records.'
-        );
-    }
-
-    if (!val('product')) {
-
-        return msg(
-            'save-msg',
-            'Choose a product first.'
-        );
-    }
-
-    const body = {
-        product_id: Number(val('product')),
-        store_barcode: val('barcode'),
-        srp: val('srp')
+    const payload = {
+        product_id:Number(el('entryProduct').value),
+        store_barcode:el('entryBarcode').value,
+        srp:el('entrySrp').value,
+        exp1:el('exp1').value,
+        qty1:el('qty1').value,
+        exp2:el('exp2').value,
+        qty2:el('qty2').value,
+        exp3:el('exp3').value,
+        qty3:el('qty3').value
     };
 
-    for (let i = 1; i <= 3; i++) {
-
-        body['exp' + i] = val('exp' + i);
-
-        body['qty' + i] = val('qty' + i);
-    }
-
-    const saveButton = $('save');
-
-    saveButton.disabled = true;
-
     try {
-
         await api('/api/store/monitoring', {
-
-            method: 'POST',
-
-            headers: {
-                'Content-Type': 'application/json'
-            },
-
-            body: JSON.stringify(body)
+            method:'POST',
+            body:JSON.stringify(payload)
         });
 
-        msg(
-            'save-msg',
-            'Saved successfully.',
-            true
-        );
-
-        await refresh();
+        showMessage('Store monitoring saved successfully.');
 
     } catch (error) {
-
-        msg('save-msg', error.message);
-
-    } finally {
-
-        saveButton.disabled = false;
+        showMessage(error.message, true);
     }
-};
-
-// EXCEL EXPORT
-
-$('export').onclick = async () => {
-
-    try {
-
-        const response = await fetch(
-            '/api/export/monitoring',
-            {
-                headers: {
-                    Authorization: 'Bearer ' + token
-                }
-            }
-        );
-
-        if (response.status === 401) {
-
-            logout();
-
-            throw Error(
-                'Session expired. Please sign in again.'
-            );
-        }
-
-        if (!response.ok) {
-
-            const data = await response.json()
-                .catch(() => ({}));
-
-            throw Error(
-                data.error || 'Export failed.'
-            );
-        }
-
-        const blob = await response.blob();
-
-        const url = URL.createObjectURL(blob);
-
-        const link = document.createElement('a');
-
-        link.href = url;
-
-        link.download = 'NEMS_Monitoring.xlsx';
-
-        document.body.appendChild(link);
-
-        link.click();
-
-        link.remove();
-
-        setTimeout(
-            () => URL.revokeObjectURL(url),
-            1000
-        );
-
-    } catch (error) {
-
-        alert(error.message);
-    }
-};
-
+});
 </script>
-
 </body>
 </html>
