@@ -1,185 +1,1288 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Near Expiry Monitoring System (NEMS)</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+
+<meta charset="UTF-8">
+
+<meta name="viewport"
+content="width=device-width, initial-scale=1.0">
+
+<title>NEMS | Near Expiry Monitoring System</title>
+
+<style>
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    background: #f1f5f9;
+    color: #1c2d45;
+    font-family: Arial, sans-serif;
+}
+
+header {
+    background: #103568;
+    color: white;
+    padding: 18px 5%;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+}
+
+header strong {
+    font-size: 21px;
+}
+
+main {
+    max-width: 1200px;
+    margin: 28px auto;
+    padding: 0 18px;
+}
+
+.card {
+    background: white;
+    padding: 22px;
+    border-radius: 12px;
+    box-shadow: 0 3px 12px #0f172a12;
+    margin-bottom: 20px;
+}
+
+.hidden {
+    display: none !important;
+}
+
+h2 {
+    margin: 0 0 14px;
+}
+
+button {
+    background: #174d94;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 11px 16px;
+    cursor: pointer;
+    font-weight: bold;
+}
+
+button:hover {
+    filter: brightness(0.92);
+}
+
+.secondary {
+    background: #64748b;
+}
+
+label {
+    display: block;
+    font-weight: bold;
+    font-size: 13px;
+    margin-bottom: 6px;
+}
+
+input,
+select {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid #cbd5e1;
+    border-radius: 7px;
+    background: white;
+    font-size: 14px;
+}
+
+.grid {
+    display: grid;
+    grid-template-columns:
+        repeat(auto-fit, minmax(200px, 1fr));
+    gap: 15px;
+}
+
+.stats {
+    display: grid;
+    grid-template-columns:
+        repeat(4, minmax(120px, 1fr));
+    gap: 12px;
+    margin-bottom: 20px;
+}
+
+.stat {
+    color: white;
+    text-align: left;
+    padding: 20px;
+    border-radius: 12px;
+    cursor: pointer;
+}
+
+.stat b {
+    font-size: 32px;
+    display: block;
+}
+
+.stat small {
+    font-size: 13px;
+}
+
+.red {
+    background: #bb3038;
+}
+
+.blue {
+    background: #2360bb;
+}
+
+.green {
+    background: #178653;
+}
+
+.dark {
+    background: #424b5e;
+}
+
+.toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+    margin-bottom: 15px;
+}
+
+.toolbar > * {
+    flex: 1;
+    min-width: 130px;
+}
+
+.tablewrap {
+    overflow: auto;
+    max-height: 530px;
+}
+
+table {
+    border-collapse: collapse;
+    width: 100%;
+    font-size: 13px;
+}
+
+td,
+th {
+    padding: 11px;
+    border-bottom: 1px solid #e2e8f0;
+    text-align: left;
+}
+
+th {
+    position: sticky;
+    top: 0;
+    background: #edf2f9;
+}
+
+#login-card {
+    max-width: 440px;
+    margin: 80px auto;
+}
+
+.muted {
+    color: #64748b;
+    font-size: 13px;
+}
+
+.message {
+    font-weight: bold;
+    font-size: 13px;
+    margin-top: 12px;
+}
+
+.danger {
+    color: #b91c1c;
+}
+
+.success {
+    color: #167746;
+}
+
+.pill {
+    padding: 3px 8px;
+    border-radius: 20px;
+    color: white;
+    font-weight: bold;
+    font-size: 11px;
+}
+
+.pill.RED {
+    background: #bb3038;
+}
+
+.pill.BLUE {
+    background: #2360bb;
+}
+
+.pill.GREEN {
+    background: #178653;
+}
+
+.pill.EXPIRED {
+    background: #424b5e;
+}
+
+.pill.LATER {
+    background: #94a3b8;
+}
+
+@media(max-width:700px) {
+
+    .stats {
+        grid-template-columns:
+            repeat(2, 1fr);
+    }
+
+    header strong {
+        font-size: 15px;
+    }
+}
+
+</style>
+
 </head>
-<body class="bg-slate-100 text-gray-800 font-sans">
 
-    <nav class="bg-blue-900 text-white p-4 shadow-md flex justify-between items-center">
-        <div class="font-bold text-lg">CARD INDO GROSIR - NEMS</div>
-        <div id="nav-user" class="text-xs font-semibold text-blue-200">Not Logged In</div>
-    </nav>
+<body>
 
-    <div class="max-w-4xl mx-auto mt-10 p-4">
-        <div id="panel-login" class="bg-white p-6 rounded shadow max-w-md mx-auto">
-            <h2 class="text-xl font-bold mb-4 text-blue-900 text-center">System Login</h2>
-            <form onsubmit="handleLogin(event)">
-                <label class="block text-xs font-bold mb-1">Company Email</label>
-                <input type="email" id="login-email" required placeholder="user@cardindogrosir.com" class="w-full border p-2 rounded mb-4 text-sm">
-                <button type="submit" class="w-full bg-blue-800 text-white font-bold py-2 rounded text-sm hover:bg-blue-900">LOGIN</button>
-            </form>
-            <p id="login-error" class="text-red-600 text-xs mt-2 text-center"></p>
-        </div>
+<header>
 
-        <div id="panel-dashboard" class="hidden space-y-6">
-            <div id="admin-import-box" class="hidden bg-white p-4 rounded shadow border-l-4 border-amber-500">
-                <h3 class="font-bold text-sm text-gray-700 mb-2">Admin Master Data Import</h3>
-                <input type="file" id="excel-file" accept=".xlsx, .xls" class="text-xs mb-2">
-                <button onclick="uploadExcel()" class="bg-amber-600 text-white font-bold px-3 py-1 text-xs rounded hover:bg-amber-700">Upload Master Excel Sheet</button>
-                <div id="import-status" class="text-xs mt-1 font-semibold"></div>
-            </div>
+    <strong>
+        CARD INDO GROSIR · NEMS
+    </strong>
 
-            <div class="bg-white p-6 rounded shadow space-y-4">
-                <h2 class="text-lg font-bold text-blue-900 border-b pb-2">Near-Expiry Entry</h2>
-                <div class="grid grid-cols-2 gap-4">
-                    <div>
-                        <label class="block text-xs font-bold mb-1">Store Name</label>
-                        <input type="text" id="store-name-view" readonly class="w-full bg-gray-100 border p-2 rounded text-xs font-bold">
-                    </div>
-                    <div>
-                        <label class="block text-xs font-bold mb-1">Select Supplier</label>
-                        <select id="supplier-select" onchange="loadProducts()" class="w-full border p-2 rounded text-xs">
-                            <option value="">-- Choose Supplier --</option>
-                        </select>
-                    </div>
-                </div>
+    <div>
 
-                <div>
-                    <label class="block text-xs font-bold mb-1">Select Product</label>
-                    <select id="product-select" class="w-full border p-2 rounded text-xs">
-                        <option value="">-- Choose Product --</option>
-                    </select>
-                </div>
+        <span id="who">
+            Not signed in
+        </span>
 
-                <div class="grid grid-cols-2 gap-4 bg-blue-50 p-3 rounded">
-                    <div>
-                        <label class="block text-xs font-bold">Expiration Date 1 *</label>
-                        <input type="date" id="exp1" required class="w-full border p-2 rounded text-xs">
-                    </div>
-                    <div>
-                        <label class="block text-xs font-bold">Quantity 1 (0 - 500) *</label>
-                        <input type="number" id="qty1" min="0" max="500" required class="w-full border p-2 rounded text-xs">
-                    </div>
-                </div>
+        <button
+            id="logout"
+            class="secondary hidden">
+            Log out
+        </button>
 
-                <button onclick="saveRecord()" class="w-full bg-green-700 text-white font-bold py-2 rounded text-sm hover:bg-green-800">SAVE MONITORING RECORD</button>
-                <div id="save-status" class="text-xs text-center font-bold"></div>
-            </div>
-        </div>
     </div>
 
-    <script>
-        let authToken = '';
-        let currentUser = null;
+</header>
 
-        async function handleLogin(e) {
-            e.preventDefault();
-            const email = document.getElementById('login-email').value;
-            const res = await fetch('/api/login', {
+<main>
+
+<!-- LOGIN -->
+
+<section id="login-card" class="card">
+
+    <h2>System Login</h2>
+
+    <p class="muted">
+        Near Expiry Monitoring System
+    </p>
+
+    <form id="login-form">
+
+        <label>
+            Official Email
+        </label>
+
+        <input
+            id="email"
+            type="email"
+            required
+            autocomplete="username">
+
+        <br><br>
+
+        <label>
+            Password
+        </label>
+
+        <input
+            id="password"
+            type="password"
+            required
+            autocomplete="current-password">
+
+        <br><br>
+
+        <button type="submit">
+            SIGN IN
+        </button>
+
+        <p
+            id="login-msg"
+            class="message danger">
+        </p>
+
+    </form>
+
+</section>
+
+<!-- MAIN APPLICATION -->
+
+<section id="app" class="hidden">
+
+<!-- DASHBOARD -->
+
+<div class="stats">
+
+    <button
+        class="stat red"
+        data-filter="RED">
+
+        <b id="count-red">0</b>
+
+        <small>
+            RED · Within 30 Days
+        </small>
+
+    </button>
+
+    <button
+        class="stat blue"
+        data-filter="BLUE">
+
+        <b id="count-blue">0</b>
+
+        <small>
+            BLUE · 31–60 Days
+        </small>
+
+    </button>
+
+    <button
+        class="stat green"
+        data-filter="GREEN">
+
+        <b id="count-green">0</b>
+
+        <small>
+            GREEN · 61–90 Days
+        </small>
+
+    </button>
+
+    <button
+        class="stat dark"
+        data-filter="EXPIRED">
+
+        <b id="count-expired">0</b>
+
+        <small>
+            EXPIRED PRODUCTS
+        </small>
+
+    </button>
+
+</div>
+
+<!-- MONITORING TABLE -->
+
+<div class="card">
+
+    <div class="toolbar">
+
+        <h2 style="flex:3">
+            Monitoring Records
+        </h2>
+
+        <button id="refresh">
+            Refresh
+        </button>
+
+        <button id="export">
+            Download Excel
+        </button>
+
+    </div>
+
+    <div class="toolbar">
+
+        <select id="category">
+
+            <option value="">
+                All Categories
+            </option>
+
+            <option value="RED">
+                Red · 0–30 Days
+            </option>
+
+            <option value="BLUE">
+                Blue · 31–60 Days
+            </option>
+
+            <option value="GREEN">
+                Green · 61–90 Days
+            </option>
+
+            <option value="EXPIRED">
+                Expired
+            </option>
+
+            <option value="LATER">
+                Over 90 Days
+            </option>
+
+        </select>
+
+        <input
+            id="filter-text"
+            placeholder="Search store, SKU, product or supplier">
+
+    </div>
+
+    <div class="tablewrap">
+
+        <table>
+
+            <thead>
+
+                <tr>
+
+                    <th>Category</th>
+                    <th>Store</th>
+                    <th>Supplier</th>
+                    <th>SKU / Product</th>
+                    <th>Expiration</th>
+                    <th>Qty (pcs)</th>
+                    <th>Last Edited</th>
+
+                </tr>
+
+            </thead>
+
+            <tbody id="records">
+
+                <tr>
+                    <td colspan="7">
+                        No records loaded.
+                    </td>
+                </tr>
+
+            </tbody>
+
+        </table>
+
+    </div>
+
+    <p
+        id="records-count"
+        class="muted">
+    </p>
+
+</div>
+
+<!-- STORE MONITORING ENTRY -->
+
+<div
+    id="entry-card"
+    class="card hidden">
+
+    <h2>
+        Store · Near Expiry Encoding
+    </h2>
+
+    <p class="muted">
+        IMPORTANT: Enter quantities in individual
+        pieces, not cases or boxes.
+        Products with the same SKU may have
+        different packaging.
+    </p>
+
+    <p id="store-label"></p>
+
+    <div class="grid">
+
+        <div>
+
+            <label>
+                Select Supplier
+            </label>
+
+            <select id="supplier">
+
+                <option value="">
+                    Choose Supplier
+                </option>
+
+            </select>
+
+        </div>
+
+        <div>
+
+            <label>
+                Search Product
+            </label>
+
+            <input
+                id="product-search"
+                placeholder="SKU, Product Name or Barcode">
+
+        </div>
+
+    </div>
+
+    <br>
+
+    <label>
+        Select Product
+    </label>
+
+    <select id="product">
+
+        <option value="">
+            Choose Product
+        </option>
+
+    </select>
+
+    <p
+        id="product-info"
+        class="muted">
+    </p>
+
+    <div class="grid">
+
+        <div>
+
+            <label>
+                Store Barcode
+            </label>
+
+            <input id="barcode">
+
+        </div>
+
+        <div>
+
+            <label>
+                Store Retail Price
+            </label>
+
+            <input
+                id="srp"
+                type="number"
+                min="0"
+                step="0.01">
+
+        </div>
+
+    </div>
+
+    <br>
+
+    <!-- EXPIRATION DATES -->
+
+    <div class="grid">
+
+        <div>
+
+            <label>
+                Expiration Date 1
+            </label>
+
+            <input
+                type="date"
+                id="exp1">
+
+        </div>
+
+        <div>
+
+            <label>
+                Quantity 1 (Pieces)
+            </label>
+
+            <input
+                type="number"
+                min="0"
+                max="500"
+                id="qty1">
+
+        </div>
+
+        <div>
+
+            <label>
+                Expiration Date 2
+            </label>
+
+            <input
+                type="date"
+                id="exp2">
+
+        </div>
+
+        <div>
+
+            <label>
+                Quantity 2 (Pieces)
+            </label>
+
+            <input
+                type="number"
+                min="0"
+                max="500"
+                id="qty2">
+
+        </div>
+
+        <div>
+
+            <label>
+                Expiration Date 3
+            </label>
+
+            <input
+                type="date"
+                id="exp3">
+
+        </div>
+
+        <div>
+
+            <label>
+                Quantity 3 (Pieces)
+            </label>
+
+            <input
+                type="number"
+                min="0"
+                max="500"
+                id="qty3">
+
+        </div>
+
+    </div>
+
+    <br>
+
+    <button id="save">
+        SAVE MONITORING
+    </button>
+
+    <p
+        id="save-msg"
+        class="message">
+    </p>
+
+</div>
+
+<!-- FUTURE FEATURES -->
+
+<div class="card">
+
+    <h2>
+        Additional NEMS Features
+    </h2>
+
+    <p class="muted">
+        Consolidation Management,
+        AS Assignments,
+        Admin Product Management,
+        Supplier Reminders,
+        Activity History,
+        and Consolidation Excel Export
+        will be added in the next development phase.
+    </p>
+
+</div>
+
+</section>
+
+</main>
+
+<script>
+
+'use strict';
+
+let token = '';
+let user = null;
+let allRecords = [];
+let shownProducts = [];
+
+const $ = id => document.getElementById(id);
+
+const val = id => $(id).value;
+
+const fmtDate = date => {
+    return date
+        ? String(date).slice(0, 10)
+        : '';
+};
+
+function msg(id, text, good = false) {
+
+    $(id).textContent = text;
+
+    $(id).className =
+        'message ' +
+        (good ? 'success' : 'danger');
+}
+
+// ======================================
+// API REQUESTS
+// ======================================
+
+async function api(url, options = {}) {
+
+    const headers = {
+        ...(options.headers || {})
+    };
+
+    if (token) {
+        headers.Authorization =
+            'Bearer ' + token;
+    }
+
+    const response = await fetch(
+        url,
+        {
+            ...options,
+            headers
+        }
+    );
+
+    if (response.status === 401) {
+
+        logout();
+
+        throw Error(
+            'Session expired. Please sign in again.'
+        );
+    }
+
+    const data = await response.json()
+        .catch(() => ({}));
+
+    if (!response.ok) {
+
+        throw Error(
+            data.error || 'Request failed'
+        );
+    }
+
+    return data;
+}
+
+// ======================================
+// LOGOUT
+// ======================================
+
+function logout() {
+
+    token = '';
+    user = null;
+
+    $('app').classList.add('hidden');
+
+    $('login-card').classList.remove('hidden');
+
+    $('logout').classList.add('hidden');
+
+    $('who').textContent = 'Not signed in';
+
+    $('password').value = '';
+}
+
+$('logout').onclick = logout;
+
+// ======================================
+// LOGIN
+// ======================================
+
+$('login-form').onsubmit = async event => {
+
+    event.preventDefault();
+
+    msg(
+        'login-msg',
+        'Signing in...'
+    );
+
+    try {
+
+        const result = await api(
+            '/api/login',
+            {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email })
-            });
-            const data = await res.json();
-            if (res.ok) {
-                authToken = data.token;
-                currentUser = data.user;
-                document.getElementById('nav-user').innerText = `${currentUser.email} (${currentUser.role})`;
-                document.getElementById('store-name-view').value = currentUser.store_name;
-                document.getElementById('panel-login').classList.add('hidden');
-                document.getElementById('panel-dashboard').classList.remove('hidden');
 
-                if (currentUser.role === 'ADMIN') {
-                    document.getElementById('admin-import-box').classList.remove('hidden');
-                }
-                loadSuppliers();
-            } else {
-                document.getElementById('login-error').innerText = data.error;
-            }
-        }
-
-        async function loadSuppliers() {
-            const res = await fetch('/api/suppliers', {
-                headers: { 'Authorization': `Bearer ${authToken}` }
-            });
-            const suppliers = await res.json();
-            const sel = document.getElementById('supplier-select');
-            sel.innerHTML = '<option value="">-- Choose Supplier --</option>';
-            suppliers.forEach(s => {
-                sel.innerHTML += `<option value="${s.supplier_name}">${s.supplier_name}</option>`;
-            });
-        }
-
-        async function loadProducts() {
-            const sup = document.getElementById('supplier-select').value;
-            if (!sup) return;
-            const res = await fetch(`/api/products?supplier=${encodeURIComponent(sup)}`, {
-                headers: { 'Authorization': `Bearer ${authToken}` }
-            });
-            const products = await res.json();
-            const sel = document.getElementById('product-select');
-            sel.innerHTML = '<option value="">-- Choose Product --</option>';
-            products.forEach(p => {
-                sel.innerHTML += `<option value="${p.product_id}">${p.sku} - ${p.product_name}</option>`;
-            });
-        }
-
-        async function saveRecord() {
-            const productId = document.getElementById('product-select').value;
-            const exp1 = document.getElementById('exp1').value;
-            const qty1 = document.getElementById('qty1').value;
-
-            if (!productId || !exp1 || qty1 === '') {
-                alert('Please fill in Product, Expiration Date 1, and Quantity 1');
-                return;
-            }
-
-            const res = await fetch('/api/store/monitoring', {
-                method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${authToken}`
+                    'Content-Type':
+                        'application/json'
                 },
-                body: JSON.stringify({ product_id: productId, exp1, qty1 })
-            });
-            const data = await res.json();
-            if (res.ok) {
-                document.getElementById('save-status').innerText = "Record saved successfully!";
-                document.getElementById('save-status').className = "text-xs text-center font-bold text-green-700";
-            } else {
-                document.getElementById('save-status').innerText = data.error;
-                document.getElementById('save-status').className = "text-xs text-center font-bold text-red-700";
+
+                body: JSON.stringify({
+                    email: val('email'),
+                    password: val('password')
+                })
             }
+        );
+
+        token = result.token;
+        user = result.user;
+
+        $('who').textContent =
+            `${user.email} (${user.role})`;
+
+        $('login-card').classList.add('hidden');
+
+        $('app').classList.remove('hidden');
+
+        $('logout').classList.remove('hidden');
+
+        if (user.role === 'STORE') {
+
+            $('entry-card').classList.remove(
+                'hidden'
+            );
+
+            $('store-label').textContent =
+                'Store: ' + user.store_name;
+
+            await loadSuppliers();
+
+        } else {
+
+            $('entry-card').classList.add(
+                'hidden'
+            );
         }
 
-        async function uploadExcel() {
-            const fileInput = document.getElementById('excel-file');
-            if (!fileInput.files[0]) {
-                alert('Please select an Excel file first');
-                return;
-            }
-            const formData = new FormData();
-            formData.append('file', fileInput.files[0]);
+        await refresh();
 
-            document.getElementById('import-status').innerText = "Importing master data... please wait...";
-            const res = await fetch('/api/admin/import-excel', {
+    } catch (error) {
+
+        msg(
+            'login-msg',
+            error.message
+        );
+    }
+};
+
+// ======================================
+// REFRESH DASHBOARD
+// ======================================
+
+async function refresh() {
+
+    try {
+
+        const [counts, rows] = await Promise.all([
+
+            api('/api/dashboard'),
+
+            api('/api/monitoring')
+
+        ]);
+
+        for (
+            const key of [
+                'red',
+                'blue',
+                'green',
+                'expired'
+            ]
+        ) {
+
+            $('count-' + key).textContent =
+                counts[key.toUpperCase()] || 0;
+        }
+
+        allRecords = rows;
+
+        render();
+
+    } catch (error) {
+
+        alert(error.message);
+    }
+}
+
+$('refresh').onclick = refresh;
+
+// ======================================
+// DASHBOARD CATEGORY BUTTONS
+// ======================================
+
+for (
+    const button of document.querySelectorAll(
+        '[data-filter]'
+    )
+) {
+
+    button.onclick = () => {
+
+        $('category').value =
+            button.dataset.filter;
+
+        render();
+    };
+}
+
+$('category').onchange = render;
+
+$('filter-text').oninput = render;
+
+// ======================================
+// DISPLAY MONITORING RECORDS
+// ======================================
+
+function render() {
+
+    const category = val('category');
+
+    const search = val('filter-text')
+        .toLowerCase();
+
+    const rows = allRecords.filter(record => {
+
+        const categoryMatch =
+            !category ||
+            record.category === category;
+
+        const searchMatch =
+            !search ||
+            [
+                record.store_name,
+                record.sku,
+                record.product_name,
+                record.supplier
+            ].some(value =>
+                String(value || '')
+                    .toLowerCase()
+                    .includes(search)
+            );
+
+        return categoryMatch && searchMatch;
+    });
+
+    const body = $('records');
+
+    body.replaceChildren();
+
+    if (!rows.length) {
+
+        const tr = body.insertRow();
+
+        const td = tr.insertCell();
+
+        td.colSpan = 7;
+
+        td.textContent =
+            'No matching records.';
+    }
+
+    for (const record of rows) {
+
+        const tr = body.insertRow();
+
+        const values = [
+
+            record.category,
+
+            record.store_name,
+
+            record.supplier,
+
+            `${record.sku} — ${record.product_name}`,
+
+            fmtDate(record.expiration_date),
+
+            record.quantity,
+
+            record.updated_by || ''
+
+        ];
+
+        values.forEach((value, index) => {
+
+            const td = tr.insertCell();
+
+            if (index === 0) {
+
+                const badge =
+                    document.createElement('span');
+
+                badge.className =
+                    'pill ' + record.category;
+
+                badge.textContent = value;
+
+                td.append(badge);
+
+            } else {
+
+                td.textContent =
+                    value ?? '';
+            }
+        });
+    }
+
+    $('records-count').textContent =
+        `Showing ${rows.length} records`;
+}
+
+// ======================================
+// LOAD SUPPLIERS
+// ======================================
+
+async function loadSuppliers() {
+
+    const suppliers = await api(
+        '/api/suppliers'
+    );
+
+    $('supplier').replaceChildren(
+        new Option(
+            'Choose Supplier',
+            ''
+        )
+    );
+
+    for (const supplier of suppliers) {
+
+        $('supplier').add(
+            new Option(
+                supplier.supplier_name,
+                supplier.supplier_name
+            )
+        );
+    }
+}
+
+// ======================================
+// PRODUCT SEARCH
+// ======================================
+
+let searchTimer;
+
+$('supplier').onchange = loadProducts;
+
+$('product-search').oninput = () => {
+
+    clearTimeout(searchTimer);
+
+    searchTimer = setTimeout(
+        loadProducts,
+        250
+    );
+};
+
+async function loadProducts() {
+
+    const supplier = val('supplier');
+
+    const search = val('product-search');
+
+    if (!supplier && !search) {
+
+        shownProducts = [];
+
+        $('product').replaceChildren(
+            new Option(
+                'Choose Product',
+                ''
+            )
+        );
+
+        return;
+    }
+
+    try {
+
+        const params = new URLSearchParams({
+            supplier,
+            search
+        });
+
+        shownProducts = await api(
+            '/api/products?' + params
+        );
+
+        $('product').replaceChildren(
+            new Option(
+                'Choose Product',
+                ''
+            )
+        );
+
+        for (const product of shownProducts) {
+
+            const label =
+                `${product.sku} · ` +
+                `${product.product_name} · ` +
+                `${product.master_barcode || 'No barcode'} · ` +
+                `ID ${product.product_id}`;
+
+            $('product').add(
+                new Option(
+                    label,
+                    product.product_id
+                )
+            );
+        }
+
+        $('product-info').textContent =
+            shownProducts.length === 300
+                ? 'Showing first 300 results. Narrow your search.'
+                : '';
+
+    } catch (error) {
+
+        msg(
+            'save-msg',
+            error.message
+        );
+    }
+}
+
+// ======================================
+// PRODUCT INFORMATION
+// ======================================
+
+$('product').onchange = () => {
+
+    const product = shownProducts.find(
+        product =>
+            String(product.product_id) ===
+            val('product')
+    );
+
+    $('product-info').textContent = product
+        ? `Shelf Life: ${product.shelf_life || '-'} | ` +
+          `Condition: ${product.condition || '-'} | ` +
+          `Remarks: ${product.remarks || '-'}`
+        : '';
+};
+
+// ======================================
+// SAVE MONITORING
+// ======================================
+
+$('save').onclick = async () => {
+
+    if (!val('product')) {
+
+        return msg(
+            'save-msg',
+            'Choose a product first'
+        );
+    }
+
+    const body = {
+
+        product_id: Number(
+            val('product')
+        ),
+
+        store_barcode: val('barcode'),
+
+        srp: val('srp')
+
+    };
+
+    for (let i = 1; i <= 3; i++) {
+
+        body['exp' + i] =
+            val('exp' + i);
+
+        body['qty' + i] =
+            val('qty' + i);
+    }
+
+    try {
+
+        await api(
+            '/api/store/monitoring',
+            {
                 method: 'POST',
-                headers: { 'Authorization': `Bearer ${authToken}` },
-                body: formData
-            });
-            const data = await res.json();
-            if (res.ok) {
-                document.getElementById('import-status').innerText = data.message;
-                document.getElementById('import-status').className = "text-xs mt-1 font-semibold text-green-700";
-                loadSuppliers();
-            } else {
-                document.getElementById('import-status').innerText = data.error;
-                document.getElementById('import-status').className = "text-xs mt-1 font-semibold text-red-700";
+
+                headers: {
+                    'Content-Type':
+                        'application/json'
+                },
+
+                body: JSON.stringify(body)
             }
+        );
+
+        msg(
+            'save-msg',
+            'Saved successfully',
+            true
+        );
+
+        await refresh();
+
+    } catch (error) {
+
+        msg(
+            'save-msg',
+            error.message
+        );
+    }
+};
+
+// ======================================
+// EXCEL EXPORT
+// ======================================
+
+$('export').onclick = async () => {
+
+    try {
+
+        const response = await fetch(
+            '/api/export/monitoring',
+            {
+                headers: {
+                    Authorization:
+                        'Bearer ' + token
+                }
+            }
+        );
+
+        if (!response.ok) {
+
+            const data = await response.json();
+
+            throw Error(
+                data.error || 'Export failed'
+            );
         }
-    </script>
+
+        const blob = await response.blob();
+
+        const url = URL.createObjectURL(blob);
+
+        const link =
+            document.createElement('a');
+
+        link.href = url;
+
+        link.download =
+            'NEMS_Monitoring.xlsx';
+
+        link.click();
+
+        setTimeout(
+            () => URL.revokeObjectURL(url),
+            1000
+        );
+
+    } catch (error) {
+
+        alert(error.message);
+    }
+};
+
+</script>
+
 </body>
 </html>
