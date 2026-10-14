@@ -1,3 +1,4 @@
+
 'use strict';
 
 const express = require('express');
@@ -10,7 +11,10 @@ const app = express();
 app.disable('x-powered-by');
 app.use(express.json({ limit: '100kb' }));
 
+// ==========================================
 // DATABASE CONNECTION
+// ==========================================
+
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
     ssl: process.env.PGSSL_DISABLE === 'true'
@@ -19,7 +23,10 @@ const pool = new Pool({
     max: 10
 });
 
+// ==========================================
 // SUPABASE AUTHENTICATION
+// ==========================================
+
 const SUPABASE_URL = (
     process.env.SUPABASE_URL || ''
 ).replace(/\/$/, '');
@@ -50,6 +57,10 @@ app.get('/', (req, res) => {
     );
 });
 
+// ==========================================
+// HELPERS
+// ==========================================
+
 const sendError = (res, status, message) => {
     return res.status(status).json({
         error: message
@@ -69,6 +80,91 @@ const VALID_ROLES = [
     'HEAD',
     'ADMIN'
 ];
+
+function adminOnly(req, res, next) {
+    if (req.user.role !== 'ADMIN') {
+        return sendError(res, 403, 'ADMIN access required');
+    }
+    next();
+}
+
+function requiredText(value, max = 255) {
+    if (typeof value !== 'string') return null;
+
+    const text = value.trim();
+
+    return text && text.length <= max ? text : null;
+}
+
+function optionalText(value, max = 255) {
+    if (
+        value === null ||
+        value === undefined ||
+        value === ''
+    ) {
+        return null;
+    }
+
+    if (
+        typeof value !== 'string' ||
+        value.trim().length > max
+    ) {
+        return undefined;
+    }
+
+    return value.trim() || null;
+}
+
+function optionalPrice(value) {
+    if (
+        value === null ||
+        value === undefined ||
+        value === ''
+    ) {
+        return null;
+    }
+
+    const number = Number(value);
+
+    return Number.isFinite(number) &&
+        number >= 0 &&
+        number <= 999999999
+        ? number
+        : undefined;
+}
+
+function validId(value) {
+    const id = Number(value);
+
+    return Number.isSafeInteger(id) && id > 0
+        ? id
+        : null;
+}
+
+function databaseError(res, error, fallback) {
+    console.error(
+        'Database error:',
+        error.code || error.message
+    );
+
+    if (error.code === '23505') {
+        return sendError(
+            res,
+            409,
+            'This record already exists'
+        );
+    }
+
+    if (error.code === '23503') {
+        return sendError(
+            res,
+            409,
+            'A related supplier or product record is missing or in use'
+        );
+    }
+
+    return sendError(res, 500, fallback);
+}
 
 // ==========================================
 // SECURE LOGIN
@@ -254,7 +350,10 @@ async function authenticate(req, res, next) {
 
     } catch (error) {
 
-        console.error('Authentication error:', error);
+        console.error(
+            'Authentication error:',
+            error
+        );
 
         sendError(
             res,
@@ -378,21 +477,10 @@ function expiryCategory(date) {
         ) / 86400000
     );
 
-    if (days < 0) {
-        return 'EXPIRED';
-    }
-
-    if (days <= 30) {
-        return 'RED';
-    }
-
-    if (days <= 60) {
-        return 'BLUE';
-    }
-
-    if (days <= 90) {
-        return 'GREEN';
-    }
+    if (days < 0) return 'EXPIRED';
+    if (days <= 30) return 'RED';
+    if (days <= 60) return 'BLUE';
+    if (days <= 90) return 'GREEN';
 
     return 'LATER';
 }
@@ -402,13 +490,11 @@ function expiryCategory(date) {
 // ==========================================
 
 app.get('/api/me', authenticate, (req, res) => {
-
     res.json(req.user);
-
 });
 
 // ==========================================
-// GET SUPPLIERS
+// GET ACTIVE SUPPLIERS
 // ==========================================
 
 app.get('/api/suppliers', authenticate, async (req, res) => {
@@ -439,7 +525,7 @@ app.get('/api/suppliers', authenticate, async (req, res) => {
 });
 
 // ==========================================
-// SEARCH PRODUCTS
+// SEARCH ACTIVE PRODUCTS
 // ==========================================
 
 app.get('/api/products', authenticate, async (req, res) => {
@@ -799,7 +885,6 @@ app.post('/api/store/monitoring', authenticate, async (req, res) => {
 
     try {
 
-        // VERIFY STORE OWNERSHIP
         const storeResult = await pool.query(
             `
             SELECT store_name
@@ -823,7 +908,6 @@ app.post('/api/store/monitoring', authenticate, async (req, res) => {
             );
         }
 
-        // GET PRODUCT
         const productResult = await pool.query(
             `
             SELECT
@@ -853,7 +937,6 @@ app.post('/api/store/monitoring', authenticate, async (req, res) => {
 
         const product = productResult.rows[0];
 
-        // SAVE MONITORING
         const { rows } = await pool.query(
             `
             INSERT INTO public.monitoring
@@ -1066,6 +1149,449 @@ app.post(
             403,
             'Master import disabled until safe product_id-based import is implemented'
         );
+    }
+);
+
+// ==========================================
+// ADMIN PRODUCT & SUPPLIER MANAGEMENT
+// ==========================================
+
+// ADMIN: LIST ALL SUPPLIERS
+
+app.get(
+    '/api/admin/suppliers',
+    authenticate,
+    adminOnly,
+    async (req, res) => {
+        try {
+            const { rows } = await pool.query(`
+                SELECT supplier_id, supplier_name, status
+                FROM public.suppliers
+                ORDER BY supplier_name, supplier_id
+            `);
+
+            res.json(rows);
+
+        } catch (error) {
+            databaseError(
+                res,
+                error,
+                'Could not load suppliers'
+            );
+        }
+    }
+);
+
+// ADMIN: ADD SUPPLIER
+
+app.post(
+    '/api/admin/suppliers',
+    authenticate,
+    adminOnly,
+    async (req, res) => {
+
+        const name = requiredText(
+            req.body.supplier_name
+        );
+
+        if (!name) {
+            return sendError(
+                res,
+                400,
+                'Valid supplier name required'
+            );
+        }
+
+        try {
+
+            const { rows } = await pool.query(`
+                INSERT INTO public.suppliers (
+                    supplier_name,
+                    status
+                )
+                SELECT $1, 'ACTIVE'
+                WHERE NOT EXISTS (
+                    SELECT 1
+                    FROM public.suppliers
+                    WHERE LOWER(TRIM(supplier_name)) =
+                          LOWER(TRIM($1))
+                )
+                RETURNING
+                    supplier_id,
+                    supplier_name,
+                    status
+            `, [name]);
+
+            if (!rows.length) {
+                return sendError(
+                    res,
+                    409,
+                    'Supplier already exists'
+                );
+            }
+
+            res.status(201).json(rows[0]);
+
+        } catch (error) {
+            databaseError(
+                res,
+                error,
+                'Could not add supplier'
+            );
+        }
+    }
+);
+
+// ADMIN: EDIT OR DEACTIVATE SUPPLIER
+
+app.patch(
+    '/api/admin/suppliers/:id',
+    authenticate,
+    adminOnly,
+    async (req, res) => {
+
+        const id = validId(req.params.id);
+
+        const name = requiredText(
+            req.body.supplier_name
+        );
+
+        const status = req.body.status;
+
+        if (
+            !id ||
+            !name ||
+            !['ACTIVE', 'INACTIVE'].includes(status)
+        ) {
+            return sendError(
+                res,
+                400,
+                'Invalid supplier information'
+            );
+        }
+
+        try {
+
+            const duplicate = await pool.query(`
+                SELECT supplier_id
+                FROM public.suppliers
+                WHERE LOWER(TRIM(supplier_name)) =
+                      LOWER(TRIM($1))
+                  AND supplier_id <> $2
+                LIMIT 1
+            `, [name, id]);
+
+            if (duplicate.rows.length) {
+                return sendError(
+                    res,
+                    409,
+                    'Supplier name already exists'
+                );
+            }
+
+            const { rows } = await pool.query(`
+                UPDATE public.suppliers
+                SET
+                    supplier_name = $1,
+                    status = $2
+                WHERE supplier_id = $3
+                RETURNING
+                    supplier_id,
+                    supplier_name,
+                    status
+            `, [name, status, id]);
+
+            if (!rows.length) {
+                return sendError(
+                    res,
+                    404,
+                    'Supplier not found'
+                );
+            }
+
+            res.json(rows[0]);
+
+        } catch (error) {
+            databaseError(
+                res,
+                error,
+                'Could not update supplier'
+            );
+        }
+    }
+);
+
+// ADMIN: LIST PRODUCTS INCLUDING LANDED COST
+
+app.get(
+    '/api/admin/products',
+    authenticate,
+    adminOnly,
+    async (req, res) => {
+
+        try {
+
+            const search = String(
+                req.query.search || ''
+            ).trim().slice(0, 100);
+
+            const { rows } = await pool.query(`
+                SELECT
+                    product_id,
+                    sku,
+                    product_name,
+                    master_barcode,
+                    master_srp,
+                    supplier_name,
+                    condition,
+                    remarks,
+                    category,
+                    status,
+                    shelf_life,
+                    landed_cost
+                FROM public.products
+                WHERE
+                    $1 = ''
+                    OR sku ILIKE '%' || $1 || '%'
+                    OR product_name ILIKE '%' || $1 || '%'
+                    OR supplier_name ILIKE '%' || $1 || '%'
+                    OR master_barcode ILIKE '%' || $1 || '%'
+                ORDER BY product_id
+                LIMIT 3000
+            `, [search]);
+
+            res.json(rows);
+
+        } catch (error) {
+            databaseError(
+                res,
+                error,
+                'Could not load products'
+            );
+        }
+    }
+);
+
+// ==========================================
+// PRODUCT VALIDATION
+// ==========================================
+
+function productInput(body) {
+
+    const sku = requiredText(body.sku);
+
+    const productName = requiredText(
+        body.product_name
+    );
+
+    const supplierName = requiredText(
+        body.supplier_name
+    );
+
+    const barcode = optionalText(
+        body.master_barcode
+    );
+
+    const condition = optionalText(
+        body.condition
+    );
+
+    const remarks = optionalText(
+        body.remarks,
+        10000
+    );
+
+    const category = optionalText(
+        body.category
+    );
+
+    const shelfLife = optionalText(
+        body.shelf_life,
+        1000
+    );
+
+    const srp = optionalPrice(
+        body.master_srp
+    );
+
+    const landedCost = optionalPrice(
+        body.landed_cost
+    );
+
+    const status = body.status || 'ACTIVE';
+
+    if (
+        !sku ||
+        !productName ||
+        !supplierName ||
+        barcode === undefined ||
+        condition === undefined ||
+        remarks === undefined ||
+        category === undefined ||
+        shelfLife === undefined ||
+        srp === undefined ||
+        landedCost === undefined ||
+        !['ACTIVE', 'INACTIVE'].includes(status)
+    ) {
+        return null;
+    }
+
+    return {
+        sku,
+        productName,
+        supplierName,
+        barcode,
+        condition,
+        remarks,
+        category,
+        shelfLife,
+        srp,
+        landedCost,
+        status
+    };
+}
+
+function productValues(p) {
+
+    return [
+        p.sku,
+        p.productName,
+        p.barcode,
+        p.srp,
+        p.supplierName,
+        p.condition,
+        p.remarks,
+        p.category,
+        p.status,
+        p.shelfLife,
+        p.landedCost
+    ];
+}
+
+// ==========================================
+// ADMIN: ADD PRODUCT
+// ==========================================
+
+app.post(
+    '/api/admin/products',
+    authenticate,
+    adminOnly,
+    async (req, res) => {
+
+        const p = productInput(req.body);
+
+        if (!p) {
+            return sendError(
+                res,
+                400,
+                'Invalid product information'
+            );
+        }
+
+        try {
+
+            const { rows } = await pool.query(`
+                INSERT INTO public.products (
+                    sku,
+                    product_name,
+                    master_barcode,
+                    master_srp,
+                    supplier_name,
+                    condition,
+                    remarks,
+                    category,
+                    status,
+                    shelf_life,
+                    landed_cost
+                )
+                VALUES (
+                    $1, $2, $3, $4, $5, $6,
+                    $7, $8, $9, $10, $11
+                )
+                RETURNING
+                    product_id,
+                    sku,
+                    product_name
+            `, productValues(p));
+
+            res.status(201).json(rows[0]);
+
+        } catch (error) {
+            databaseError(
+                res,
+                error,
+                'Could not add product'
+            );
+        }
+    }
+);
+
+// ==========================================
+// ADMIN: EDIT PRODUCT BY PRODUCT ID
+// ==========================================
+
+app.patch(
+    '/api/admin/products/:id',
+    authenticate,
+    adminOnly,
+    async (req, res) => {
+
+        const id = validId(req.params.id);
+
+        const p = productInput(req.body);
+
+        if (!id || !p) {
+            return sendError(
+                res,
+                400,
+                'Invalid product information'
+            );
+        }
+
+        try {
+
+            const { rows } = await pool.query(`
+                UPDATE public.products
+                SET
+                    sku = $1,
+                    product_name = $2,
+                    master_barcode = $3,
+                    master_srp = $4,
+                    supplier_name = $5,
+                    condition = $6,
+                    remarks = $7,
+                    category = $8,
+                    status = $9,
+                    shelf_life = $10,
+                    landed_cost = $11
+                WHERE product_id = $12
+                RETURNING
+                    product_id,
+                    sku,
+                    product_name,
+                    status
+            `, [
+                ...productValues(p),
+                id
+            ]);
+
+            if (!rows.length) {
+                return sendError(
+                    res,
+                    404,
+                    'Product not found'
+                );
+            }
+
+            res.json(rows[0]);
+
+        } catch (error) {
+            databaseError(
+                res,
+                error,
+                'Could not update product'
+            );
+        }
     }
 );
 
