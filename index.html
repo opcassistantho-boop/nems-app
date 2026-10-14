@@ -1,268 +1,1079 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>CARD INDOGROSIR · NEMS</title>
+
 <style>
-:root{--navy:#123464;--blue:#20569b;--bg:#f0f4f8;--border:#d7e0eb;--text:#142b47}
-*{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--text);font:14px Arial,sans-serif}
-header{background:var(--navy);color:white;padding:17px max(20px,5%);display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
-header h1{font-size:20px;margin:0}
-header small{font-size:13px}
-button{border:0;background:var(--blue);color:white;padding:11px 17px;border-radius:7px;cursor:pointer;font-weight:bold}
-button:hover{filter:brightness(1.1)}
-button:disabled{opacity:.5;cursor:not-allowed}
-button.secondary{background:#66778e}
-button.danger{background:#b52e3c}
-button.green{background:#138258}
-button.small{padding:7px 11px;font-size:12px}
-input,select,textarea{width:100%;border:1px solid #c9d5e2;border-radius:6px;padding:11px;font:inherit;background:white;color:var(--text)}
-textarea{min-height:76px}
-label{display:block;font-weight:bold;font-size:12px;margin-bottom:6px}
-main{max-width:1200px;margin:25px auto;padding:0 16px}
-.panel{background:white;border-radius:11px;padding:20px;margin-bottom:18px;box-shadow:0 3px 12px #16345810}
-.panel h2{margin:0 0 18px;font-size:21px}
-.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
-.row>*{flex:1}
-.row button{flex:0 0 auto}
-.tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px}
-.tabs button{background:#e2e9f2;color:var(--navy)}
-.tabs button.active{background:var(--navy);color:white}
-.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:11px;margin-bottom:18px}
-.metric{color:white;padding:20px;border-radius:10px}
-.metric strong{display:block;font-size:30px}
-.metric small{font-weight:bold}
-.red{background:#b72c39}.blue{background:#2760b5}.greenbg{background:#158353}.gray{background:#424e64}
-.tablewrap{overflow:auto;width:100%}
-table{width:100%;border-collapse:collapse;font-size:13px}
-th,td{text-align:left;padding:11px 9px;border-bottom:1px solid #e1e8f0;vertical-align:top}
-th{background:#eaf0f7;white-space:nowrap}
-td button{margin:2px}
-.muted{color:#62738a;font-size:12px}
-.hidden{display:none!important}
-.formgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
-.formgrid .wide{grid-column:1/-1}
-.formactions{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}
-.message{padding:12px;border-radius:7px;margin-bottom:15px;background:#e8f1fc;color:#163e70}
-.message.error{background:#ffe8e8;color:#a1192c}
-#loginPanel{max-width:420px;margin:75px auto}
-#loginPanel input{margin-bottom:13px}
-#loginPanel button{width:100%}
-#loginPanel h2{text-align:center}
-.countline{margin-top:12px}
-@media(max-width:800px){.grid{grid-template-columns:repeat(2,1fr)}.formgrid{grid-template-columns:repeat(2,1fr)}}
-@media(max-width:500px){.grid,.formgrid{grid-template-columns:1fr}header h1{font-size:17px}.panel{padding:14px}}
+:root {
+    --navy:#123464;
+    --blue:#20569b;
+    --bg:#f0f4f8;
+    --border:#d7e0eb;
+    --text:#142b47;
+}
+* { box-sizing:border-box; }
+body {
+    margin:0;
+    background:var(--bg);
+    color:var(--text);
+    font:14px Arial,sans-serif;
+}
+header {
+    background:var(--navy);
+    color:white;
+    padding:17px max(20px,5%);
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:12px;
+    flex-wrap:wrap;
+}
+header h1 { font-size:20px; margin:0; }
+header small { font-size:13px; }
+
+button {
+    border:0;
+    background:var(--blue);
+    color:white;
+    padding:11px 17px;
+    border-radius:7px;
+    cursor:pointer;
+    font-weight:bold;
+}
+button:hover { filter:brightness(1.1); }
+button:disabled { opacity:.5; cursor:not-allowed; }
+button.secondary { background:#66778e; }
+button.danger { background:#b52e3c; }
+button.green { background:#138258; }
+button.small { padding:7px 11px; font-size:12px; }
+
+input,select,textarea {
+    width:100%;
+    border:1px solid #c9d5e2;
+    border-radius:6px;
+    padding:11px;
+    font:inherit;
+    background:white;
+    color:var(--text);
+}
+textarea { min-height:76px; }
+
+label {
+    display:block;
+    font-weight:bold;
+    font-size:12px;
+    margin-bottom:6px;
+}
+main {
+    max-width:1200px;
+    margin:25px auto;
+    padding:0 16px;
+}
+.panel {
+    background:white;
+    border-radius:11px;
+    padding:20px;
+    margin-bottom:18px;
+    box-shadow:0 3px 12px #16345810;
+}
+.panel h2 { margin:0 0 18px; font-size:21px; }
+
+.row {
+    display:flex;
+    gap:10px;
+    align-items:center;
+    flex-wrap:wrap;
+}
+.row > * { flex:1; }
+.row button { flex:0 0 auto; }
+
+.tabs {
+    display:flex;
+    gap:8px;
+    flex-wrap:wrap;
+    margin-bottom:18px;
+}
+.tabs button {
+    background:#e2e9f2;
+    color:var(--navy);
+}
+.tabs button.active {
+    background:var(--navy);
+    color:white;
+}
+
+.grid {
+    display:grid;
+    grid-template-columns:repeat(4,1fr);
+    gap:11px;
+    margin-bottom:18px;
+}
+.metric {
+    color:white;
+    padding:20px;
+    border-radius:10px;
+}
+.metric strong {
+    display:block;
+    font-size:30px;
+}
+.metric small { font-weight:bold; }
+
+.red { background:#b72c39; }
+.blue { background:#2760b5; }
+.greenbg { background:#158353; }
+.gray { background:#424e64; }
+
+.tablewrap {
+    overflow:auto;
+    width:100%;
+}
+table {
+    width:100%;
+    border-collapse:collapse;
+    font-size:13px;
+}
+th,td {
+    text-align:left;
+    padding:11px 9px;
+    border-bottom:1px solid #e1e8f0;
+    vertical-align:top;
+}
+th {
+    background:#eaf0f7;
+    white-space:nowrap;
+}
+td button { margin:2px; }
+
+.muted {
+    color:#62738a;
+    font-size:12px;
+}
+.hidden { display:none!important; }
+
+.formgrid {
+    display:grid;
+    grid-template-columns:repeat(3,1fr);
+    gap:14px;
+}
+.formgrid .wide { grid-column:1/-1; }
+
+.formactions {
+    display:flex;
+    gap:10px;
+    flex-wrap:wrap;
+    margin-top:18px;
+}
+.message {
+    padding:12px;
+    border-radius:7px;
+    margin-bottom:15px;
+    background:#e8f1fc;
+    color:#163e70;
+}
+.message.error {
+    background:#ffe8e8;
+    color:#a1192c;
+}
+
+#loginPanel {
+    max-width:420px;
+    margin:75px auto;
+}
+#loginPanel input { margin-bottom:13px; }
+#loginPanel button { width:100%; }
+#loginPanel h2 { text-align:center; }
+
+.countline { margin-top:12px; }
+
+.historyfilters {
+    display:grid;
+    grid-template-columns:repeat(3,minmax(0,1fr));
+    gap:12px;
+    margin-bottom:16px;
+}
+.historyfilters .filteritem { min-width:0; }
+
+.history-action {
+    display:inline-block;
+    padding:5px 9px;
+    border-radius:6px;
+    font-size:11px;
+    font-weight:bold;
+}
+.action-insert {
+    background:#d9f4e5;
+    color:#08683a;
+}
+.action-update {
+    background:#e1edff;
+    color:#174e9a;
+}
+.action-delete {
+    background:#ffe2e2;
+    color:#a42132;
+}
+
+.activityitem {
+    padding:13px 0;
+    border-bottom:1px solid #e1e8f0;
+}
+.activityitem:last-child { border-bottom:0; }
+.activitytitle {
+    font-weight:bold;
+    margin-bottom:5px;
+}
+.activitymeta {
+    font-size:12px;
+    color:#62738a;
+    line-height:1.7;
+}
+
+.detailsbox {
+    background:#f5f8fc;
+    border:1px solid #dce5f0;
+    border-radius:8px;
+    padding:12px;
+    margin-top:8px;
+}
+.detailsbox h3 {
+    margin:0 0 12px;
+    font-size:15px;
+}
+.changetable {
+    width:100%;
+    table-layout:fixed;
+}
+.changetable td,
+.changetable th {
+    overflow-wrap:anywhere;
+}
+.changevalue {
+    white-space:pre-wrap;
+    overflow-wrap:anywhere;
+}
+
+.pager {
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap:10px;
+    flex-wrap:wrap;
+    margin-top:15px;
+}
+.pager .controls {
+    display:flex;
+    gap:8px;
+    align-items:center;
+}
+.pager button { padding:8px 12px; }
+
+@media(max-width:800px) {
+    .grid { grid-template-columns:repeat(2,1fr); }
+    .formgrid { grid-template-columns:repeat(2,1fr); }
+    .historyfilters { grid-template-columns:repeat(2,1fr); }
+}
+@media(max-width:500px) {
+    .grid,.formgrid,.historyfilters {
+        grid-template-columns:1fr;
+    }
+    header h1 { font-size:17px; }
+    .panel { padding:14px; }
+}
 </style>
 </head>
+
 <body>
 
 <header>
-<h1>CARD INDOGROSIR · NEMS</h1>
-<div class="row" style="flex:0 1 auto">
-<small id="accountLabel"></small>
-<button id="logoutBtn" class="secondary small hidden" onclick="logout()">Log out</button>
-</div>
+    <h1>CARD INDOGROSIR · NEMS</h1>
+    <div class="row" style="flex:0 1 auto">
+        <small id="accountLabel"></small>
+        <button
+            id="logoutBtn"
+            class="secondary small hidden"
+            onclick="logout()"
+        >Log out</button>
+    </div>
 </header>
 
 <main>
 
 <section id="loginPanel" class="panel">
-<h2>NEMS Login</h2>
-<div id="loginMessage" class="message hidden"></div>
-<form id="loginForm">
-<label>Email Address</label>
-<input id="loginEmail" type="email" autocomplete="username" required>
-<label>Password</label>
-<input id="loginPassword" type="password" autocomplete="current-password" required>
-<button type="submit" id="loginBtn">Log in</button>
-</form>
+    <h2>NEMS Login</h2>
+    <div id="loginMessage" class="message hidden"></div>
+
+    <form id="loginForm">
+        <label>Email Address</label>
+        <input
+            id="loginEmail"
+            type="email"
+            autocomplete="username"
+            required
+        >
+
+        <label>Password</label>
+        <input
+            id="loginPassword"
+            type="password"
+            autocomplete="current-password"
+            required
+        >
+
+        <button type="submit" id="loginBtn">
+            Log in
+        </button>
+    </form>
 </section>
 
 <div id="application" class="hidden">
+
 <nav id="navigation" class="tabs">
-<button data-page="dashboard" onclick="showPage('dashboard')">Dashboard</button>
-<button data-page="monitoring" onclick="showPage('monitoring')">Monitoring</button>
-<button data-page="products" class="adminOnly hidden" onclick="showPage('products')">Products</button>
-<button data-page="suppliers" class="adminOnly hidden" onclick="showPage('suppliers')">Suppliers</button>
-<button data-page="storeentry" class="storeOnly hidden" onclick="showPage('storeentry')">Store Encoding</button>
+    <button
+        data-page="dashboard"
+        onclick="showPage('dashboard')"
+    >Dashboard</button>
+
+    <button
+        data-page="monitoring"
+        onclick="showPage('monitoring')"
+    >Monitoring</button>
+
+    <button
+        data-page="products"
+        class="adminOnly hidden"
+        onclick="showPage('products')"
+    >Products</button>
+
+    <button
+        data-page="suppliers"
+        class="adminOnly hidden"
+        onclick="showPage('suppliers')"
+    >Suppliers</button>
+
+    <button
+        data-page="storeentry"
+        class="storeOnly hidden"
+        onclick="showPage('storeentry')"
+    >Store Encoding</button>
+
+    <button
+        data-page="history"
+        class="historyOnly hidden"
+        onclick="showPage('history')"
+        id="historyNavButton"
+    >Activity History</button>
 </nav>
 
 <div id="notice" class="message hidden"></div>
 
+<!-- ===================================== -->
+<!-- DASHBOARD -->
+<!-- ===================================== -->
+
 <section id="page-dashboard" class="page">
-<div class="grid">
-<div class="metric red"><strong id="countRed">0</strong><small>RED · Within 30 Days</small></div>
-<div class="metric blue"><strong id="countBlue">0</strong><small>BLUE · 31–60 Days</small></div>
-<div class="metric greenbg"><strong id="countGreen">0</strong><small>GREEN · 61–90 Days</small></div>
-<div class="metric gray"><strong id="countExpired">0</strong><small>EXPIRED PRODUCTS</small></div>
-</div>
-<div class="panel">
-<h2>Near Expiry Dashboard</h2>
-<p>Monitoring records are categorized by expiration date. Products beyond 90 days are tracked separately.</p>
-<div class="row">
-<button onclick="refreshDashboard()">Refresh Dashboard</button>
-<button class="secondary" onclick="showPage('monitoring')">View Monitoring Records</button>
-</div>
-</div>
-<div class="panel adminOnly hidden">
-<h2>ADMIN Management</h2>
-<p>Manage the existing product and supplier masterlists without deleting or reimporting them.</p>
-<div class="row">
-<button onclick="showPage('products')">Manage Products</button>
-<button onclick="showPage('suppliers')">Manage Suppliers</button>
-</div>
-<p class="muted">User Management, Store Management, Consolidation and Activity Log will be developed in later stages.</p>
-</div>
+
+    <div class="grid">
+        <div class="metric red">
+            <strong id="countRed">0</strong>
+            <small>RED · Within 30 Days</small>
+        </div>
+
+        <div class="metric blue">
+            <strong id="countBlue">0</strong>
+            <small>BLUE · 31–60 Days</small>
+        </div>
+
+        <div class="metric greenbg">
+            <strong id="countGreen">0</strong>
+            <small>GREEN · 61–90 Days</small>
+        </div>
+
+        <div class="metric gray">
+            <strong id="countExpired">0</strong>
+            <small>EXPIRED PRODUCTS</small>
+        </div>
+    </div>
+
+    <div class="panel">
+        <h2>Near Expiry Dashboard</h2>
+
+        <p>
+            Monitoring records are categorized by expiration date.
+            Products beyond 90 days are tracked separately.
+        </p>
+
+        <div class="row">
+            <button onclick="refreshDashboard()">
+                Refresh Dashboard
+            </button>
+
+            <button
+                class="secondary"
+                onclick="showPage('monitoring')"
+            >
+                View Monitoring Records
+            </button>
+        </div>
+    </div>
+
+    <div class="panel historyOnly hidden">
+        <div class="row">
+            <h2 id="recentTitle">Recent Store Activities</h2>
+            <button onclick="loadRecentActivities()">
+                Refresh
+            </button>
+            <button
+                class="secondary"
+                onclick="showPage('history')"
+            >
+                View Full History
+            </button>
+        </div>
+
+        <p class="muted">
+            Latest monitoring additions, edits and deletions.
+            Only changes recorded after the history trigger
+            was installed will appear.
+        </p>
+
+        <div id="recentActivityList">
+            <p class="muted">Loading recent activities...</p>
+        </div>
+    </div>
+
+    <div class="panel adminOnly hidden">
+        <h2>ADMIN Management</h2>
+
+        <p>
+            Manage the existing product and supplier masterlists
+            without deleting or reimporting them.
+        </p>
+
+        <div class="row">
+            <button onclick="showPage('products')">
+                Manage Products
+            </button>
+
+            <button onclick="showPage('suppliers')">
+                Manage Suppliers
+            </button>
+
+            <button onclick="showPage('history')">
+                Activity Log
+            </button>
+        </div>
+
+        <p class="muted">
+            User Management, Store Management, Excel Import,
+            Task Assignment and Chat are not yet implemented.
+        </p>
+    </div>
+
 </section>
+
+<!-- ===================================== -->
+<!-- MONITORING -->
+<!-- ===================================== -->
 
 <section id="page-monitoring" class="page hidden">
-<div class="panel">
-<div class="row">
-<h2>Monitoring Records</h2>
-<button onclick="loadMonitoring()">Refresh</button>
-<button onclick="downloadMonitoring()">Download Excel</button>
-</div>
-<div class="row" style="margin-bottom:14px">
-<select id="monitorCategory" onchange="renderMonitoring()">
-<option value="">All Categories</option>
-<option>EXPIRED</option><option>RED</option><option>BLUE</option><option>GREEN</option><option>LATER</option>
-</select>
-<input id="monitorSearch" placeholder="Search store, SKU, product or supplier" oninput="renderMonitoring()">
-</div>
-<div class="tablewrap">
-<table>
-<thead><tr><th>Category</th><th>Store</th><th>Supplier</th><th>SKU / Product</th><th>Expiration</th><th>Qty (pcs)</th><th>Last Edited</th></tr></thead>
-<tbody id="monitorBody"></tbody>
-</table>
-</div>
-<p id="monitorCount" class="muted countline"></p>
-</div>
+    <div class="panel">
+
+        <div class="row">
+            <h2>Monitoring Records</h2>
+
+            <button onclick="loadMonitoring()">
+                Refresh
+            </button>
+
+            <button onclick="downloadMonitoring()">
+                Download Excel
+            </button>
+        </div>
+
+        <div class="row" style="margin-bottom:14px">
+            <select
+                id="monitorCategory"
+                onchange="renderMonitoring()"
+            >
+                <option value="">All Categories</option>
+                <option>EXPIRED</option>
+                <option>RED</option>
+                <option>BLUE</option>
+                <option>GREEN</option>
+                <option>LATER</option>
+            </select>
+
+            <input
+                id="monitorSearch"
+                placeholder="Search store, SKU, product or supplier"
+                oninput="renderMonitoring()"
+            >
+        </div>
+
+        <div class="tablewrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Category</th>
+                        <th>Store</th>
+                        <th>Supplier</th>
+                        <th>SKU / Product</th>
+                        <th>Expiration</th>
+                        <th>Qty (pcs)</th>
+                        <th>Last Edited</th>
+                    </tr>
+                </thead>
+                <tbody id="monitorBody"></tbody>
+            </table>
+        </div>
+
+        <p id="monitorCount" class="muted countline"></p>
+    </div>
 </section>
 
-<section id="page-suppliers" class="page hidden adminOnly">
-<div class="panel">
-<div class="row">
-<h2>Supplier Management</h2>
-<button class="green" onclick="newSupplier()">+ Add Supplier</button>
-</div>
-<div class="row">
-<input id="supplierSearch" placeholder="Search suppliers" oninput="renderSuppliers()">
-<select id="supplierFilter" onchange="renderSuppliers()">
-<option value="">All Statuses</option>
-<option>ACTIVE</option><option>INACTIVE</option>
-</select>
-<button onclick="loadAdminSuppliers()">Refresh</button>
-</div>
-<p id="supplierCount" class="muted"></p>
-<div class="tablewrap">
-<table>
-<thead><tr><th>ID</th><th>Supplier Name</th><th>Status</th><th>Actions</th></tr></thead>
-<tbody id="supplierBody"></tbody>
-</table>
-</div>
-</div>
-<div id="supplierEditor" class="panel hidden">
-<h2 id="supplierEditorTitle">Add Supplier</h2>
-<form id="supplierForm">
-<input type="hidden" id="supplierId">
-<div class="formgrid">
-<div>
-<label>Supplier Name *</label>
-<input id="supplierName" maxlength="255" required>
-</div>
-<div>
-<label>Status</label>
-<select id="supplierStatus">
-<option>ACTIVE</option><option>INACTIVE</option>
-</select>
-</div>
-</div>
-<div class="formactions">
-<button type="submit" id="supplierSaveBtn">Save Supplier</button>
-<button type="button" class="secondary" onclick="closeSupplierEditor()">Cancel</button>
-</div>
-</form>
-</div>
+<!-- ===================================== -->
+<!-- SUPPLIER MANAGEMENT -->
+<!-- ===================================== -->
+
+<section
+    id="page-suppliers"
+    class="page hidden adminOnly"
+>
+    <div class="panel">
+
+        <div class="row">
+            <h2>Supplier Management</h2>
+
+            <button
+                class="green"
+                onclick="newSupplier()"
+            >
+                + Add Supplier
+            </button>
+        </div>
+
+        <div class="row">
+            <input
+                id="supplierSearch"
+                placeholder="Search suppliers"
+                oninput="renderSuppliers()"
+            >
+
+            <select
+                id="supplierFilter"
+                onchange="renderSuppliers()"
+            >
+                <option value="">All Statuses</option>
+                <option>ACTIVE</option>
+                <option>INACTIVE</option>
+            </select>
+
+            <button onclick="loadAdminSuppliers()">
+                Refresh
+            </button>
+        </div>
+
+        <p id="supplierCount" class="muted"></p>
+
+        <div class="tablewrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Supplier Name</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="supplierBody"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <div id="supplierEditor" class="panel hidden">
+        <h2 id="supplierEditorTitle">
+            Add Supplier
+        </h2>
+
+        <form id="supplierForm">
+            <input type="hidden" id="supplierId">
+
+            <div class="formgrid">
+                <div>
+                    <label>Supplier Name *</label>
+                    <input
+                        id="supplierName"
+                        maxlength="255"
+                        required
+                    >
+                </div>
+
+                <div>
+                    <label>Status</label>
+                    <select id="supplierStatus">
+                        <option>ACTIVE</option>
+                        <option>INACTIVE</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="formactions">
+                <button
+                    type="submit"
+                    id="supplierSaveBtn"
+                >
+                    Save Supplier
+                </button>
+
+                <button
+                    type="button"
+                    class="secondary"
+                    onclick="closeSupplierEditor()"
+                >
+                    Cancel
+                </button>
+            </div>
+        </form>
+    </div>
 </section>
 
-<section id="page-products" class="page hidden adminOnly">
-<div class="panel">
-<div class="row">
-<h2>Product Management</h2>
-<button class="green" onclick="newProduct()">+ Add Product</button>
-</div>
-<div class="row">
-<input id="productSearch" placeholder="Search SKU, product, supplier or barcode" oninput="renderProducts()">
-<select id="productFilter" onchange="renderProducts()">
-<option value="">All Statuses</option>
-<option>ACTIVE</option><option>INACTIVE</option>
-</select>
-<button onclick="loadAdminProducts()">Refresh</button>
-</div>
-<p class="muted">Products are identified by their unique Product ID. Duplicate SKUs are preserved. Landed cost is ADMIN-only.</p>
-<p id="productCount" class="muted"></p>
-<div class="tablewrap">
-<table>
-<thead><tr><th>ID</th><th>SKU</th><th>Product</th><th>Supplier</th><th>SRP</th><th>Landed Cost</th><th>Status</th><th>Actions</th></tr></thead>
-<tbody id="productBody"></tbody>
-</table>
-</div>
-</div>
+<!-- ===================================== -->
+<!-- PRODUCT MANAGEMENT -->
+<!-- ===================================== -->
 
-<div id="productEditor" class="panel hidden">
-<h2 id="productEditorTitle">Add Product</h2>
-<form id="productForm">
-<input type="hidden" id="productId">
-<div class="formgrid">
-<div><label>SKU *</label><input id="pSku" required maxlength="255"></div>
-<div><label>Product Name *</label><input id="pName" required maxlength="255"></div>
-<div><label>Supplier *</label><select id="pSupplier" required></select></div>
-<div><label>Master Barcode</label><input id="pBarcode" maxlength="255"></div>
-<div><label>Master SRP (₱)</label><input id="pSrp" type="number" min="0" step="0.01"></div>
-<div><label>Landed Cost (₱) · ADMIN ONLY</label><input id="pCost" type="number" min="0" step="0.01"></div>
-<div><label>Category</label><input id="pCategory" maxlength="255"></div>
-<div><label>Condition</label><input id="pCondition" maxlength="255"></div>
-<div><label>Shelf Life</label><input id="pShelfLife" maxlength="1000"></div>
-<div><label>Status</label><select id="pStatus"><option>ACTIVE</option><option>INACTIVE</option></select></div>
-<div class="wide"><label>Remarks</label><textarea id="pRemarks" maxlength="10000"></textarea></div>
-</div>
-<div class="formactions">
-<button type="submit" id="productSaveBtn">Save Product</button>
-<button type="button" class="secondary" onclick="closeProductEditor()">Cancel</button>
-</div>
-</form>
-</div>
+<section
+    id="page-products"
+    class="page hidden adminOnly"
+>
+    <div class="panel">
+
+        <div class="row">
+            <h2>Product Management</h2>
+
+            <button
+                class="green"
+                onclick="newProduct()"
+            >
+                + Add Product
+            </button>
+        </div>
+
+        <div class="row">
+            <input
+                id="productSearch"
+                placeholder="Search SKU, product, supplier or barcode"
+                oninput="renderProducts()"
+            >
+
+            <select
+                id="productFilter"
+                onchange="renderProducts()"
+            >
+                <option value="">All Statuses</option>
+                <option>ACTIVE</option>
+                <option>INACTIVE</option>
+            </select>
+
+            <button onclick="loadAdminProducts()">
+                Refresh
+            </button>
+        </div>
+
+        <p class="muted">
+            Products are identified by Product ID.
+            Duplicate SKUs are preserved.
+            Landed cost is ADMIN-only.
+        </p>
+
+        <p id="productCount" class="muted"></p>
+
+        <div class="tablewrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>SKU</th>
+                        <th>Product</th>
+                        <th>Supplier</th>
+                        <th>SRP</th>
+                        <th>Landed Cost</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="productBody"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <div id="productEditor" class="panel hidden">
+        <h2 id="productEditorTitle">
+            Add Product
+        </h2>
+
+        <form id="productForm">
+            <input type="hidden" id="productId">
+
+            <div class="formgrid">
+
+                <div>
+                    <label>SKU *</label>
+                    <input id="pSku" required maxlength="255">
+                </div>
+
+                <div>
+                    <label>Product Name *</label>
+                    <input id="pName" required maxlength="255">
+                </div>
+
+                <div>
+                    <label>Supplier *</label>
+                    <select id="pSupplier" required></select>
+                </div>
+
+                <div>
+                    <label>Master Barcode</label>
+                    <input id="pBarcode" maxlength="255">
+                </div>
+
+                <div>
+                    <label>Master SRP (₱)</label>
+                    <input
+                        id="pSrp"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                    >
+                </div>
+
+                <div>
+                    <label>Landed Cost (₱) · ADMIN ONLY</label>
+                    <input
+                        id="pCost"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                    >
+                </div>
+
+                <div>
+                    <label>Category</label>
+                    <input id="pCategory" maxlength="255">
+                </div>
+
+                <div>
+                    <label>Condition</label>
+                    <input id="pCondition" maxlength="255">
+                </div>
+
+                <div>
+                    <label>Shelf Life</label>
+                    <input id="pShelfLife" maxlength="1000">
+                </div>
+
+                <div>
+                    <label>Status</label>
+                    <select id="pStatus">
+                        <option>ACTIVE</option>
+                        <option>INACTIVE</option>
+                    </select>
+                </div>
+
+                <div class="wide">
+                    <label>Remarks</label>
+                    <textarea
+                        id="pRemarks"
+                        maxlength="10000"
+                    ></textarea>
+                </div>
+
+            </div>
+
+            <div class="formactions">
+                <button
+                    type="submit"
+                    id="productSaveBtn"
+                >
+                    Save Product
+                </button>
+
+                <button
+                    type="button"
+                    class="secondary"
+                    onclick="closeProductEditor()"
+                >
+                    Cancel
+                </button>
+            </div>
+        </form>
+    </div>
 </section>
 
-<section id="page-storeentry" class="page hidden storeOnly">
-<div class="panel">
-<h2>Store Monitoring Encoding</h2>
-<p class="muted">Select a product, then enter up to three expiration dates and quantities in pieces (0–500).</p>
-<form id="storeForm">
-<div class="formgrid">
-<div><label>Supplier</label><select id="entrySupplier" onchange="searchEntryProducts()"></select></div>
-<div><label>Search SKU or Product</label><input id="entrySearch" placeholder="Type product or SKU"></div>
-<div><label>Product *</label><select id="entryProduct" required></select></div>
-<div><label>Store Barcode</label><input id="entryBarcode"></div>
-<div><label>Store SRP (₱)</label><input id="entrySrp" type="number" min="0" step="0.01"></div>
-</div>
-<h3>Expiration Dates and Quantities</h3>
-<div class="formgrid">
-<div><label>Expiration Date 1</label><input id="exp1" type="date"></div>
-<div><label>Quantity 1 (pcs)</label><input id="qty1" type="number" min="0" max="500" step="1"></div>
-<div></div>
-<div><label>Expiration Date 2</label><input id="exp2" type="date"></div>
-<div><label>Quantity 2 (pcs)</label><input id="qty2" type="number" min="0" max="500" step="1"></div>
-<div></div>
-<div><label>Expiration Date 3</label><input id="exp3" type="date"></div>
-<div><label>Quantity 3 (pcs)</label><input id="qty3" type="number" min="0" max="500" step="1"></div>
-</div>
-<div class="formactions"><button type="submit">Save Monitoring</button></div>
-</form>
-</div>
+<!-- ===================================== -->
+<!-- STORE ENCODING -->
+<!-- ===================================== -->
+
+<section
+    id="page-storeentry"
+    class="page hidden storeOnly"
+>
+    <div class="panel">
+        <h2>Store Monitoring Encoding</h2>
+
+        <p class="muted">
+            Select a product, then enter up to three
+            expiration dates and quantities in pieces (0–500).
+        </p>
+
+        <form id="storeForm">
+            <div class="formgrid">
+
+                <div>
+                    <label>Supplier</label>
+                    <select
+                        id="entrySupplier"
+                        onchange="searchEntryProducts()"
+                    ></select>
+                </div>
+
+                <div>
+                    <label>Search SKU or Product</label>
+                    <input
+                        id="entrySearch"
+                        placeholder="Type product or SKU"
+                    >
+                </div>
+
+                <div>
+                    <label>Product *</label>
+                    <select
+                        id="entryProduct"
+                        required
+                    ></select>
+                </div>
+
+                <div>
+                    <label>Store Barcode</label>
+                    <input id="entryBarcode">
+                </div>
+
+                <div>
+                    <label>Store SRP (₱)</label>
+                    <input
+                        id="entrySrp"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                    >
+                </div>
+            </div>
+
+            <h3>Expiration Dates and Quantities</h3>
+
+            <div class="formgrid">
+
+                <div>
+                    <label>Expiration Date 1</label>
+                    <input id="exp1" type="date">
+                </div>
+
+                <div>
+                    <label>Quantity 1 (pcs)</label>
+                    <input
+                        id="qty1"
+                        type="number"
+                        min="0"
+                        max="500"
+                        step="1"
+                    >
+                </div>
+
+                <div></div>
+
+                <div>
+                    <label>Expiration Date 2</label>
+                    <input id="exp2" type="date">
+                </div>
+
+                <div>
+                    <label>Quantity 2 (pcs)</label>
+                    <input
+                        id="qty2"
+                        type="number"
+                        min="0"
+                        max="500"
+                        step="1"
+                    >
+                </div>
+
+                <div></div>
+
+                <div>
+                    <label>Expiration Date 3</label>
+                    <input id="exp3" type="date">
+                </div>
+
+                <div>
+                    <label>Quantity 3 (pcs)</label>
+                    <input
+                        id="qty3"
+                        type="number"
+                        min="0"
+                        max="500"
+                        step="1"
+                    >
+                </div>
+
+            </div>
+
+            <div class="formactions">
+                <button type="submit" id="storeSaveBtn">
+                    Save Monitoring
+                </button>
+            </div>
+        </form>
+    </div>
+</section>
+
+<!-- ===================================== -->
+<!-- ACTIVITY HISTORY -->
+<!-- ===================================== -->
+
+<section
+    id="page-history"
+    class="page hidden historyOnly"
+>
+    <div class="panel">
+
+        <div class="row">
+            <h2 id="historyPageTitle">
+                Activity History
+            </h2>
+
+            <button onclick="loadHistory(1)">
+                Refresh History
+            </button>
+
+            <button
+                class="secondary"
+                onclick="resetHistoryFilters()"
+            >
+                Clear Filters
+            </button>
+        </div>
+
+        <p class="muted" id="historyDescription">
+            Monitoring additions, edits and deletions.
+        </p>
+
+        <div class="historyfilters">
+
+            <div
+                class="filteritem adminOnly hidden"
+                id="historyStoreFilterBox"
+            >
+                <label>Store</label>
+                <select id="historyStore">
+                    <option value="">All Stores</option>
+                </select>
+            </div>
+
+            <div class="filteritem">
+                <label>Supplier</label>
+                <select id="historySupplier">
+                    <option value="">All Suppliers</option>
+                </select>
+            </div>
+
+            <div class="filteritem">
+                <label>Action</label>
+                <select id="historyAction">
+                    <option value="">All Actions</option>
+                    <option value="INSERT">Added</option>
+                    <option value="UPDATE">Edited</option>
+                    <option value="DELETE">Deleted</option>
+                </select>
+            </div>
+
+            <div class="filteritem">
+                <label>Product / SKU Search</label>
+                <input
+                    id="historySearch"
+                    placeholder="Search product or SKU"
+                >
+            </div>
+
+            <div class="filteritem">
+                <label>From Date</label>
+                <input id="historyFrom" type="date">
+            </div>
+
+            <div class="filteritem">
+                <label>To Date</label>
+                <input id="historyTo" type="date">
+            </div>
+
+        </div>
+
+        <div class="formactions" style="margin-bottom:16px">
+            <button onclick="loadHistory(1)">
+                Apply Filters
+            </button>
+        </div>
+
+        <p id="historyCount" class="muted">
+            Loading...
+        </p>
+
+        <div class="tablewrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Date / Time</th>
+                        <th>Store</th>
+                        <th>Supplier</th>
+                        <th>Product / SKU</th>
+                        <th>Action</th>
+                        <th>Changed By</th>
+                        <th>Details</th>
+                    </tr>
+                </thead>
+
+                <tbody id="historyBody">
+                    <tr>
+                        <td colspan="7">
+                            Loading activity history...
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="pager">
+            <span id="historyPageInfo" class="muted"></span>
+
+            <div class="controls">
+                <button
+                    class="secondary"
+                    id="historyPrevious"
+                    onclick="changeHistoryPage(-1)"
+                >
+                    Previous
+                </button>
+
+                <button
+                    id="historyNext"
+                    onclick="changeHistoryPage(1)"
+                >
+                    Next
+                </button>
+            </div>
+        </div>
+
+    </div>
 </section>
 
 </div>
@@ -271,163 +1082,403 @@ td button{margin:2px}
 <script>
 'use strict';
 
+// ==========================================
+// APPLICATION STATE
+// ==========================================
+
 let token = '';
 let currentUser = null;
+
 let monitoring = [];
 let adminSuppliers = [];
 let adminProducts = [];
 let entryProducts = [];
+
 let entrySearchTimer = null;
+
+let historyRecords = [];
+let historyPage = 1;
+let historyTotal = 0;
+let historyLimit = 50;
+let historyRequestNumber = 0;
 
 const el = id => document.getElementById(id);
 
+// ==========================================
+// GENERAL HELPERS
+// ==========================================
+
 function escapeHtml(value) {
-    return String(value ?? '').replace(/[&<>"']/g, ch => ({
-        '&':'&amp;',
-        '<':'&lt;',
-        '>':'&gt;',
-        '"':'&quot;',
-        "'":'&#39;'
-    })[ch]);
+    return String(value ?? '').replace(
+        /[&<>"']/g,
+        ch => ({
+            '&':'&amp;',
+            '<':'&lt;',
+            '>':'&gt;',
+            '"':'&quot;',
+            "'":'&#39;'
+        })[ch]
+    );
 }
 
 function showMessage(message, error = false) {
     const box = el('notice');
+
     box.textContent = message;
-    box.className = 'message' + (error ? ' error' : '');
-    box.scrollIntoView({behavior:'smooth',block:'nearest'});
+    box.className = 'message' + (
+        error ? ' error' : ''
+    );
+
+    box.scrollIntoView({
+        behavior:'smooth',
+        block:'nearest'
+    });
 }
 
 function clearMessage() {
     el('notice').classList.add('hidden');
 }
 
+function dateText(value) {
+    if (!value) return '';
+
+    return String(value).slice(0,10);
+}
+
+function dateTimeText(value) {
+    if (!value) return '';
+
+    const date = new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+        return String(value);
+    }
+
+    return date.toLocaleString('en-PH', {
+        timeZone:'Asia/Manila',
+        year:'numeric',
+        month:'short',
+        day:'numeric',
+        hour:'numeric',
+        minute:'2-digit',
+        hour12:true
+    });
+}
+
+function readableAction(action) {
+    if (action === 'INSERT') return 'Added';
+    if (action === 'UPDATE') return 'Edited';
+    if (action === 'DELETE') return 'Deleted';
+
+    return action || 'Unknown';
+}
+
+function actionClass(action) {
+    if (action === 'INSERT') return 'action-insert';
+    if (action === 'UPDATE') return 'action-update';
+    if (action === 'DELETE') return 'action-delete';
+
+    return '';
+}
+
+function actionBadge(action) {
+    return `
+        <span class="history-action ${actionClass(action)}">
+            ${escapeHtml(readableAction(action))}
+        </span>
+    `;
+}
+
+function displayValue(value) {
+    if (value === null || value === undefined) {
+        return '—';
+    }
+
+    if (typeof value === 'object') {
+        return JSON.stringify(value);
+    }
+
+    if (value === '') return '(empty)';
+
+    return String(value);
+}
+
+function fieldLabel(field) {
+    const labels = {
+        store_email:'Store Email',
+        store_name:'Store',
+        product_id:'Product ID',
+        sku:'SKU',
+        product_name:'Product',
+        supplier:'Supplier',
+        store_barcode:'Store Barcode',
+        srp:'Retail Price',
+        expiration_1:'Expiration Date 1',
+        qty_1:'Quantity 1',
+        expiration_2:'Expiration Date 2',
+        qty_2:'Quantity 2',
+        expiration_3:'Expiration Date 3',
+        qty_3:'Quantity 3',
+        updated_by:'Updated By',
+        updated_at:'Updated At'
+    };
+
+    return labels[field] ||
+        field.replace(/_/g,' ');
+}
+
+// ==========================================
+// API REQUESTS
+// ==========================================
+
 async function api(url, options = {}) {
-    const headers = {...(options.headers || {})};
+    const headers = {
+        ...(options.headers || {})
+    };
 
-    if (token) headers.Authorization = 'Bearer ' + token;
+    if (token) {
+        headers.Authorization = 'Bearer ' + token;
+    }
 
-    if (options.body && !(options.body instanceof FormData)) {
+    if (
+        options.body &&
+        !(options.body instanceof FormData)
+    ) {
         headers['Content-Type'] = 'application/json';
     }
 
     let response;
 
     try {
-        response = await fetch(url, {...options, headers});
+        response = await fetch(
+            url,
+            {
+                ...options,
+                headers
+            }
+        );
     } catch (error) {
-        throw new Error('Network unavailable. Please try again.');
+        throw new Error(
+            'Network unavailable. Please try again.'
+        );
     }
 
-    const type = response.headers.get('content-type') || '';
+    const type =
+        response.headers.get('content-type') || '';
 
     let result;
 
     if (type.includes('application/json')) {
         result = await response.json();
+
     } else if (response.ok) {
         return response;
+
     } else {
-        result = {error:'Server returned an unexpected response'};
+        result = {
+            error:'Server returned an unexpected response'
+        };
     }
 
     if (!response.ok) {
-        if (response.status === 401 && url !== '/api/login') {
+        if (
+            response.status === 401 &&
+            url !== '/api/login'
+        ) {
             logout();
         }
-        throw new Error(result.error || 'Request failed');
+
+        throw new Error(
+            result.error || 'Request failed'
+        );
     }
 
     return result;
 }
 
-el('loginForm').addEventListener('submit', async event => {
-    event.preventDefault();
+// ==========================================
+// LOGIN
+// ==========================================
 
-    const btn = el('loginBtn');
-    const message = el('loginMessage');
+el('loginForm').addEventListener(
+    'submit',
+    async event => {
+        event.preventDefault();
 
-    btn.disabled = true;
-    message.classList.add('hidden');
+        const btn = el('loginBtn');
+        const message = el('loginMessage');
 
-    try {
-        const result = await api('/api/login', {
-            method:'POST',
-            body:JSON.stringify({
-                email:el('loginEmail').value.trim(),
-                password:el('loginPassword').value
-            })
-        });
+        btn.disabled = true;
+        message.classList.add('hidden');
 
-        token = result.token;
-        currentUser = result.user;
-
-        el('loginPassword').value = '';
-        el('loginPanel').classList.add('hidden');
-        el('application').classList.remove('hidden');
-        el('logoutBtn').classList.remove('hidden');
-
-        el('accountLabel').textContent =
-            currentUser.email + ' (' + currentUser.role + ')';
-
-        document.querySelectorAll('.adminOnly').forEach(node => {
-            node.classList.toggle(
-                'hidden',
-                currentUser.role !== 'ADMIN'
+        try {
+            const result = await api(
+                '/api/login',
+                {
+                    method:'POST',
+                    body:JSON.stringify({
+                        email:el('loginEmail').value.trim(),
+                        password:el('loginPassword').value
+                    })
+                }
             );
-        });
 
-        document.querySelectorAll('.storeOnly').forEach(node => {
-            node.classList.toggle(
-                'hidden',
-                currentUser.role !== 'STORE'
-            );
-        });
+            token = result.token;
+            currentUser = result.user;
 
-        showPage('dashboard');
+            el('loginPassword').value = '';
 
-    } catch (error) {
-        message.textContent = error.message;
-        message.className = 'message error';
-    } finally {
-        btn.disabled = false;
+            el('loginPanel').classList.add('hidden');
+            el('application').classList.remove('hidden');
+            el('logoutBtn').classList.remove('hidden');
+
+            el('accountLabel').textContent =
+                currentUser.email +
+                ' (' + currentUser.role + ')';
+
+            const isAdmin =
+                currentUser.role === 'ADMIN';
+
+            const isStore =
+                currentUser.role === 'STORE';
+
+            const canViewHistory =
+                isAdmin || isStore;
+
+            document.querySelectorAll(
+                '.adminOnly'
+            ).forEach(node => {
+                node.classList.toggle(
+                    'hidden',
+                    !isAdmin
+                );
+            });
+
+            document.querySelectorAll(
+                '.storeOnly'
+            ).forEach(node => {
+                node.classList.toggle(
+                    'hidden',
+                    !isStore
+                );
+            });
+
+            document.querySelectorAll(
+                '.historyOnly'
+            ).forEach(node => {
+                node.classList.toggle(
+                    'hidden',
+                    !canViewHistory
+                );
+            });
+
+            el('historyNavButton').textContent =
+                isStore
+                    ? 'My History'
+                    : 'Activity History';
+
+            el('recentTitle').textContent =
+                isStore
+                    ? 'My Recent Activities'
+                    : 'Recent Store Activities';
+
+            el('historyPageTitle').textContent =
+                isStore
+                    ? 'My History'
+                    : 'Activity History';
+
+            el('historyDescription').textContent =
+                isStore
+                    ? 'Your store monitoring additions, edits and deletions.'
+                    : 'Monitoring changes across all stores. Filter by store, supplier, product, action or date.';
+
+            showPage('dashboard');
+
+        } catch (error) {
+            message.textContent = error.message;
+            message.className = 'message error';
+
+        } finally {
+            btn.disabled = false;
+        }
     }
-});
+);
+
+// ==========================================
+// LOGOUT
+// ==========================================
 
 function logout() {
     token = '';
     currentUser = null;
+
     monitoring = [];
     adminProducts = [];
     adminSuppliers = [];
+    entryProducts = [];
+    historyRecords = [];
+
+    historyPage = 1;
+    historyTotal = 0;
+    historyRequestNumber++;
 
     el('accountLabel').textContent = '';
+
     el('application').classList.add('hidden');
     el('loginPanel').classList.remove('hidden');
     el('logoutBtn').classList.add('hidden');
+
     clearMessage();
 }
 
+// ==========================================
+// NAVIGATION
+// ==========================================
+
 function showPage(page) {
-    const adminPages = ['products','suppliers'];
+    const adminPages = [
+        'products',
+        'suppliers'
+    ];
 
     if (
         adminPages.includes(page) &&
         currentUser?.role !== 'ADMIN'
-    ) return;
+    ) {
+        return;
+    }
 
     if (
         page === 'storeentry' &&
         currentUser?.role !== 'STORE'
-    ) return;
+    ) {
+        return;
+    }
 
-    document.querySelectorAll('.page').forEach(node => {
+    if (
+        page === 'history' &&
+        !['ADMIN','STORE'].includes(
+            currentUser?.role
+        )
+    ) {
+        return;
+    }
+
+    const target = el('page-' + page);
+
+    if (!target) return;
+
+    document.querySelectorAll(
+        '.page'
+    ).forEach(node => {
         node.classList.add('hidden');
     });
 
-    el('page-' + page).classList.remove('hidden');
+    target.classList.remove('hidden');
 
-    document.querySelectorAll('[data-page]').forEach(btn => {
+    document.querySelectorAll(
+        '[data-page]'
+    ).forEach(btn => {
         btn.classList.toggle(
             'active',
             btn.dataset.page === page
@@ -436,45 +1487,89 @@ function showPage(page) {
 
     clearMessage();
 
-    if (page === 'dashboard') refreshDashboard();
-    if (page === 'monitoring') loadMonitoring();
-    if (page === 'products') loadAdminProducts();
-    if (page === 'suppliers') loadAdminSuppliers();
-    if (page === 'storeentry') loadEntrySuppliers();
+    if (page === 'dashboard') {
+        refreshDashboard();
+    }
+
+    if (page === 'monitoring') {
+        loadMonitoring();
+    }
+
+    if (page === 'products') {
+        loadAdminProducts();
+    }
+
+    if (page === 'suppliers') {
+        loadAdminSuppliers();
+    }
+
+    if (page === 'storeentry') {
+        loadEntrySuppliers();
+    }
+
+    if (page === 'history') {
+        initializeHistory();
+    }
 }
+
+// ==========================================
+// DASHBOARD
+// ==========================================
 
 async function refreshDashboard() {
     try {
         const data = await api('/api/dashboard');
-        el('countRed').textContent = data.RED ?? 0;
-        el('countBlue').textContent = data.BLUE ?? 0;
-        el('countGreen').textContent = data.GREEN ?? 0;
-        el('countExpired').textContent = data.EXPIRED ?? 0;
+
+        el('countRed').textContent =
+            data.RED ?? 0;
+
+        el('countBlue').textContent =
+            data.BLUE ?? 0;
+
+        el('countGreen').textContent =
+            data.GREEN ?? 0;
+
+        el('countExpired').textContent =
+            data.EXPIRED ?? 0;
+
     } catch (error) {
         showMessage(error.message, true);
     }
+
+    if (
+        ['ADMIN','STORE'].includes(
+            currentUser?.role
+        )
+    ) {
+        loadRecentActivities();
+    }
 }
+
+// ==========================================
+// MONITORING
+// ==========================================
 
 async function loadMonitoring() {
     try {
         monitoring = await api('/api/monitoring');
         renderMonitoring();
+
     } catch (error) {
         showMessage(error.message, true);
     }
 }
 
-function dateText(value) {
-    if (!value) return '';
-    return String(value).slice(0,10);
-}
-
 function renderMonitoring() {
     const category = el('monitorCategory').value;
-    const search = el('monitorSearch').value.trim().toLowerCase();
+
+    const search = el('monitorSearch')
+        .value
+        .trim()
+        .toLowerCase();
 
     const rows = monitoring.filter(item => {
-        const matchesCategory = !category ||
+        const matchesCategory =
+            !category ||
             item.category === category;
 
         const text = [
@@ -484,23 +1579,58 @@ function renderMonitoring() {
             item.supplier
         ].join(' ').toLowerCase();
 
-        return matchesCategory && text.includes(search);
+        return (
+            matchesCategory &&
+            text.includes(search)
+        );
     });
 
     el('monitorBody').innerHTML = rows.length
         ? rows.map(item => `
             <tr>
-                <td>${escapeHtml(item.category)}</td>
-                <td>${escapeHtml(item.store_name)}</td>
-                <td>${escapeHtml(item.supplier)}</td>
-                <td><b>${escapeHtml(item.sku)}</b>
-                    <div>${escapeHtml(item.product_name)}</div></td>
-                <td>${escapeHtml(dateText(item.expiration_date))}</td>
-                <td>${escapeHtml(item.quantity)}</td>
-                <td>${escapeHtml(dateText(item.updated_at))}</td>
+                <td>
+                    ${escapeHtml(item.category)}
+                </td>
+
+                <td>
+                    ${escapeHtml(item.store_name)}
+                </td>
+
+                <td>
+                    ${escapeHtml(item.supplier)}
+                </td>
+
+                <td>
+                    <b>${escapeHtml(item.sku)}</b>
+                    <div>
+                        ${escapeHtml(item.product_name)}
+                    </div>
+                </td>
+
+                <td>
+                    ${escapeHtml(
+                        dateText(item.expiration_date)
+                    )}
+                </td>
+
+                <td>
+                    ${escapeHtml(item.quantity)}
+                </td>
+
+                <td>
+                    ${escapeHtml(
+                        dateText(item.updated_at)
+                    )}
+                </td>
             </tr>
         `).join('')
-        : '<tr><td colspan="7">No matching records.</td></tr>';
+        : `
+            <tr>
+                <td colspan="7">
+                    No matching records.
+                </td>
+            </tr>
+        `;
 
     el('monitorCount').textContent =
         'Showing ' + rows.length + ' records';
@@ -508,18 +1638,27 @@ function renderMonitoring() {
 
 async function downloadMonitoring() {
     try {
-        const response = await api('/api/export/monitoring');
+        const response = await api(
+            '/api/export/monitoring'
+        );
+
         const blob = await response.blob();
         const url = URL.createObjectURL(blob);
+
         const link = document.createElement('a');
 
         link.href = url;
         link.download = 'NEMS_Monitoring.xlsx';
+
         document.body.appendChild(link);
         link.click();
         link.remove();
 
-        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        setTimeout(
+            () => URL.revokeObjectURL(url),
+            1000
+        );
+
     } catch (error) {
         showMessage(error.message, true);
     }
@@ -531,15 +1670,22 @@ async function downloadMonitoring() {
 
 async function loadAdminSuppliers() {
     try {
-        adminSuppliers = await api('/api/admin/suppliers');
+        adminSuppliers = await api(
+            '/api/admin/suppliers'
+        );
+
         renderSuppliers();
+
     } catch (error) {
         showMessage(error.message, true);
     }
 }
 
 function renderSuppliers() {
-    const search = el('supplierSearch').value.toLowerCase();
+    const search = el('supplierSearch')
+        .value
+        .toLowerCase();
+
     const status = el('supplierFilter').value;
 
     const rows = adminSuppliers.filter(s =>
@@ -549,359 +1695,4 @@ function renderSuppliers() {
 
     el('supplierCount').textContent =
         'Showing ' + rows.length +
-        ' of ' + adminSuppliers.length + ' suppliers';
-
-    el('supplierBody').innerHTML = rows.length
-        ? rows.map(s => `
-            <tr>
-                <td>${escapeHtml(s.supplier_id)}</td>
-                <td>${escapeHtml(s.supplier_name)}</td>
-                <td>${escapeHtml(s.status)}</td>
-                <td><button class="small" onclick="editSupplier(${Number(s.supplier_id)})">Edit</button></td>
-            </tr>
-        `).join('')
-        : '<tr><td colspan="4">No suppliers found.</td></tr>';
-}
-
-function newSupplier() {
-    el('supplierForm').reset();
-    el('supplierId').value = '';
-    el('supplierStatus').value = 'ACTIVE';
-    el('supplierEditorTitle').textContent = 'Add Supplier';
-    el('supplierEditor').classList.remove('hidden');
-    el('supplierEditor').scrollIntoView({behavior:'smooth'});
-}
-
-function editSupplier(id) {
-    const supplier = adminSuppliers.find(
-        s => Number(s.supplier_id) === id
-    );
-
-    if (!supplier) return;
-
-    el('supplierId').value = supplier.supplier_id;
-    el('supplierName').value = supplier.supplier_name;
-    el('supplierStatus').value = supplier.status;
-    el('supplierEditorTitle').textContent =
-        'Edit Supplier #' + id;
-
-    el('supplierEditor').classList.remove('hidden');
-    el('supplierEditor').scrollIntoView({behavior:'smooth'});
-}
-
-function closeSupplierEditor() {
-    el('supplierEditor').classList.add('hidden');
-}
-
-el('supplierForm').addEventListener('submit', async event => {
-    event.preventDefault();
-
-    const id = el('supplierId').value;
-    const name = el('supplierName').value.trim();
-    const status = el('supplierStatus').value;
-
-    if (
-        id &&
-        status === 'INACTIVE' &&
-        !confirm('Deactivate this supplier? Existing records will be preserved.')
-    ) return;
-
-    const button = el('supplierSaveBtn');
-    button.disabled = true;
-
-    try {
-        await api(
-            id
-                ? '/api/admin/suppliers/' + id
-                : '/api/admin/suppliers',
-            {
-                method:id ? 'PATCH' : 'POST',
-                body:JSON.stringify({
-                    supplier_name:name,
-                    status
-                })
-            }
-        );
-
-        closeSupplierEditor();
-        await loadAdminSuppliers();
-        showMessage('Supplier saved successfully.');
-
-    } catch (error) {
-        showMessage(error.message, true);
-    } finally {
-        button.disabled = false;
-    }
-});
-
-// ==========================================
-// ADMIN PRODUCT MANAGEMENT
-// ==========================================
-
-async function loadAdminProducts() {
-    try {
-        adminProducts = await api('/api/admin/products');
-        renderProducts();
-    } catch (error) {
-        showMessage(error.message, true);
-    }
-}
-
-function renderProducts() {
-    const search = el('productSearch').value.toLowerCase();
-    const status = el('productFilter').value;
-
-    const rows = adminProducts.filter(p => {
-        const text = [
-            p.sku,
-            p.product_name,
-            p.supplier_name,
-            p.master_barcode
-        ].join(' ').toLowerCase();
-
-        return text.includes(search) &&
-            (!status || p.status === status);
-    });
-
-    el('productCount').textContent =
-        'Showing ' + rows.length +
-        ' of ' + adminProducts.length + ' products';
-
-    el('productBody').innerHTML = rows.length
-        ? rows.map(p => `
-            <tr>
-                <td>${escapeHtml(p.product_id)}</td>
-                <td>${escapeHtml(p.sku)}</td>
-                <td>${escapeHtml(p.product_name)}</td>
-                <td>${escapeHtml(p.supplier_name)}</td>
-                <td>${escapeHtml(p.master_srp ?? '')}</td>
-                <td>${escapeHtml(p.landed_cost ?? '')}</td>
-                <td>${escapeHtml(p.status)}</td>
-                <td><button class="small" onclick="editProduct(${Number(p.product_id)})">Edit</button></td>
-            </tr>
-        `).join('')
-        : '<tr><td colspan="8">No products found.</td></tr>';
-}
-
-async function fillSupplierOptions(selected = '') {
-    if (!adminSuppliers.length) {
-        adminSuppliers = await api('/api/admin/suppliers');
-    }
-
-    const names = adminSuppliers.filter(s =>
-        s.status === 'ACTIVE' ||
-        s.supplier_name === selected
-    );
-
-    el('pSupplier').innerHTML =
-        '<option value="">Select supplier</option>' +
-        names.map(s => `
-            <option value="${escapeHtml(s.supplier_name)}">
-                ${escapeHtml(s.supplier_name)}
-            </option>
-        `).join('');
-
-    el('pSupplier').value = selected;
-}
-
-async function newProduct() {
-    try {
-        el('productForm').reset();
-        el('productId').value = '';
-        el('pStatus').value = 'ACTIVE';
-        el('productEditorTitle').textContent = 'Add Product';
-
-        await fillSupplierOptions();
-
-        el('productEditor').classList.remove('hidden');
-        el('productEditor').scrollIntoView({behavior:'smooth'});
-    } catch (error) {
-        showMessage(error.message, true);
-    }
-}
-
-async function editProduct(id) {
-    const p = adminProducts.find(
-        item => Number(item.product_id) === id
-    );
-
-    if (!p) return;
-
-    try {
-        await fillSupplierOptions(p.supplier_name);
-
-        el('productId').value = p.product_id;
-        el('pSku').value = p.sku ?? '';
-        el('pName').value = p.product_name ?? '';
-        el('pBarcode').value = p.master_barcode ?? '';
-        el('pSrp').value = p.master_srp ?? '';
-        el('pCost').value = p.landed_cost ?? '';
-        el('pCategory').value = p.category ?? '';
-        el('pCondition').value = p.condition ?? '';
-        el('pShelfLife').value = p.shelf_life ?? '';
-        el('pRemarks').value = p.remarks ?? '';
-        el('pStatus').value = p.status;
-
-        el('productEditorTitle').textContent =
-            'Edit Product #' + id;
-
-        el('productEditor').classList.remove('hidden');
-        el('productEditor').scrollIntoView({behavior:'smooth'});
-
-    } catch (error) {
-        showMessage(error.message, true);
-    }
-}
-
-function closeProductEditor() {
-    el('productEditor').classList.add('hidden');
-}
-
-el('productForm').addEventListener('submit', async event => {
-    event.preventDefault();
-
-    const id = el('productId').value;
-    const status = el('pStatus').value;
-
-    if (
-        id &&
-        status === 'INACTIVE' &&
-        !confirm('Deactivate this product? Existing records will be preserved.')
-    ) return;
-
-    const payload = {
-        sku:el('pSku').value.trim(),
-        product_name:el('pName').value.trim(),
-        supplier_name:el('pSupplier').value,
-        master_barcode:el('pBarcode').value.trim(),
-        master_srp:el('pSrp').value,
-        landed_cost:el('pCost').value,
-        category:el('pCategory').value.trim(),
-        condition:el('pCondition').value.trim(),
-        shelf_life:el('pShelfLife').value.trim(),
-        remarks:el('pRemarks').value.trim(),
-        status
-    };
-
-    const button = el('productSaveBtn');
-    button.disabled = true;
-
-    try {
-        await api(
-            id
-                ? '/api/admin/products/' + id
-                : '/api/admin/products',
-            {
-                method:id ? 'PATCH' : 'POST',
-                body:JSON.stringify(payload)
-            }
-        );
-
-        closeProductEditor();
-        await loadAdminProducts();
-        showMessage('Product saved successfully.');
-
-    } catch (error) {
-        showMessage(error.message, true);
-    } finally {
-        button.disabled = false;
-    }
-});
-
-// ==========================================
-// STORE ENCODING
-// ==========================================
-
-async function loadEntrySuppliers() {
-    try {
-        const suppliers = await api('/api/suppliers');
-
-        el('entrySupplier').innerHTML =
-            '<option value="">All Suppliers</option>' +
-            suppliers.map(s => `
-                <option value="${escapeHtml(s.supplier_name)}">
-                    ${escapeHtml(s.supplier_name)}
-                </option>
-            `).join('');
-
-        await searchEntryProducts();
-
-    } catch (error) {
-        showMessage(error.message, true);
-    }
-}
-
-async function searchEntryProducts() {
-    try {
-        const supplier = el('entrySupplier').value;
-        const search = el('entrySearch').value.trim();
-
-        const query = new URLSearchParams({
-            supplier,
-            search
-        });
-
-        entryProducts = await api(
-            '/api/products?' + query.toString()
-        );
-
-        el('entryProduct').innerHTML =
-            '<option value="">Select product</option>' +
-            entryProducts.map(p => `
-                <option value="${Number(p.product_id)}">
-                    ${escapeHtml(p.sku)} · ${escapeHtml(p.product_name)}
-                </option>
-            `).join('');
-
-    } catch (error) {
-        showMessage(error.message, true);
-    }
-}
-
-el('entrySearch').addEventListener('input', () => {
-    clearTimeout(entrySearchTimer);
-    entrySearchTimer = setTimeout(searchEntryProducts, 350);
-});
-
-el('entryProduct').addEventListener('change', () => {
-    const id = Number(el('entryProduct').value);
-    const product = entryProducts.find(
-        p => Number(p.product_id) === id
-    );
-
-    if (!product) return;
-
-    el('entryBarcode').value = product.master_barcode ?? '';
-    el('entrySrp').value = product.master_srp ?? '';
-});
-
-el('storeForm').addEventListener('submit', async event => {
-    event.preventDefault();
-
-    const payload = {
-        product_id:Number(el('entryProduct').value),
-        store_barcode:el('entryBarcode').value,
-        srp:el('entrySrp').value,
-        exp1:el('exp1').value,
-        qty1:el('qty1').value,
-        exp2:el('exp2').value,
-        qty2:el('qty2').value,
-        exp3:el('exp3').value,
-        qty3:el('qty3').value
-    };
-
-    try {
-        await api('/api/store/monitoring', {
-            method:'POST',
-            body:JSON.stringify(payload)
-        });
-
-        showMessage('Store monitoring saved successfully.');
-
-    } catch (error) {
-        showMessage(error.message, true);
-    }
-});
-</script>
-</body>
-</html>
+        ' of ' +
