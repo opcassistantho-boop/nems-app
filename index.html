@@ -3284,6 +3284,158 @@ showPage = function(page) {
 };
 nemsUserSetup();
  
+ 
+// ==========================================
+// ADMIN STORE MANAGEMENT - NEMS
+// ==========================================
+let nemsManagedStores = [];
+let nemsEditingStoreId = null;
+ 
+async function nemsStoresLoad() {
+    try {
+        nemsManagedStores = await api('/api/admin/stores');
+        nemsStoresRender();
+    } catch (err) {
+        showMessage(err.message, true);
+    }
+}
+ 
+function nemsStoresRender() {
+    const query = el('nemsStoreSearch').value.trim().toLowerCase();
+    const filtered = nemsManagedStores.filter(s =>
+        [s.store_name, s.store_email, s.status, s.store_id].some(v =>
+            String(v ?? '').toLowerCase().includes(query)));
+    el('nemsStoreCount').textContent = `Showing ${filtered.length} of ${nemsManagedStores.length} stores`;
+    el('nemsStoreRows').innerHTML = filtered.map(s => `
+        <tr>
+            <td>${Number(s.store_id)}</td>
+            <td>${escapeHtml(s.store_name)}</td>
+            <td>${escapeHtml(s.store_email || '')}</td>
+            <td>${escapeHtml(s.status)}</td>
+            <td><button type="button" data-nems-store-edit="${Number(s.store_id)}">Edit status</button></td>
+        </tr>`).join('');
+}
+ 
+function nemsStoresOpen(id = null) {
+    nemsEditingStoreId = id === null ? null : Number(id);
+    const store = nemsEditingStoreId === null ? null :
+        nemsManagedStores.find(s => Number(s.store_id) === nemsEditingStoreId);
+    if (nemsEditingStoreId !== null && !store) {
+        showMessage('Store not found. Refresh the list.', true);
+        return;
+    }
+    el('nemsStoreForm').reset();
+    el('nemsStoreTitle').textContent = store ? 'Edit Store Status' : 'Register New Store';
+    el('nemsStoreName').value = store?.store_name || '';
+    el('nemsStoreEmail').value = store?.store_email || '';
+    el('nemsStoreStatus').value = store?.status || 'ACTIVE';
+    el('nemsStoreName').readOnly = !!store;
+    el('nemsStoreEmail').readOnly = !!store;
+    el('nemsStoreStatusBox').classList.toggle('hidden', !store);
+    el('nemsStoreEditor').classList.remove('hidden');
+    el('nemsStoreEditor').scrollIntoView({behavior:'smooth', block:'start'});
+}
+ 
+async function nemsStoresSave(event) {
+    event.preventDefault();
+    const editing = nemsEditingStoreId !== null;
+    const name = el('nemsStoreName').value.trim();
+    const email = el('nemsStoreEmail').value.trim().toLowerCase();
+    const status = el('nemsStoreStatus').value;
+    if (editing) {
+        if (!confirm(`Change ${name} to ${status}?`)) return;
+    } else {
+        if (!confirm(`Register new store "${name}" with email "${email}"? This does not create a login account.`)) return;
+    }
+    const button = el('nemsStoreSave');
+    button.disabled = true;
+    try {
+        const endpoint = editing ? `/api/admin/stores/${nemsEditingStoreId}` : '/api/admin/stores';
+        const payload = editing ? {status} : {store_name:name, store_email:email};
+        await api(endpoint, {
+            method: editing ? 'PATCH' : 'POST',
+            body: JSON.stringify(payload)
+        });
+        el('nemsStoreEditor').classList.add('hidden');
+        await nemsStoresLoad();
+        showMessage(editing ? 'Store status updated.' : 'Store registered. Create its STORE login separately in User Management.');
+    } catch (err) {
+        showMessage(err.message, true);
+    } finally {
+        button.disabled = false;
+    }
+}
+ 
+function nemsStoresSetup() {
+    if (el('page-storemanagement')) return;
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'adminOnly hidden';
+    button.dataset.page = 'storemanagement';
+    button.textContent = 'Store Management';
+    button.addEventListener('click', () => showPage('storemanagement'));
+    el('navigation').appendChild(button);
+ 
+    const page = document.createElement('section');
+    page.id = 'page-storemanagement';
+    page.className = 'page adminOnly hidden';
+    page.innerHTML = `
+        <div class="panel">
+            <div class="row">
+                <h2>ADMIN Store Management</h2>
+                <button type="button" class="green" id="nemsStoreAdd">+ Add Store</button>
+                <button type="button" id="nemsStoreRefresh">Refresh</button>
+            </div>
+            <p class="muted">Register a new store first, then create its login separately in User Management. Existing stores and users are preserved.</p>
+            <input id="nemsStoreSearch" placeholder="Search store name, email, ID or status">
+            <p class="muted" id="nemsStoreCount"></p>
+            <div class="tablewrap"><table>
+                <thead><tr><th>ID</th><th>Store name</th><th>Store email</th><th>Status</th><th>Action</th></tr></thead>
+                <tbody id="nemsStoreRows"></tbody>
+            </table></div>
+        </div>
+        <div class="panel hidden" id="nemsStoreEditor">
+            <h2 id="nemsStoreTitle">Register New Store</h2>
+            <form id="nemsStoreForm">
+                <div class="formgrid">
+                    <div><label>Store name *</label><input id="nemsStoreName" required maxlength="255"></div>
+                    <div><label>Store email *</label><input id="nemsStoreEmail" type="email" required maxlength="255"></div>
+                    <div class="hidden" id="nemsStoreStatusBox">
+                        <label>Status</label>
+                        <select id="nemsStoreStatus"><option value="ACTIVE">ACTIVE</option><option value="INACTIVE">INACTIVE</option></select>
+                    </div>
+                </div>
+                <p class="muted">For existing stores, name and email are locked to protect monitoring and task history.</p>
+                <div class="formactions">
+                    <button id="nemsStoreSave" type="submit">Save Store</button>
+                    <button type="button" class="secondary" id="nemsStoreCancel">Cancel</button>
+                </div>
+            </form>
+        </div>`;
+    el('application').appendChild(page);
+    el('nemsStoreAdd').addEventListener('click', () => nemsStoresOpen());
+    el('nemsStoreRefresh').addEventListener('click', nemsStoresLoad);
+    el('nemsStoreSearch').addEventListener('input', nemsStoresRender);
+    el('nemsStoreCancel').addEventListener('click', () => el('nemsStoreEditor').classList.add('hidden'));
+    el('nemsStoreForm').addEventListener('submit', nemsStoresSave);
+    el('nemsStoreRows').addEventListener('click', event => {
+        const target = event.target.closest('[data-nems-store-edit]');
+        if (target) nemsStoresOpen(target.dataset.nemsStoreEdit);
+    });
+}
+ 
+const nemsStoresOriginalShowPage = showPage;
+showPage = function(page) {
+    if (page === 'storemanagement') {
+        if (currentUser?.role !== 'ADMIN') return;
+        nemsStoresOriginalShowPage(page);
+        nemsStoresLoad();
+        return;
+    }
+    nemsStoresOriginalShowPage(page);
+};
+nemsStoresSetup();
+ 
 </script>
  
 </body>
