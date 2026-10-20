@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>CARD INDOGROSIR · NEMS</title>
-
+ 
 <style>
 :root {
     --navy:#123464;
@@ -32,7 +32,7 @@ header {
 }
 header h1 { font-size:20px; margin:0; }
 header small { font-size:13px; }
-
+ 
 button {
     border:0;
     background:var(--blue);
@@ -48,7 +48,7 @@ button.secondary { background:#66778e; }
 button.danger { background:#b52e3c; }
 button.green { background:#138258; }
 button.small { padding:7px 11px; font-size:12px; }
-
+ 
 input,select,textarea {
     width:100%;
     border:1px solid #c9d5e2;
@@ -59,7 +59,7 @@ input,select,textarea {
     color:var(--text);
 }
 textarea { min-height:76px; }
-
+ 
 label {
     display:block;
     font-weight:bold;
@@ -79,7 +79,7 @@ main {
     box-shadow:0 3px 12px #16345810;
 }
 .panel h2 { margin:0 0 18px; font-size:21px; }
-
+ 
 .row {
     display:flex;
     gap:10px;
@@ -88,7 +88,7 @@ main {
 }
 .row > * { flex:1; }
 .row button { flex:0 0 auto; }
-
+ 
 .tabs {
     display:flex;
     gap:8px;
@@ -103,7 +103,7 @@ main {
     background:var(--navy);
     color:white;
 }
-
+ 
 .grid {
     display:grid;
     grid-template-columns:repeat(4,1fr);
@@ -120,12 +120,12 @@ main {
     font-size:30px;
 }
 .metric small { font-weight:bold; }
-
+ 
 .red { background:#b72c39; }
 .blue { background:#2760b5; }
 .greenbg { background:#158353; }
 .gray { background:#424e64; }
-
+ 
 .tablewrap {
     overflow:auto;
     width:100%;
@@ -146,20 +146,20 @@ th {
     white-space:nowrap;
 }
 td button { margin:2px; }
-
+ 
 .muted {
     color:#62738a;
     font-size:12px;
 }
 .hidden { display:none!important; }
-
+ 
 .formgrid {
     display:grid;
     grid-template-columns:repeat(3,1fr);
     gap:14px;
 }
 .formgrid .wide { grid-column:1/-1; }
-
+ 
 .formactions {
     display:flex;
     gap:10px;
@@ -177,7 +177,7 @@ td button { margin:2px; }
     background:#ffe8e8;
     color:#a1192c;
 }
-
+ 
 #loginPanel {
     max-width:420px;
     margin:75px auto;
@@ -185,9 +185,9 @@ td button { margin:2px; }
 #loginPanel input { margin-bottom:13px; }
 #loginPanel button { width:100%; }
 #loginPanel h2 { text-align:center; }
-
+ 
 .countline { margin-top:12px; }
-
+ 
 .historyfilters {
     display:grid;
     grid-template-columns:repeat(3,minmax(0,1fr));
@@ -195,7 +195,7 @@ td button { margin:2px; }
     margin-bottom:16px;
 }
 .historyfilters .filteritem { min-width:0; }
-
+ 
 .history-action {
     display:inline-block;
     padding:5px 9px;
@@ -215,7 +215,7 @@ td button { margin:2px; }
     background:#ffe2e2;
     color:#a42132;
 }
-
+ 
 .activityitem {
     padding:13px 0;
     border-bottom:1px solid #e1e8f0;
@@ -230,7 +230,7 @@ td button { margin:2px; }
     color:#62738a;
     line-height:1.7;
 }
-
+ 
 .detailsbox {
     background:#f5f8fc;
     border:1px solid #dce5f0;
@@ -254,7 +254,7 @@ td button { margin:2px; }
     white-space:pre-wrap;
     overflow-wrap:anywhere;
 }
-
+ 
 .pager {
     display:flex;
     justify-content:space-between;
@@ -269,7 +269,7 @@ td button { margin:2px; }
     align-items:center;
 }
 .pager button { padding:8px 12px; }
-
+ 
 @media(max-width:800px) {
     .grid { grid-template-columns:repeat(2,1fr); }
     .formgrid { grid-template-columns:repeat(2,1fr); }
@@ -282,11 +282,23 @@ td button { margin:2px; }
     header h1 { font-size:17px; }
     .panel { padding:14px; }
 }
+ 
+/* NEMS task assignment UI */
+.nems-task-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:14px; margin:14px 0; }
+.nems-task-grid > div { min-width:0; }
+.nems-task-grid input, .nems-task-grid select { width:100%; max-width:100%; box-sizing:border-box; }
+.nems-task-store-list { max-height:260px; overflow:auto; border:1px solid #d7e0eb; background:#f8fafc; border-radius:8px; padding:10px; }
+.nems-task-store { display:flex; align-items:center; gap:8px; padding:6px 8px; font-size:13px; cursor:pointer; }
+.nems-task-store input { width:auto; flex:none; }
+.nems-task-actions { display:flex; flex-wrap:wrap; gap:8px; margin:12px 0; }
+#page-tasks .panel { margin-bottom:18px; }
+#page-tasks input, #page-tasks select { padding:9px; }
+ 
 </style>
 </head>
-
+ 
 <body>
-
+ 
 <header>
     <h1>CARD INDOGROSIR · NEMS</h1>
     <div class="row" style="flex:0 1 auto">
@@ -298,13 +310,13 @@ td button { margin:2px; }
         >Log out</button>
     </div>
 </header>
-
+ 
 <main>
-
+ 
 <section id="loginPanel" class="panel">
     <h2>NEMS Login</h2>
     <div id="loginMessage" class="message hidden"></div>
-
+ 
     <form id="loginForm">
         <label>Email Address</label>
         <input
@@ -313,7 +325,7 @@ td button { margin:2px; }
             autocomplete="username"
             required
         >
-
+ 
         <label>Password</label>
         <input
             id="loginPassword"
@@ -321,44 +333,44 @@ td button { margin:2px; }
             autocomplete="current-password"
             required
         >
-
+ 
         <button type="submit" id="loginBtn">
             Log in
         </button>
     </form>
 </section>
-
+ 
 <div id="application" class="hidden">
-
+ 
 <nav id="navigation" class="tabs">
     <button
         data-page="dashboard"
         onclick="showPage('dashboard')"
     >Dashboard</button>
-
+ 
     <button
         data-page="monitoring"
         onclick="showPage('monitoring')"
     >Monitoring</button>
-
+ 
     <button
         data-page="products"
         class="adminOnly hidden"
         onclick="showPage('products')"
     >Products</button>
-
+ 
     <button
         data-page="suppliers"
         class="adminOnly hidden"
         onclick="showPage('suppliers')"
     >Suppliers</button>
-
+ 
     <button
         data-page="storeentry"
         class="storeOnly hidden"
         onclick="showPage('storeentry')"
     >Store Encoding</button>
-
+ 
     <button
         data-page="history"
         class="historyOnly hidden"
@@ -366,50 +378,50 @@ td button { margin:2px; }
         id="historyNavButton"
     >Activity History</button>
 </nav>
-
+ 
 <div id="notice" class="message hidden"></div>
-
+ 
 <!-- ===================================== -->
 <!-- DASHBOARD -->
 <!-- ===================================== -->
-
+ 
 <section id="page-dashboard" class="page">
-
+ 
     <div class="grid">
         <div class="metric red">
             <strong id="countRed">0</strong>
             <small>RED · Within 30 Days</small>
         </div>
-
+ 
         <div class="metric blue">
             <strong id="countBlue">0</strong>
             <small>BLUE · 31–60 Days</small>
         </div>
-
+ 
         <div class="metric greenbg">
             <strong id="countGreen">0</strong>
             <small>GREEN · 61–90 Days</small>
         </div>
-
+ 
         <div class="metric gray">
             <strong id="countExpired">0</strong>
             <small>EXPIRED PRODUCTS</small>
         </div>
     </div>
-
+ 
     <div class="panel">
         <h2>Near Expiry Dashboard</h2>
-
+ 
         <p>
             Monitoring records are categorized by expiration date.
             Products beyond 90 days are tracked separately.
         </p>
-
+ 
         <div class="row">
             <button onclick="refreshDashboard()">
                 Refresh Dashboard
             </button>
-
+ 
             <button
                 class="secondary"
                 onclick="showPage('monitoring')"
@@ -418,7 +430,7 @@ td button { margin:2px; }
             </button>
         </div>
     </div>
-
+ 
     <div class="panel historyOnly hidden">
         <div class="row">
             <h2 id="recentTitle">Recent Store Activities</h2>
@@ -432,67 +444,67 @@ td button { margin:2px; }
                 View Full History
             </button>
         </div>
-
+ 
         <p class="muted">
             Latest monitoring additions, edits and deletions.
             Only changes recorded after the history trigger
             was installed will appear.
         </p>
-
+ 
         <div id="recentActivityList">
             <p class="muted">Loading recent activities...</p>
         </div>
     </div>
-
+ 
     <div class="panel adminOnly hidden">
         <h2>ADMIN Management</h2>
-
+ 
         <p>
             Manage the existing product and supplier masterlists
             without deleting or reimporting them.
         </p>
-
+ 
         <div class="row">
             <button onclick="showPage('products')">
                 Manage Products
             </button>
-
+ 
             <button onclick="showPage('suppliers')">
                 Manage Suppliers
             </button>
-
+ 
             <button onclick="showPage('history')">
                 Activity Log
             </button>
         </div>
-
+ 
         <p class="muted">
             User Management, Store Management, Excel Import,
             Task Assignment and Chat are not yet implemented.
         </p>
     </div>
-
+ 
 </section>
-
+ 
 <!-- ===================================== -->
 <!-- MONITORING -->
 <!-- ===================================== -->
-
+ 
 <section id="page-monitoring" class="page hidden">
     <div class="panel">
-
+ 
         <div class="row">
             <h2>Monitoring Records</h2>
-
+ 
             <button onclick="loadMonitoring()">
                 Refresh
             </button>
-
+ 
             <button onclick="downloadMonitoring()">
                 Download Excel
             </button>
         </div>
-
+ 
         <div class="row" style="margin-bottom:14px">
             <select
                 id="monitorCategory"
@@ -505,14 +517,14 @@ td button { margin:2px; }
                 <option>GREEN</option>
                 <option>LATER</option>
             </select>
-
+ 
             <input
                 id="monitorSearch"
                 placeholder="Search store, SKU, product or supplier"
                 oninput="renderMonitoring()"
             >
         </div>
-
+ 
         <div class="tablewrap">
             <table>
                 <thead>
@@ -529,24 +541,24 @@ td button { margin:2px; }
                 <tbody id="monitorBody"></tbody>
             </table>
         </div>
-
+ 
         <p id="monitorCount" class="muted countline"></p>
     </div>
 </section>
-
+ 
 <!-- ===================================== -->
 <!-- SUPPLIER MANAGEMENT -->
 <!-- ===================================== -->
-
+ 
 <section
     id="page-suppliers"
     class="page hidden adminOnly"
 >
     <div class="panel">
-
+ 
         <div class="row">
             <h2>Supplier Management</h2>
-
+ 
             <button
                 class="green"
                 onclick="newSupplier()"
@@ -554,14 +566,14 @@ td button { margin:2px; }
                 + Add Supplier
             </button>
         </div>
-
+ 
         <div class="row">
             <input
                 id="supplierSearch"
                 placeholder="Search suppliers"
                 oninput="renderSuppliers()"
             >
-
+ 
             <select
                 id="supplierFilter"
                 onchange="renderSuppliers()"
@@ -570,14 +582,14 @@ td button { margin:2px; }
                 <option>ACTIVE</option>
                 <option>INACTIVE</option>
             </select>
-
+ 
             <button onclick="loadAdminSuppliers()">
                 Refresh
             </button>
         </div>
-
+ 
         <p id="supplierCount" class="muted"></p>
-
+ 
         <div class="tablewrap">
             <table>
                 <thead>
@@ -592,15 +604,15 @@ td button { margin:2px; }
             </table>
         </div>
     </div>
-
+ 
     <div id="supplierEditor" class="panel hidden">
         <h2 id="supplierEditorTitle">
             Add Supplier
         </h2>
-
+ 
         <form id="supplierForm">
             <input type="hidden" id="supplierId">
-
+ 
             <div class="formgrid">
                 <div>
                     <label>Supplier Name *</label>
@@ -610,7 +622,7 @@ td button { margin:2px; }
                         required
                     >
                 </div>
-
+ 
                 <div>
                     <label>Status</label>
                     <select id="supplierStatus">
@@ -619,7 +631,7 @@ td button { margin:2px; }
                     </select>
                 </div>
             </div>
-
+ 
             <div class="formactions">
                 <button
                     type="submit"
@@ -627,7 +639,7 @@ td button { margin:2px; }
                 >
                     Save Supplier
                 </button>
-
+ 
                 <button
                     type="button"
                     class="secondary"
@@ -639,20 +651,20 @@ td button { margin:2px; }
         </form>
     </div>
 </section>
-
+ 
 <!-- ===================================== -->
 <!-- PRODUCT MANAGEMENT -->
 <!-- ===================================== -->
-
+ 
 <section
     id="page-products"
     class="page hidden adminOnly"
 >
     <div class="panel">
-
+ 
         <div class="row">
             <h2>Product Management</h2>
-
+ 
             <button
                 class="green"
                 onclick="newProduct()"
@@ -660,14 +672,14 @@ td button { margin:2px; }
                 + Add Product
             </button>
         </div>
-
+ 
         <div class="row">
             <input
                 id="productSearch"
                 placeholder="Search SKU, product, supplier or barcode"
                 oninput="renderProducts()"
             >
-
+ 
             <select
                 id="productFilter"
                 onchange="renderProducts()"
@@ -676,20 +688,20 @@ td button { margin:2px; }
                 <option>ACTIVE</option>
                 <option>INACTIVE</option>
             </select>
-
+ 
             <button onclick="loadAdminProducts()">
                 Refresh
             </button>
         </div>
-
+ 
         <p class="muted">
             Products are identified by Product ID.
             Duplicate SKUs are preserved.
             Landed cost is ADMIN-only.
         </p>
-
+ 
         <p id="productCount" class="muted"></p>
-
+ 
         <div class="tablewrap">
             <table>
                 <thead>
@@ -708,37 +720,37 @@ td button { margin:2px; }
             </table>
         </div>
     </div>
-
+ 
     <div id="productEditor" class="panel hidden">
         <h2 id="productEditorTitle">
             Add Product
         </h2>
-
+ 
         <form id="productForm">
             <input type="hidden" id="productId">
-
+ 
             <div class="formgrid">
-
+ 
                 <div>
                     <label>SKU *</label>
                     <input id="pSku" required maxlength="255">
                 </div>
-
+ 
                 <div>
                     <label>Product Name *</label>
                     <input id="pName" required maxlength="255">
                 </div>
-
+ 
                 <div>
                     <label>Supplier *</label>
                     <select id="pSupplier" required></select>
                 </div>
-
+ 
                 <div>
                     <label>Master Barcode</label>
                     <input id="pBarcode" maxlength="255">
                 </div>
-
+ 
                 <div>
                     <label>Master SRP (₱)</label>
                     <input
@@ -748,7 +760,7 @@ td button { margin:2px; }
                         step="0.01"
                     >
                 </div>
-
+ 
                 <div>
                     <label>Landed Cost (₱) · ADMIN ONLY</label>
                     <input
@@ -758,22 +770,22 @@ td button { margin:2px; }
                         step="0.01"
                     >
                 </div>
-
+ 
                 <div>
                     <label>Category</label>
                     <input id="pCategory" maxlength="255">
                 </div>
-
+ 
                 <div>
                     <label>Condition</label>
                     <input id="pCondition" maxlength="255">
                 </div>
-
+ 
                 <div>
                     <label>Shelf Life</label>
                     <input id="pShelfLife" maxlength="1000">
                 </div>
-
+ 
                 <div>
                     <label>Status</label>
                     <select id="pStatus">
@@ -781,7 +793,7 @@ td button { margin:2px; }
                         <option>INACTIVE</option>
                     </select>
                 </div>
-
+ 
                 <div class="wide">
                     <label>Remarks</label>
                     <textarea
@@ -789,9 +801,9 @@ td button { margin:2px; }
                         maxlength="10000"
                     ></textarea>
                 </div>
-
+ 
             </div>
-
+ 
             <div class="formactions">
                 <button
                     type="submit"
@@ -799,7 +811,7 @@ td button { margin:2px; }
                 >
                     Save Product
                 </button>
-
+ 
                 <button
                     type="button"
                     class="secondary"
@@ -811,26 +823,26 @@ td button { margin:2px; }
         </form>
     </div>
 </section>
-
+ 
 <!-- ===================================== -->
 <!-- STORE ENCODING -->
 <!-- ===================================== -->
-
+ 
 <section
     id="page-storeentry"
     class="page hidden storeOnly"
 >
     <div class="panel">
         <h2>Store Monitoring Encoding</h2>
-
+ 
         <p class="muted">
             Select a product, then enter up to three
             expiration dates and quantities in pieces (0–500).
         </p>
-
+ 
         <form id="storeForm">
             <div class="formgrid">
-
+ 
                 <div>
                     <label>Supplier</label>
                     <select
@@ -838,7 +850,7 @@ td button { margin:2px; }
                         onchange="searchEntryProducts()"
                     ></select>
                 </div>
-
+ 
                 <div>
                     <label>Search SKU or Product</label>
                     <input
@@ -846,7 +858,7 @@ td button { margin:2px; }
                         placeholder="Type product or SKU"
                     >
                 </div>
-
+ 
                 <div>
                     <label>Product *</label>
                     <select
@@ -854,12 +866,12 @@ td button { margin:2px; }
                         required
                     ></select>
                 </div>
-
+ 
                 <div>
                     <label>Store Barcode</label>
                     <input id="entryBarcode">
                 </div>
-
+ 
                 <div>
                     <label>Store SRP (₱)</label>
                     <input
@@ -870,16 +882,16 @@ td button { margin:2px; }
                     >
                 </div>
             </div>
-
+ 
             <h3>Expiration Dates and Quantities</h3>
-
+ 
             <div class="formgrid">
-
+ 
                 <div>
                     <label>Expiration Date 1</label>
                     <input id="exp1" type="date">
                 </div>
-
+ 
                 <div>
                     <label>Quantity 1 (pcs)</label>
                     <input
@@ -890,14 +902,14 @@ td button { margin:2px; }
                         step="1"
                     >
                 </div>
-
+ 
                 <div></div>
-
+ 
                 <div>
                     <label>Expiration Date 2</label>
                     <input id="exp2" type="date">
                 </div>
-
+ 
                 <div>
                     <label>Quantity 2 (pcs)</label>
                     <input
@@ -908,14 +920,14 @@ td button { margin:2px; }
                         step="1"
                     >
                 </div>
-
+ 
                 <div></div>
-
+ 
                 <div>
                     <label>Expiration Date 3</label>
                     <input id="exp3" type="date">
                 </div>
-
+ 
                 <div>
                     <label>Quantity 3 (pcs)</label>
                     <input
@@ -926,9 +938,9 @@ td button { margin:2px; }
                         step="1"
                     >
                 </div>
-
+ 
             </div>
-
+ 
             <div class="formactions">
                 <button type="submit" id="storeSaveBtn">
                     Save Monitoring
@@ -937,26 +949,26 @@ td button { margin:2px; }
         </form>
     </div>
 </section>
-
+ 
 <!-- ===================================== -->
 <!-- ACTIVITY HISTORY -->
 <!-- ===================================== -->
-
+ 
 <section
     id="page-history"
     class="page hidden historyOnly"
 >
     <div class="panel">
-
+ 
         <div class="row">
             <h2 id="historyPageTitle">
                 Activity History
             </h2>
-
+ 
             <button onclick="loadHistory(1)">
                 Refresh History
             </button>
-
+ 
             <button
                 class="secondary"
                 onclick="resetHistoryFilters()"
@@ -964,13 +976,13 @@ td button { margin:2px; }
                 Clear Filters
             </button>
         </div>
-
+ 
         <p class="muted" id="historyDescription">
             Monitoring additions, edits and deletions.
         </p>
-
+ 
         <div class="historyfilters">
-
+ 
             <div
                 class="filteritem adminOnly hidden"
                 id="historyStoreFilterBox"
@@ -980,14 +992,14 @@ td button { margin:2px; }
                     <option value="">All Stores</option>
                 </select>
             </div>
-
+ 
             <div class="filteritem">
                 <label>Supplier</label>
                 <select id="historySupplier">
                     <option value="">All Suppliers</option>
                 </select>
             </div>
-
+ 
             <div class="filteritem">
                 <label>Action</label>
                 <select id="historyAction">
@@ -997,7 +1009,7 @@ td button { margin:2px; }
                     <option value="DELETE">Deleted</option>
                 </select>
             </div>
-
+ 
             <div class="filteritem">
                 <label>Product / SKU Search</label>
                 <input
@@ -1005,29 +1017,29 @@ td button { margin:2px; }
                     placeholder="Search product or SKU"
                 >
             </div>
-
+ 
             <div class="filteritem">
                 <label>From Date</label>
                 <input id="historyFrom" type="date">
             </div>
-
+ 
             <div class="filteritem">
                 <label>To Date</label>
                 <input id="historyTo" type="date">
             </div>
-
+ 
         </div>
-
+ 
         <div class="formactions" style="margin-bottom:16px">
             <button onclick="loadHistory(1)">
                 Apply Filters
             </button>
         </div>
-
+ 
         <p id="historyCount" class="muted">
             Loading...
         </p>
-
+ 
         <div class="tablewrap">
             <table>
                 <thead>
@@ -1041,7 +1053,7 @@ td button { margin:2px; }
                         <th>Details</th>
                     </tr>
                 </thead>
-
+ 
                 <tbody id="historyBody">
                     <tr>
                         <td colspan="7">
@@ -1051,10 +1063,10 @@ td button { margin:2px; }
                 </tbody>
             </table>
         </div>
-
+ 
         <div class="pager">
             <span id="historyPageInfo" class="muted"></span>
-
+ 
             <div class="controls">
                 <button
                     class="secondary"
@@ -1063,7 +1075,7 @@ td button { margin:2px; }
                 >
                     Previous
                 </button>
-
+ 
                 <button
                     id="historyNext"
                     onclick="changeHistoryPage(1)"
@@ -1072,42 +1084,42 @@ td button { margin:2px; }
                 </button>
             </div>
         </div>
-
+ 
     </div>
 </section>
-
+ 
 </div>
 </main>
-
+ 
 <script>
 'use strict';
-
+ 
 // ==========================================
 // APPLICATION STATE
 // ==========================================
-
+ 
 let token = '';
 let currentUser = null;
-
+ 
 let monitoring = [];
 let adminSuppliers = [];
 let adminProducts = [];
 let entryProducts = [];
-
+ 
 let entrySearchTimer = null;
-
+ 
 let historyRecords = [];
 let historyPage = 1;
 let historyTotal = 0;
 let historyLimit = 50;
 let historyRequestNumber = 0;
-
+ 
 const el = id => document.getElementById(id);
-
+ 
 // ==========================================
 // GENERAL HELPERS
 // ==========================================
-
+ 
 function escapeHtml(value) {
     return String(value ?? '').replace(
         /[&<>"']/g,
@@ -1120,40 +1132,40 @@ function escapeHtml(value) {
         })[ch]
     );
 }
-
+ 
 function showMessage(message, error = false) {
     const box = el('notice');
-
+ 
     box.textContent = message;
     box.className = 'message' + (
         error ? ' error' : ''
     );
-
+ 
     box.scrollIntoView({
         behavior:'smooth',
         block:'nearest'
     });
 }
-
+ 
 function clearMessage() {
     el('notice').classList.add('hidden');
 }
-
+ 
 function dateText(value) {
     if (!value) return '';
-
+ 
     return String(value).slice(0,10);
 }
-
+ 
 function dateTimeText(value) {
     if (!value) return '';
-
+ 
     const date = new Date(value);
-
+ 
     if (Number.isNaN(date.getTime())) {
         return String(value);
     }
-
+ 
     return date.toLocaleString('en-PH', {
         timeZone:'Asia/Manila',
         year:'numeric',
@@ -1164,23 +1176,23 @@ function dateTimeText(value) {
         hour12:true
     });
 }
-
+ 
 function readableAction(action) {
     if (action === 'INSERT') return 'Added';
     if (action === 'UPDATE') return 'Edited';
     if (action === 'DELETE') return 'Deleted';
-
+ 
     return action || 'Unknown';
 }
-
+ 
 function actionClass(action) {
     if (action === 'INSERT') return 'action-insert';
     if (action === 'UPDATE') return 'action-update';
     if (action === 'DELETE') return 'action-delete';
-
+ 
     return '';
 }
-
+ 
 function actionBadge(action) {
     return `
         <span class="history-action ${actionClass(action)}">
@@ -1188,21 +1200,21 @@ function actionBadge(action) {
         </span>
     `;
 }
-
+ 
 function displayValue(value) {
     if (value === null || value === undefined) {
         return '—';
     }
-
+ 
     if (typeof value === 'object') {
         return JSON.stringify(value);
     }
-
+ 
     if (value === '') return '(empty)';
-
+ 
     return String(value);
 }
-
+ 
 function fieldLabel(field) {
     const labels = {
         store_email:'Store Email',
@@ -1222,33 +1234,33 @@ function fieldLabel(field) {
         updated_by:'Updated By',
         updated_at:'Updated At'
     };
-
+ 
     return labels[field] ||
         field.replace(/_/g,' ');
 }
-
+ 
 // ==========================================
 // API REQUESTS
 // ==========================================
-
+ 
 async function api(url, options = {}) {
     const headers = {
         ...(options.headers || {})
     };
-
+ 
     if (token) {
         headers.Authorization = 'Bearer ' + token;
     }
-
+ 
     if (
         options.body &&
         !(options.body instanceof FormData)
     ) {
         headers['Content-Type'] = 'application/json';
     }
-
+ 
     let response;
-
+ 
     try {
         response = await fetch(
             url,
@@ -1262,24 +1274,24 @@ async function api(url, options = {}) {
             'Network unavailable. Please try again.'
         );
     }
-
+ 
     const type =
         response.headers.get('content-type') || '';
-
+ 
     let result;
-
+ 
     if (type.includes('application/json')) {
         result = await response.json();
-
+ 
     } else if (response.ok) {
         return response;
-
+ 
     } else {
         result = {
             error:'Server returned an unexpected response'
         };
     }
-
+ 
     if (!response.ok) {
         if (
             response.status === 401 &&
@@ -1287,30 +1299,30 @@ async function api(url, options = {}) {
         ) {
             logout();
         }
-
+ 
         throw new Error(
             result.error || 'Request failed'
         );
     }
-
+ 
     return result;
 }
-
+ 
 // ==========================================
 // LOGIN
 // ==========================================
-
+ 
 el('loginForm').addEventListener(
     'submit',
     async event => {
         event.preventDefault();
-
+ 
         const btn = el('loginBtn');
         const message = el('loginMessage');
-
+ 
         btn.disabled = true;
         message.classList.add('hidden');
-
+ 
         try {
             const result = await api(
                 '/api/login',
@@ -1322,29 +1334,29 @@ el('loginForm').addEventListener(
                     })
                 }
             );
-
+ 
             token = result.token;
             currentUser = result.user;
-
+ 
             el('loginPassword').value = '';
-
+ 
             el('loginPanel').classList.add('hidden');
             el('application').classList.remove('hidden');
             el('logoutBtn').classList.remove('hidden');
-
+ 
             el('accountLabel').textContent =
                 currentUser.email +
                 ' (' + currentUser.role + ')';
-
+ 
             const isAdmin =
                 currentUser.role === 'ADMIN';
-
+ 
             const isStore =
                 currentUser.role === 'STORE';
-
+ 
             const canViewHistory =
                 isAdmin || isStore;
-
+ 
             document.querySelectorAll(
                 '.adminOnly'
             ).forEach(node => {
@@ -1353,7 +1365,7 @@ el('loginForm').addEventListener(
                     !isAdmin
                 );
             });
-
+ 
             document.querySelectorAll(
                 '.storeOnly'
             ).forEach(node => {
@@ -1362,7 +1374,7 @@ el('loginForm').addEventListener(
                     !isStore
                 );
             });
-
+ 
             document.querySelectorAll(
                 '.historyOnly'
             ).forEach(node => {
@@ -1371,90 +1383,90 @@ el('loginForm').addEventListener(
                     !canViewHistory
                 );
             });
-
+ 
             el('historyNavButton').textContent =
                 isStore
                     ? 'My History'
                     : 'Activity History';
-
+ 
             el('recentTitle').textContent =
                 isStore
                     ? 'My Recent Activities'
                     : 'Recent Store Activities';
-
+ 
             el('historyPageTitle').textContent =
                 isStore
                     ? 'My History'
                     : 'Activity History';
-
+ 
             el('historyDescription').textContent =
                 isStore
                     ? 'Your store monitoring additions, edits and deletions.'
                     : 'Monitoring changes across all stores. Filter by store, supplier, product, action or date.';
-
+ 
             showPage('dashboard');
-
+ 
         } catch (error) {
             message.textContent = error.message;
             message.className = 'message error';
-
+ 
         } finally {
             btn.disabled = false;
         }
     }
 );
-
+ 
 // ==========================================
 // LOGOUT
 // ==========================================
-
+ 
 function logout() {
     token = '';
     currentUser = null;
-
+ 
     monitoring = [];
     adminProducts = [];
     adminSuppliers = [];
     entryProducts = [];
     historyRecords = [];
-
+ 
     historyPage = 1;
     historyTotal = 0;
     historyRequestNumber++;
-
+ 
     el('accountLabel').textContent = '';
-
+ 
     el('application').classList.add('hidden');
     el('loginPanel').classList.remove('hidden');
     el('logoutBtn').classList.add('hidden');
-
+ 
     clearMessage();
 }
-
+ 
 // ==========================================
 // NAVIGATION
 // ==========================================
-
+ 
 function showPage(page) {
     const adminPages = [
         'products',
         'suppliers'
     ];
-
+ 
     if (
         adminPages.includes(page) &&
         currentUser?.role !== 'ADMIN'
     ) {
         return;
     }
-
+ 
     if (
         page === 'storeentry' &&
         currentUser?.role !== 'STORE'
     ) {
         return;
     }
-
+ 
     if (
         page === 'history' &&
         !['ADMIN','STORE'].includes(
@@ -1463,19 +1475,19 @@ function showPage(page) {
     ) {
         return;
     }
-
+ 
     const target = el('page-' + page);
-
+ 
     if (!target) return;
-
+ 
     document.querySelectorAll(
         '.page'
     ).forEach(node => {
         node.classList.add('hidden');
     });
-
+ 
     target.classList.remove('hidden');
-
+ 
     document.querySelectorAll(
         '[data-page]'
     ).forEach(btn => {
@@ -1484,58 +1496,58 @@ function showPage(page) {
             btn.dataset.page === page
         );
     });
-
+ 
     clearMessage();
-
+ 
     if (page === 'dashboard') {
         refreshDashboard();
     }
-
+ 
     if (page === 'monitoring') {
         loadMonitoring();
     }
-
+ 
     if (page === 'products') {
         loadAdminProducts();
     }
-
+ 
     if (page === 'suppliers') {
         loadAdminSuppliers();
     }
-
+ 
     if (page === 'storeentry') {
         loadEntrySuppliers();
     }
-
+ 
     if (page === 'history') {
         initializeHistory();
     }
 }
-
+ 
 // ==========================================
 // DASHBOARD
 // ==========================================
-
+ 
 async function refreshDashboard() {
     try {
         const data = await api('/api/dashboard');
-
+ 
         el('countRed').textContent =
             data.RED ?? 0;
-
+ 
         el('countBlue').textContent =
             data.BLUE ?? 0;
-
+ 
         el('countGreen').textContent =
             data.GREEN ?? 0;
-
+ 
         el('countExpired').textContent =
             data.EXPIRED ?? 0;
-
+ 
     } catch (error) {
         showMessage(error.message, true);
     }
-
+ 
     if (
         ['ADMIN','STORE'].includes(
             currentUser?.role
@@ -1544,79 +1556,79 @@ async function refreshDashboard() {
         loadRecentActivities();
     }
 }
-
+ 
 // ==========================================
 // MONITORING
 // ==========================================
-
+ 
 async function loadMonitoring() {
     try {
         monitoring = await api('/api/monitoring');
         renderMonitoring();
-
+ 
     } catch (error) {
         showMessage(error.message, true);
     }
 }
-
+ 
 function renderMonitoring() {
     const category = el('monitorCategory').value;
-
+ 
     const search = el('monitorSearch')
         .value
         .trim()
         .toLowerCase();
-
+ 
     const rows = monitoring.filter(item => {
         const matchesCategory =
             !category ||
             item.category === category;
-
+ 
         const text = [
             item.store_name,
             item.sku,
             item.product_name,
             item.supplier
         ].join(' ').toLowerCase();
-
+ 
         return (
             matchesCategory &&
             text.includes(search)
         );
     });
-
+ 
     el('monitorBody').innerHTML = rows.length
         ? rows.map(item => `
             <tr>
                 <td>
                     ${escapeHtml(item.category)}
                 </td>
-
+ 
                 <td>
                     ${escapeHtml(item.store_name)}
                 </td>
-
+ 
                 <td>
                     ${escapeHtml(item.supplier)}
                 </td>
-
+ 
                 <td>
                     <b>${escapeHtml(item.sku)}</b>
                     <div>
                         ${escapeHtml(item.product_name)}
                     </div>
                 </td>
-
+ 
                 <td>
                     ${escapeHtml(
                         dateText(item.expiration_date)
                     )}
                 </td>
-
+ 
                 <td>
                     ${escapeHtml(item.quantity)}
                 </td>
-
+ 
                 <td>
                     ${escapeHtml(
                         dateText(item.updated_at)
@@ -1631,88 +1643,88 @@ function renderMonitoring() {
                 </td>
             </tr>
         `;
-
+ 
     el('monitorCount').textContent =
         'Showing ' + rows.length + ' records';
 }
-
+ 
 async function downloadMonitoring() {
     try {
         const response = await api(
             '/api/export/monitoring'
         );
-
+ 
         const blob = await response.blob();
         const url = URL.createObjectURL(blob);
-
+ 
         const link = document.createElement('a');
-
+ 
         link.href = url;
         link.download = 'NEMS_Monitoring.xlsx';
-
+ 
         document.body.appendChild(link);
         link.click();
         link.remove();
-
+ 
         setTimeout(
             () => URL.revokeObjectURL(url),
             1000
         );
-
+ 
     } catch (error) {
         showMessage(error.message, true);
     }
 }
-
+ 
 // ==========================================
 // ADMIN SUPPLIER MANAGEMENT
 // ==========================================
-
+ 
 async function loadAdminSuppliers() {
     try {
         adminSuppliers = await api(
             '/api/admin/suppliers'
         );
-
+ 
         renderSuppliers();
-
+ 
     } catch (error) {
         showMessage(error.message, true);
     }
 }
-
+ 
 function renderSuppliers() {
     const search = el('supplierSearch')
         .value
         .toLowerCase();
-
+ 
     const status = el('supplierFilter').value;
-
+ 
     const rows = adminSuppliers.filter(s =>
         s.supplier_name.toLowerCase().includes(search) &&
         (!status || s.status === status)
     );
-
+ 
     el('supplierCount').textContent =
         'Showing ' + rows.length +
         ' of ' + adminSuppliers.length +
         ' suppliers';
-
+ 
     el('supplierBody').innerHTML = rows.length
         ? rows.map(s => `
             <tr>
                 <td>
                     ${escapeHtml(s.supplier_id)}
                 </td>
-
+ 
                 <td>
                     ${escapeHtml(s.supplier_name)}
                 </td>
-
+ 
                 <td>
                     ${escapeHtml(s.status)}
                 </td>
-
+ 
                 <td>
                     <button
                         class="small"
@@ -1731,62 +1743,62 @@ function renderSuppliers() {
             </tr>
         `;
 }
-
+ 
 function newSupplier() {
     el('supplierForm').reset();
-
+ 
     el('supplierId').value = '';
     el('supplierStatus').value = 'ACTIVE';
-
+ 
     el('supplierEditorTitle').textContent =
         'Add Supplier';
-
+ 
     el('supplierEditor').classList.remove('hidden');
-
+ 
     el('supplierEditor').scrollIntoView({
         behavior:'smooth'
     });
 }
-
+ 
 function editSupplier(id) {
     const supplier = adminSuppliers.find(
         s => Number(s.supplier_id) === id
     );
-
+ 
     if (!supplier) return;
-
+ 
     el('supplierId').value =
         supplier.supplier_id;
-
+ 
     el('supplierName').value =
         supplier.supplier_name;
-
+ 
     el('supplierStatus').value =
         supplier.status;
-
+ 
     el('supplierEditorTitle').textContent =
         'Edit Supplier #' + id;
-
+ 
     el('supplierEditor').classList.remove('hidden');
-
+ 
     el('supplierEditor').scrollIntoView({
         behavior:'smooth'
     });
 }
-
+ 
 function closeSupplierEditor() {
     el('supplierEditor').classList.add('hidden');
 }
-
+ 
 el('supplierForm').addEventListener(
     'submit',
     async event => {
         event.preventDefault();
-
+ 
         const id = el('supplierId').value;
         const name = el('supplierName').value.trim();
         const status = el('supplierStatus').value;
-
+ 
         if (
             id &&
             status === 'INACTIVE' &&
@@ -1796,10 +1808,10 @@ el('supplierForm').addEventListener(
         ) {
             return;
         }
-
+ 
         const button = el('supplierSaveBtn');
         button.disabled = true;
-
+ 
         try {
             await api(
                 id
@@ -1813,48 +1825,48 @@ el('supplierForm').addEventListener(
                     })
                 }
             );
-
+ 
             closeSupplierEditor();
-
+ 
             await loadAdminSuppliers();
-
+ 
             showMessage(
                 'Supplier saved successfully.'
             );
-
+ 
         } catch (error) {
             showMessage(error.message, true);
-
+ 
         } finally {
             button.disabled = false;
         }
     }
 );
-
+ 
 // ==========================================
 // ADMIN PRODUCT MANAGEMENT
 // ==========================================
-
+ 
 async function loadAdminProducts() {
     try {
         adminProducts = await api(
             '/api/admin/products'
         );
-
+ 
         renderProducts();
-
+ 
     } catch (error) {
         showMessage(error.message, true);
     }
 }
-
+ 
 function renderProducts() {
     const search = el('productSearch')
         .value
         .toLowerCase();
-
+ 
     const status = el('productFilter').value;
-
+ 
     const rows = adminProducts.filter(p => {
         const text = [
             p.sku,
@@ -1862,49 +1874,49 @@ function renderProducts() {
             p.supplier_name,
             p.master_barcode
         ].join(' ').toLowerCase();
-
+ 
         return (
             text.includes(search) &&
             (!status || p.status === status)
         );
     });
-
+ 
     el('productCount').textContent =
         'Showing ' + rows.length +
         ' of ' + adminProducts.length +
         ' products';
-
+ 
     el('productBody').innerHTML = rows.length
         ? rows.map(p => `
             <tr>
                 <td>
                     ${escapeHtml(p.product_id)}
                 </td>
-
+ 
                 <td>
                     ${escapeHtml(p.sku)}
                 </td>
-
+ 
                 <td>
                     ${escapeHtml(p.product_name)}
                 </td>
-
+ 
                 <td>
                     ${escapeHtml(p.supplier_name)}
                 </td>
-
+ 
                 <td>
                     ${escapeHtml(p.master_srp ?? '')}
                 </td>
-
+ 
                 <td>
                     ${escapeHtml(p.landed_cost ?? '')}
                 </td>
-
+ 
                 <td>
                     ${escapeHtml(p.status)}
                 </td>
-
+ 
                 <td>
                     <button
                         class="small"
@@ -1923,19 +1935,19 @@ function renderProducts() {
             </tr>
         `;
 }
-
+ 
 async function fillSupplierOptions(selected = '') {
     if (!adminSuppliers.length) {
         adminSuppliers = await api(
             '/api/admin/suppliers'
         );
     }
-
+ 
     const names = adminSuppliers.filter(s =>
         s.status === 'ACTIVE' ||
         s.supplier_name === selected
     );
-
+ 
     el('pSupplier').innerHTML =
         '<option value="">Select supplier</option>' +
         names.map(s => `
@@ -1943,104 +1955,104 @@ async function fillSupplierOptions(selected = '') {
                 ${escapeHtml(s.supplier_name)}
             </option>
         `).join('');
-
+ 
     el('pSupplier').value = selected;
 }
-
+ 
 async function newProduct() {
     try {
         el('productForm').reset();
-
+ 
         el('productId').value = '';
         el('pStatus').value = 'ACTIVE';
-
+ 
         el('productEditorTitle').textContent =
             'Add Product';
-
+ 
         await fillSupplierOptions();
-
+ 
         el('productEditor').classList.remove('hidden');
-
+ 
         el('productEditor').scrollIntoView({
             behavior:'smooth'
         });
-
+ 
     } catch (error) {
         showMessage(error.message, true);
     }
 }
-
+ 
 async function editProduct(id) {
     const p = adminProducts.find(
         item => Number(item.product_id) === id
     );
-
+ 
     if (!p) return;
-
+ 
     try {
         await fillSupplierOptions(
             p.supplier_name
         );
-
+ 
         el('productId').value =
             p.product_id;
-
+ 
         el('pSku').value =
             p.sku ?? '';
-
+ 
         el('pName').value =
             p.product_name ?? '';
-
+ 
         el('pBarcode').value =
             p.master_barcode ?? '';
-
+ 
         el('pSrp').value =
             p.master_srp ?? '';
-
+ 
         el('pCost').value =
             p.landed_cost ?? '';
-
+ 
         el('pCategory').value =
             p.category ?? '';
-
+ 
         el('pCondition').value =
             p.condition ?? '';
-
+ 
         el('pShelfLife').value =
             p.shelf_life ?? '';
-
+ 
         el('pRemarks').value =
             p.remarks ?? '';
-
+ 
         el('pStatus').value =
             p.status;
-
+ 
         el('productEditorTitle').textContent =
             'Edit Product #' + id;
-
+ 
         el('productEditor').classList.remove('hidden');
-
+ 
         el('productEditor').scrollIntoView({
             behavior:'smooth'
         });
-
+ 
     } catch (error) {
         showMessage(error.message, true);
     }
 }
-
+ 
 function closeProductEditor() {
     el('productEditor').classList.add('hidden');
 }
-
+ 
 el('productForm').addEventListener(
     'submit',
     async event => {
         event.preventDefault();
-
+ 
         const id = el('productId').value;
         const status = el('pStatus').value;
-
+ 
         if (
             id &&
             status === 'INACTIVE' &&
@@ -2050,7 +2062,7 @@ el('productForm').addEventListener(
         ) {
             return;
         }
-
+ 
         const payload = {
             sku:el('pSku').value.trim(),
             product_name:el('pName').value.trim(),
@@ -2064,10 +2076,10 @@ el('productForm').addEventListener(
             remarks:el('pRemarks').value.trim(),
             status
         };
-
+ 
         const button = el('productSaveBtn');
         button.disabled = true;
-
+ 
         try {
             await api(
                 id
@@ -2078,34 +2090,34 @@ el('productForm').addEventListener(
                     body:JSON.stringify(payload)
                 }
             );
-
+ 
             closeProductEditor();
-
+ 
             await loadAdminProducts();
-
+ 
             showMessage(
                 'Product saved successfully.'
             );
-
+ 
         } catch (error) {
             showMessage(error.message, true);
-
+ 
         } finally {
             button.disabled = false;
         }
     }
 );
-
+ 
 // ==========================================
 // STORE ENCODING
 // ==========================================
-
+ 
 async function loadEntrySuppliers() {
     try {
         const suppliers = await api(
             '/api/suppliers'
         );
-
+ 
         el('entrySupplier').innerHTML =
             '<option value="">All Suppliers</option>' +
             suppliers.map(s => `
@@ -2113,31 +2125,31 @@ async function loadEntrySuppliers() {
                     ${escapeHtml(s.supplier_name)}
                 </option>
             `).join('');
-
+ 
         await searchEntryProducts();
-
+ 
     } catch (error) {
         showMessage(error.message, true);
     }
 }
-
+ 
 async function searchEntryProducts() {
     try {
         const supplier = el('entrySupplier').value;
-
+ 
         const search = el('entrySearch')
             .value
             .trim();
-
+ 
         const query = new URLSearchParams({
             supplier,
             search
         });
-
+ 
         entryProducts = await api(
             '/api/products?' + query.toString()
         );
-
+ 
         el('entryProduct').innerHTML =
             '<option value="">Select product</option>' +
             entryProducts.map(p => `
@@ -2147,50 +2159,50 @@ async function searchEntryProducts() {
                     ${escapeHtml(p.product_name)}
                 </option>
             `).join('');
-
+ 
     } catch (error) {
         showMessage(error.message, true);
     }
 }
-
+ 
 el('entrySearch').addEventListener(
     'input',
     () => {
         clearTimeout(entrySearchTimer);
-
+ 
         entrySearchTimer = setTimeout(
             searchEntryProducts,
             350
         );
     }
 );
-
+ 
 el('entryProduct').addEventListener(
     'change',
     () => {
         const id = Number(
             el('entryProduct').value
         );
-
+ 
         const product = entryProducts.find(
             p => Number(p.product_id) === id
         );
-
+ 
         if (!product) return;
-
+ 
         el('entryBarcode').value =
             product.master_barcode ?? '';
-
+ 
         el('entrySrp').value =
             product.master_srp ?? '';
     }
 );
-
+ 
 el('storeForm').addEventListener(
     'submit',
     async event => {
         event.preventDefault();
-
+ 
         const payload = {
             product_id:Number(
                 el('entryProduct').value
@@ -2204,10 +2216,10 @@ el('storeForm').addEventListener(
             exp3:el('exp3').value,
             qty3:el('qty3').value
         };
-
+ 
         const button = el('storeSaveBtn');
         button.disabled = true;
-
+ 
         try {
             await api(
                 '/api/store/monitoring',
@@ -2216,24 +2228,24 @@ el('storeForm').addEventListener(
                     body:JSON.stringify(payload)
                 }
             );
-
+ 
             showMessage(
                 'Store monitoring saved successfully.'
             );
-
+ 
         } catch (error) {
             showMessage(error.message, true);
-
+ 
         } finally {
             button.disabled = false;
         }
     }
 );
-
+ 
 // ==========================================
 // RECENT ACTIVITIES
 // ==========================================
-
+ 
 async function loadRecentActivities() {
     if (
         !['ADMIN','STORE'].includes(
@@ -2242,24 +2254,24 @@ async function loadRecentActivities() {
     ) {
         return;
     }
-
+ 
     const accountAtStart = currentUser.email;
-
+ 
     el('recentActivityList').innerHTML =
         '<p class="muted">Loading recent activities...</p>';
-
+ 
     try {
         const records = await api(
             '/api/history/recent'
         );
-
+ 
         if (
             !currentUser ||
             currentUser.email !== accountAtStart
         ) {
             return;
         }
-
+ 
         if (!records.length) {
             el('recentActivityList').innerHTML = `
                 <p class="muted">
@@ -2269,43 +2281,43 @@ async function loadRecentActivities() {
             `;
             return;
         }
-
+ 
         el('recentActivityList').innerHTML =
             records.map(record => `
                 <div class="activityitem">
-
+ 
                     <div class="activitytitle">
                         ${actionBadge(record.action)}
-
+ 
                         ${escapeHtml(
                             record.product_name || record.sku || 'Product'
                         )}
                     </div>
-
+ 
                     <div class="activitymeta">
                         <b>Store:</b>
                         ${escapeHtml(record.store_name || '—')}
-
+ 
                         &nbsp; · &nbsp;
-
+ 
                         <b>Supplier:</b>
                         ${escapeHtml(record.supplier || '—')}
                     </div>
-
+ 
                     <div class="activitymeta">
                         <b>Changed by:</b>
                         ${escapeHtml(record.changed_by || '—')}
-
+ 
                         &nbsp; · &nbsp;
-
+ 
                         ${escapeHtml(
                             dateTimeText(record.changed_at)
                         )}
                     </div>
-
+ 
                 </div>
             `).join('');
-
+ 
     } catch (error) {
         if (
             currentUser &&
@@ -2319,30 +2331,30 @@ async function loadRecentActivities() {
         }
     }
 }
-
+ 
 // ==========================================
 // ACTIVITY HISTORY FILTERS
 // ==========================================
-
+ 
 async function initializeHistory() {
     try {
         await loadHistoryFilterOptions();
         await loadHistory(1);
-
+ 
     } catch (error) {
         showMessage(error.message, true);
     }
 }
-
+ 
 async function loadHistoryFilterOptions() {
     const isAdmin =
         currentUser?.role === 'ADMIN';
-
+ 
     if (isAdmin) {
         const stores = await api('/api/stores');
-
+ 
         const selected = el('historyStore').value;
-
+ 
         el('historyStore').innerHTML =
             '<option value="">All Stores</option>' +
             stores.map(s => `
@@ -2350,21 +2362,21 @@ async function loadHistoryFilterOptions() {
                     ${escapeHtml(s.store_name)}
                 </option>
             `).join('');
-
+ 
         el('historyStore').value = selected;
-
+ 
         if (
             el('historyStore').value !== selected
         ) {
             el('historyStore').value = '';
         }
     }
-
+ 
     const suppliers = await api('/api/suppliers');
-
+ 
     const selectedSupplier =
         el('historySupplier').value;
-
+ 
     el('historySupplier').innerHTML =
         '<option value="">All Suppliers</option>' +
         suppliers.map(s => `
@@ -2372,10 +2384,10 @@ async function loadHistoryFilterOptions() {
                 ${escapeHtml(s.supplier_name)}
             </option>
         `).join('');
-
+ 
     el('historySupplier').value =
         selectedSupplier;
-
+ 
     if (
         el('historySupplier').value !==
         selectedSupplier
@@ -2383,7 +2395,7 @@ async function loadHistoryFilterOptions() {
         el('historySupplier').value = '';
     }
 }
-
+ 
 function resetHistoryFilters() {
     el('historyStore').value = '';
     el('historySupplier').value = '';
@@ -2391,66 +2403,66 @@ function resetHistoryFilters() {
     el('historySearch').value = '';
     el('historyFrom').value = '';
     el('historyTo').value = '';
-
+ 
     loadHistory(1);
 }
-
+ 
 function buildHistoryQuery(page) {
     const params = new URLSearchParams();
-
+ 
     params.set('page', String(page));
     params.set('limit', String(historyLimit));
-
+ 
     if (currentUser?.role === 'ADMIN') {
         const store = el('historyStore').value;
-
+ 
         if (store) {
             params.set('store', store);
         }
     }
-
+ 
     const supplier =
         el('historySupplier').value;
-
+ 
     const action =
         el('historyAction').value;
-
+ 
     const search =
         el('historySearch').value.trim();
-
+ 
     const from =
         el('historyFrom').value;
-
+ 
     const to =
         el('historyTo').value;
-
+ 
     if (supplier) {
         params.set('supplier', supplier);
     }
-
+ 
     if (action) {
         params.set('action', action);
     }
-
+ 
     if (search) {
         params.set('search', search);
     }
-
+ 
     if (from) {
         params.set('from', from);
     }
-
+ 
     if (to) {
         params.set('to', to);
     }
-
+ 
     return params.toString();
 }
-
+ 
 // ==========================================
 // FULL ACTIVITY HISTORY
 // ==========================================
-
+ 
 async function loadHistory(page = 1) {
     if (
         !['ADMIN','STORE'].includes(
@@ -2459,10 +2471,10 @@ async function loadHistory(page = 1) {
     ) {
         return;
     }
-
+ 
     const requestNumber = ++historyRequestNumber;
     const accountAtStart = currentUser.email;
-
+ 
     el('historyBody').innerHTML = `
         <tr>
             <td colspan="7">
@@ -2470,14 +2482,14 @@ async function loadHistory(page = 1) {
             </td>
         </tr>
     `;
-
+ 
     try {
         const query = buildHistoryQuery(page);
-
+ 
         const data = await api(
             '/api/history?' + query
         );
-
+ 
         if (
             requestNumber !== historyRequestNumber ||
             !currentUser ||
@@ -2485,20 +2497,20 @@ async function loadHistory(page = 1) {
         ) {
             return;
         }
-
+ 
         historyRecords = data.records || [];
         historyTotal = Number(data.total) || 0;
         historyPage = Number(data.page) || page;
-
+ 
         renderHistory();
-
+ 
     } catch (error) {
         if (
             requestNumber !== historyRequestNumber
         ) {
             return;
         }
-
+ 
         el('historyBody').innerHTML = `
             <tr>
                 <td colspan="7">
@@ -2506,19 +2518,19 @@ async function loadHistory(page = 1) {
                 </td>
             </tr>
         `;
-
+ 
         el('historyCount').textContent =
             'Unable to load history.';
-
+ 
         el('historyPageInfo').textContent = '';
     }
 }
-
+ 
 function renderHistory() {
     el('historyCount').textContent =
         historyTotal +
         ' monitoring history record(s) found.';
-
+ 
     el('historyBody').innerHTML =
         historyRecords.length
             ? historyRecords.map((record,index) => `
@@ -2528,30 +2540,30 @@ function renderHistory() {
                             dateTimeText(record.changed_at)
                         )}
                     </td>
-
+ 
                     <td>
                         ${escapeHtml(record.store_name || '—')}
                     </td>
-
+ 
                     <td>
                         ${escapeHtml(record.supplier || '—')}
                     </td>
-
+ 
                     <td>
                         <b>${escapeHtml(record.sku || '')}</b>
                         <div>
                             ${escapeHtml(record.product_name || '')}
                         </div>
                     </td>
-
+ 
                     <td>
                         ${actionBadge(record.action)}
                     </td>
-
+ 
                     <td>
                         ${escapeHtml(record.changed_by || '—')}
                     </td>
-
+ 
                     <td>
                         <button
                             class="small"
@@ -2561,7 +2573,7 @@ function renderHistory() {
                         </button>
                     </td>
                 </tr>
-
+ 
                 <tr
                     id="historyDetail-${index}"
                     class="hidden"
@@ -2578,45 +2590,45 @@ function renderHistory() {
                     </td>
                 </tr>
             `;
-
+ 
     const totalPages = Math.max(
         1,
         Math.ceil(historyTotal / historyLimit)
     );
-
+ 
     el('historyPageInfo').textContent =
         'Page ' + historyPage +
         ' of ' + totalPages;
-
+ 
     el('historyPrevious').disabled =
         historyPage <= 1;
-
+ 
     el('historyNext').disabled =
         historyPage >= totalPages;
 }
-
+ 
 function toggleHistoryDetails(index) {
     const row = el('historyDetail-' + index);
-
+ 
     if (!row) return;
-
+ 
     row.classList.toggle('hidden');
 }
-
+ 
 // ==========================================
 // OLD AND NEW VALUES
 // ==========================================
-
+ 
 function historyDetailsHtml(record) {
     const oldValues = record.old_values || {};
     const newValues = record.new_values || {};
     const changedFields = record.changed_fields || {};
-
+ 
     let fields = [];
-
+ 
     if (record.action === 'UPDATE') {
         fields = Object.keys(changedFields);
-
+ 
     } else if (record.action === 'INSERT') {
         fields = Object.keys(newValues).filter(
             field => ![
@@ -2625,7 +2637,7 @@ function historyDetailsHtml(record) {
                 'updated_by'
             ].includes(field)
         );
-
+ 
     } else if (record.action === 'DELETE') {
         fields = Object.keys(oldValues).filter(
             field => ![
@@ -2635,11 +2647,11 @@ function historyDetailsHtml(record) {
             ].includes(field)
         );
     }
-
+ 
     const rows = fields.map(field => {
         let before = oldValues[field];
         let after = newValues[field];
-
+ 
         if (
             record.action === 'UPDATE' &&
             changedFields[field]
@@ -2647,58 +2659,58 @@ function historyDetailsHtml(record) {
             before = changedFields[field].before;
             after = changedFields[field].after;
         }
-
+ 
         return `
             <tr>
                 <td>
                     <b>${escapeHtml(fieldLabel(field))}</b>
                 </td>
-
+ 
                 <td class="changevalue">
                     ${escapeHtml(displayValue(before))}
                 </td>
-
+ 
                 <td class="changevalue">
                     ${escapeHtml(displayValue(after))}
                 </td>
             </tr>
         `;
     }).join('');
-
+ 
     return `
         <div class="detailsbox">
-
+ 
             <h3>
                 Monitoring Change Details
             </h3>
-
+ 
             <p class="muted">
                 <b>History ID:</b>
                 ${escapeHtml(record.history_id)}
-
+ 
                 &nbsp; · &nbsp;
-
+ 
                 <b>Monitoring ID:</b>
                 ${escapeHtml(record.monitoring_id || '—')}
             </p>
-
+ 
             <p class="muted">
                 <b>Action:</b>
                 ${escapeHtml(readableAction(record.action))}
-
+ 
                 &nbsp; · &nbsp;
-
+ 
                 <b>Changed by:</b>
                 ${escapeHtml(record.changed_by || '—')}
             </p>
-
+ 
             <p class="muted">
                 <b>Date:</b>
                 ${escapeHtml(
                     dateTimeText(record.changed_at)
                 )}
             </p>
-
+ 
             <div class="tablewrap">
                 <table class="changetable">
                     <thead>
@@ -2708,7 +2720,7 @@ function historyDetailsHtml(record) {
                             <th>New Value</th>
                         </tr>
                     </thead>
-
+ 
                     <tbody>
                         ${rows || `
                             <tr>
@@ -2720,33 +2732,33 @@ function historyDetailsHtml(record) {
                     </tbody>
                 </table>
             </div>
-
+ 
         </div>
     `;
 }
-
+ 
 // ==========================================
 // HISTORY PAGINATION
 // ==========================================
-
+ 
 function changeHistoryPage(direction) {
     const totalPages = Math.max(
         1,
         Math.ceil(historyTotal / historyLimit)
     );
-
+ 
     const nextPage = historyPage + direction;
-
+ 
     if (
         nextPage < 1 ||
         nextPage > totalPages
     ) {
         return;
     }
-
+ 
     loadHistory(nextPage);
 }
-
+ 
 el('historySearch').addEventListener(
     'keydown',
     event => {
@@ -2756,8 +2768,201 @@ el('historySearch').addEventListener(
         }
     }
 );
-
+ 
+// ==========================================
+// ADMIN TASK ASSIGNMENT - NEMS
+// ==========================================
+ 
+let nemsTaskStores = [];
+let nemsTaskSuppliers = [];
+let nemsTaskRows = [];
+const nemsSelectedStoreIds = new Set();
+ 
+function nemsTaskDeadline() {
+    const choice = el('nemsTaskDeadline').value;
+    if (choice === 'none') return null;
+    if (choice === 'custom') {
+        const raw = el('nemsTaskCustomDeadline').value;
+        if (!raw) throw new Error('Choose a custom deadline.');
+        const date = new Date(raw);
+        if (Number.isNaN(date.getTime())) throw new Error('Invalid deadline.');
+        return date.toISOString();
+    }
+    const d = new Date();
+    if (choice === 'now') return d.toISOString();
+    d.setDate(d.getDate() + Number(choice));
+    d.setHours(23, 59, 59, 999);
+    return d.toISOString();
+}
+ 
+function nemsTaskStoresRender() {
+    const search = el('nemsTaskStoreSearch').value.trim().toLowerCase();
+    const visible = nemsTaskStores.filter(s => String(s.store_name || '').toLowerCase().includes(search));
+    el('nemsTaskStoresList').innerHTML = visible.map(s => {
+        const id = Number(s.store_id);
+        return `<label class="nems-task-store"><input type="checkbox" data-task-store="${id}" ${nemsSelectedStoreIds.has(id) ? 'checked' : ''}> ${escapeHtml(s.store_name)}</label>`;
+    }).join('') || '<p class="muted">No matching stores.</p>';
+    el('nemsTaskStoreCount').textContent = `${nemsSelectedStoreIds.size} selected · ${visible.length} matching · ${nemsTaskStores.length} total`;
+}
+ 
+function nemsTaskSuppliersRender() {
+    const search = el('nemsTaskSupplierSearch').value.trim().toLowerCase();
+    const select = el('nemsTaskSupplier');
+    const previous = select.value;
+    select.innerHTML = '<option value="">Select supplier</option>' + nemsTaskSuppliers
+        .filter(s => String(s.supplier_name || '').toLowerCase().includes(search))
+        .map(s => `<option value="${Number(s.supplier_id)}">${escapeHtml(s.supplier_name)}</option>`).join('');
+    if ([...select.options].some(o => o.value === previous)) select.value = previous;
+}
+ 
+function nemsTaskRowsRender() {
+    const search = el('nemsTaskListSearch').value.trim().toLowerCase();
+    const status = el('nemsTaskStatus').value;
+    const filtered = nemsTaskRows.filter(t => {
+        const haystack = [t.assignment_id, t.store_name, t.supplier_name].join(' ').toLowerCase();
+        return haystack.includes(search) && (!status || t.display_status === status);
+    });
+    el('nemsTaskListCount').textContent = `${filtered.length} of ${nemsTaskRows.length} assignments`;
+    el('nemsTaskRows').innerHTML = filtered.map(t => `<tr>
+        <td>${escapeHtml(t.assignment_id)}</td>
+        <td>${escapeHtml(t.store_name)}</td>
+        <td>${escapeHtml(t.supplier_name)}</td>
+        <td>${escapeHtml(t.expiry_scope)}</td>
+        <td>${t.due_at ? escapeHtml(dateTimeText(t.due_at)) : 'None'}</td>
+        <td>${escapeHtml(t.display_status)}</td>
+        <td>${Number(t.submission_count) || 0}</td>
+    </tr>`).join('') || '<tr><td colspan="7">No assignments found.</td></tr>';
+}
+ 
+async function nemsTaskLoad() {
+    if (currentUser?.role !== 'ADMIN') return;
+    try {
+        const [stores, suppliers, assignments] = await Promise.all([
+            api('/api/admin/task-stores'),
+            api('/api/admin/suppliers'),
+            api('/api/admin/tasks')
+        ]);
+        nemsTaskStores = Array.isArray(stores) ? stores : [];
+        nemsTaskSuppliers = Array.isArray(suppliers) ? suppliers : [];
+        nemsTaskRows = Array.isArray(assignments) ? assignments : [];
+        nemsTaskStoresRender();
+        nemsTaskSuppliersRender();
+        nemsTaskRowsRender();
+    } catch (error) {
+        showMessage(error.message, true);
+    }
+}
+ 
+async function nemsTaskCreate(event) {
+    event.preventDefault();
+    const supplierId = Number(el('nemsTaskSupplier').value);
+    if (!supplierId) return showMessage('Select a supplier.', true);
+    if (!nemsSelectedStoreIds.size) return showMessage('Select at least one store.', true);
+    let dueAt;
+    try { dueAt = nemsTaskDeadline(); }
+    catch (error) { return showMessage(error.message, true); }
+    if (!confirm(`Assign this supplier to ${nemsSelectedStoreIds.size} store(s)?`)) return;
+    const btn = el('nemsTaskSave');
+    btn.disabled = true;
+    try {
+        const result = await api('/api/admin/tasks', {
+            method: 'POST',
+            body: JSON.stringify({
+                supplier_id: supplierId,
+                store_ids: [...nemsSelectedStoreIds],
+                expiry_scope: el('nemsTaskScope').value,
+                due_at: dueAt
+            })
+        });
+        showMessage(result.message || 'Assignments created.');
+        nemsSelectedStoreIds.clear();
+        await nemsTaskLoad();
+    } catch (error) {
+        showMessage(error.message, true);
+    } finally {
+        btn.disabled = false;
+    }
+}
+ 
+function nemsTaskSetup() {
+    const nav = el('navigation');
+    if (!nav || el('page-tasks')) return;
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.dataset.page = 'tasks';
+    button.className = 'adminOnly hidden';
+    button.textContent = 'Task Assignment';
+    button.addEventListener('click', () => showPage('tasks'));
+    nav.appendChild(button);
+ 
+    const page = document.createElement('section');
+    page.id = 'page-tasks';
+    page.className = 'page hidden adminOnly';
+    page.innerHTML = `
+        <div class="panel">
+            <h2>Task Assignment</h2>
+            <p class="muted">Assign monitoring tasks by supplier to one or more stores. Existing assignments will not be overwritten.</p>
+            <form id="nemsTaskForm">
+                <div class="nems-task-grid">
+                    <div><label>Find supplier</label><input id="nemsTaskSupplierSearch" placeholder="Search supplier name"><label>Supplier *</label><select id="nemsTaskSupplier" required><option value="">Select supplier</option></select></div>
+                    <div><label>Expiry scope</label><select id="nemsTaskScope"><option value="BOTH">Expired and Near Expiry</option><option value="EXPIRED">Expired only</option><option value="NEAR">Near Expiry (0–90 days)</option></select></div>
+                    <div><label>Deadline</label><select id="nemsTaskDeadline"><option value="none">No deadline</option><option value="now">Immediately</option><option value="0">Today</option><option value="1">Tomorrow</option><option value="3">3 days</option><option value="7">7 days</option><option value="14">14 days</option><option value="30">30 days</option><option value="custom">Custom</option></select><div id="nemsTaskCustomBox" class="hidden"><label>Custom date and time</label><input id="nemsTaskCustomDeadline" type="datetime-local"></div></div>
+                </div>
+                <h3>Select stores</h3>
+                <input id="nemsTaskStoreSearch" placeholder="Search stores">
+                <div class="nems-task-actions"><button type="button" id="nemsTaskSelectAll">Select all matching</button><button type="button" id="nemsTaskClear">Clear all</button></div>
+                <p class="muted" id="nemsTaskStoreCount"></p>
+                <div class="nems-task-store-list" id="nemsTaskStoresList">Loading...</div>
+                <div class="nems-task-actions"><button id="nemsTaskSave" type="submit">Create assignments</button><button id="nemsTaskRefresh" type="button">Refresh</button></div>
+            </form>
+        </div>
+        <div class="panel"><h2>Assigned tasks</h2>
+            <div class="nems-task-grid"><input id="nemsTaskListSearch" placeholder="Search store, supplier, or task ID"><select id="nemsTaskStatus"><option value="">All statuses</option><option>PENDING</option><option>OVERDUE</option><option>SUBMITTED</option><option>CANCELLED</option></select></div>
+            <p class="muted" id="nemsTaskListCount"></p>
+            <div class="tablewrap"><table><thead><tr><th>ID</th><th>Store</th><th>Supplier</th><th>Scope</th><th>Deadline</th><th>Status</th><th>Submissions</th></tr></thead><tbody id="nemsTaskRows"></tbody></table></div>
+        </div>`;
+    el('application').appendChild(page);
+    el('nemsTaskStoreSearch').addEventListener('input', nemsTaskStoresRender);
+    el('nemsTaskSupplierSearch').addEventListener('input', nemsTaskSuppliersRender);
+    el('nemsTaskListSearch').addEventListener('input', nemsTaskRowsRender);
+    el('nemsTaskStatus').addEventListener('change', nemsTaskRowsRender);
+    el('nemsTaskDeadline').addEventListener('change', () => el('nemsTaskCustomBox').classList.toggle('hidden', el('nemsTaskDeadline').value !== 'custom'));
+    el('nemsTaskStoresList').addEventListener('change', event => {
+        const checkbox = event.target.closest('[data-task-store]');
+        if (!checkbox) return;
+        const id = Number(checkbox.dataset.taskStore);
+        if (checkbox.checked) nemsSelectedStoreIds.add(id);
+        else nemsSelectedStoreIds.delete(id);
+        nemsTaskStoresRender();
+    });
+    el('nemsTaskSelectAll').addEventListener('click', () => {
+        const search = el('nemsTaskStoreSearch').value.trim().toLowerCase();
+        nemsTaskStores.filter(s => String(s.store_name || '').toLowerCase().includes(search))
+            .forEach(s => nemsSelectedStoreIds.add(Number(s.store_id)));
+        nemsTaskStoresRender();
+    });
+    el('nemsTaskClear').addEventListener('click', () => {
+        nemsSelectedStoreIds.clear();
+        nemsTaskStoresRender();
+    });
+    el('nemsTaskRefresh').addEventListener('click', nemsTaskLoad);
+    el('nemsTaskForm').addEventListener('submit', nemsTaskCreate);
+}
+ 
+const nemsOriginalShowPage = showPage;
+showPage = function(page) {
+    if (page === 'tasks') {
+        if (currentUser?.role !== 'ADMIN') return;
+        nemsOriginalShowPage(page);
+        nemsTaskLoad();
+        return;
+    }
+    nemsOriginalShowPage(page);
+};
+ 
+nemsTaskSetup();
+ 
 </script>
-
+ 
 </body>
 </html>
