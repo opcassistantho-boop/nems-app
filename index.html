@@ -2962,6 +2962,162 @@ showPage = function(page) {
  
 nemsTaskSetup();
  
+// ==========================================
+// STORE TASKS - NEMS
+// ==========================================
+ 
+let nemsStoreTasks = [];
+let nemsStoreTasksBusy = false;
+ 
+function nemsStoreTaskRender() {
+    const tbody = el('nemsStoreTaskRows');
+    if (!tbody) return;
+    const search = el('nemsStoreTaskSearch').value.trim().toLowerCase();
+    const status = el('nemsStoreTaskStatus').value;
+    const visible = nemsStoreTasks.filter(task => {
+        const content = [task.assignment_id, task.supplier_name, task.store_name]
+            .join(' ').toLowerCase();
+        return content.includes(search) &&
+            (!status || task.display_status === status);
+    });
+ 
+    el('nemsStoreTaskCount').textContent =
+        `${visible.length} of ${nemsStoreTasks.length} assigned tasks`;
+ 
+    tbody.innerHTML = visible.length ? visible.map(task => {
+        const id = Number(task.assignment_id);
+        const state = String(task.display_status || 'PENDING');
+        const canSubmit = task.status === 'ACTIVE' &&
+            Number(task.submission_count || 0) === 0;
+        return `<tr>
+            <td>${escapeHtml(task.assignment_id)}</td>
+            <td>${escapeHtml(task.supplier_name)}</td>
+            <td>${escapeHtml(task.expiry_scope)}</td>
+            <td>${task.due_at ? escapeHtml(dateTimeText(task.due_at)) : 'No deadline'}</td>
+            <td>${escapeHtml(state)}</td>
+            <td>${Number(task.submission_count || 0)}</td>
+            <td>${canSubmit ?
+                `<button type="button" data-nems-store-submit="${id}">Submit task</button>` :
+                '<span class="muted">Not available</span>'}</td>
+        </tr>`;
+    }).join('') : '<tr><td colspan="7">No tasks found for your store.</td></tr>';
+}
+ 
+async function nemsStoreTaskLoad() {
+    if (currentUser?.role !== 'STORE') return;
+    const account = currentUser.email;
+    el('nemsStoreTaskRows').innerHTML =
+        '<tr><td colspan="7">Loading your tasks...</td></tr>';
+    try {
+        const result = await api('/api/store/tasks');
+        if (currentUser?.role !== 'STORE' || currentUser.email !== account) return;
+        if (!Array.isArray(result)) throw new Error('Unexpected task response');
+        nemsStoreTasks = result;
+        nemsStoreTaskRender();
+    } catch (error) {
+        el('nemsStoreTaskRows').innerHTML =
+            '<tr><td colspan="7">Could not load tasks.</td></tr>';
+        showMessage(error.message, true);
+    }
+}
+ 
+async function nemsStoreTaskSubmit(id) {
+    if (currentUser?.role !== 'STORE' || nemsStoreTasksBusy) return;
+    const task = nemsStoreTasks.find(t => Number(t.assignment_id) === id);
+    if (!task || task.status !== 'ACTIVE' || Number(task.submission_count) > 0) return;
+ 
+    const remarks = window.prompt(
+        `Submit task #${id} for ${task.supplier_name}?\n\nEnter completion remarks (optional, up to 2000 characters).`,
+        ''
+    );
+    if (remarks === null) return;
+    if (remarks.trim().length > 2000) {
+        showMessage('Remarks must not exceed 2000 characters.', true);
+        return;
+    }
+    if (!window.confirm(
+        'Confirm that you have completed the assigned supplier monitoring. Submit this task?'
+    )) return;
+ 
+    nemsStoreTasksBusy = true;
+    try {
+        await api(`/api/store/tasks/${id}/submit`, {
+            method: 'POST',
+            body: JSON.stringify({ remarks: remarks.trim() })
+        });
+        showMessage('Task submitted successfully.');
+        await nemsStoreTaskLoad();
+    } catch (error) {
+        showMessage(error.message, true);
+    } finally {
+        nemsStoreTasksBusy = false;
+    }
+}
+ 
+function nemsStoreTaskSetup() {
+    const nav = el('navigation');
+    const appRoot = el('application');
+    if (!nav || !appRoot || el('page-storetasks')) return;
+ 
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.dataset.page = 'storetasks';
+    button.className = 'storeOnly hidden';
+    button.textContent = 'My Tasks';
+    button.addEventListener('click', () => showPage('storetasks'));
+    nav.appendChild(button);
+ 
+    const page = document.createElement('section');
+    page.id = 'page-storetasks';
+    page.className = 'page storeOnly hidden';
+    page.innerHTML = `
+        <div class="panel">
+            <h2>My Assigned Tasks</h2>
+            <p class="muted">Tasks assigned to your store only. Complete your supplier monitoring before submitting.</p>
+            <div class="nems-task-grid">
+                <input id="nemsStoreTaskSearch" placeholder="Search supplier or task ID">
+                <select id="nemsStoreTaskStatus">
+                    <option value="">All statuses</option>
+                    <option value="PENDING">PENDING</option>
+                    <option value="OVERDUE">OVERDUE</option>
+                    <option value="SUBMITTED">SUBMITTED</option>
+                    <option value="CANCELLED">CANCELLED</option>
+                </select>
+            </div>
+            <div class="nems-task-actions">
+                <button type="button" id="nemsStoreTaskRefresh">Refresh my tasks</button>
+            </div>
+            <p class="muted" id="nemsStoreTaskCount"></p>
+            <div class="tablewrap"><table>
+                <thead><tr><th>ID</th><th>Supplier</th><th>Expiry scope</th><th>Deadline</th><th>Status</th><th>Submissions</th><th>Action</th></tr></thead>
+                <tbody id="nemsStoreTaskRows"></tbody>
+            </table></div>
+            <p class="muted">Submitting confirms completion of the assigned task. A submitted task cannot be submitted again.</p>
+        </div>`;
+    appRoot.appendChild(page);
+ 
+    el('nemsStoreTaskSearch').addEventListener('input', nemsStoreTaskRender);
+    el('nemsStoreTaskStatus').addEventListener('change', nemsStoreTaskRender);
+    el('nemsStoreTaskRefresh').addEventListener('click', nemsStoreTaskLoad);
+    el('nemsStoreTaskRows').addEventListener('click', event => {
+        const button = event.target.closest('[data-nems-store-submit]');
+        if (button) nemsStoreTaskSubmit(Number(button.dataset.nemsStoreSubmit));
+    });
+}
+ 
+const nemsStoreOriginalShowPage = showPage;
+showPage = function(page) {
+    if (page === 'storetasks') {
+        if (currentUser?.role !== 'STORE') return;
+        nemsStoreOriginalShowPage(page);
+        nemsStoreTaskLoad();
+        return;
+    }
+    nemsStoreOriginalShowPage(page);
+};
+ 
+nemsStoreTaskSetup();
+ 
 </script>
  
 </body>
