@@ -1834,6 +1834,9 @@ require('./nems-tasks')({
     adminOnly
 });
  
+// ADMIN USER MANAGEMENT ROUTES
+require('./nems-users')({ app, pool, authenticate, adminOnly });
+ 
 // ==========================================
 // START SERVER
 // ==========================================
