@@ -3118,6 +3118,172 @@ showPage = function(page) {
  
 nemsStoreTaskSetup();
  
+ 
+// ==========================================
+// ADMIN USER MANAGEMENT - NEMS
+// ==========================================
+let nemsUsers = [];
+let nemsUserStores = [];
+let nemsEditingEmail = null;
+ 
+function nemsUserStorePicker() {
+    const role = el('nemsUserRole').value;
+    el('nemsUserStoreBox').classList.toggle('hidden', role !== 'STORE');
+    el('nemsUserASBox').classList.toggle('hidden', role !== 'AS');
+    if (role === 'STORE') {
+        el('nemsUserStore').innerHTML = '<option value="">Select store</option>' +
+            nemsUserStores.filter(s => s.status === 'ACTIVE').map(s =>
+                `<option value="${Number(s.store_id)}">${escapeHtml(s.store_name)} — ${escapeHtml(s.store_email || 'No email')}</option>`
+            ).join('');
+    }
+    if (role === 'AS') {
+        el('nemsUserASStores').innerHTML = nemsUserStores.filter(s => s.status === 'ACTIVE').map(s =>
+            `<label class="nems-task-store"><input type="checkbox" value="${Number(s.store_id)}" data-nems-as-store> ${escapeHtml(s.store_name)}</label>`
+        ).join('');
+    }
+}
+ 
+function nemsUserRender() {
+    const query = el('nemsUserSearch').value.trim().toLowerCase();
+    const filtered = nemsUsers.filter(u => [u.email,u.full_name,u.role,u.status,u.store_name].join(' ').toLowerCase().includes(query));
+    el('nemsUserCount').textContent = `Showing ${filtered.length} of ${nemsUsers.length} accounts`;
+    el('nemsUserRows').innerHTML = filtered.length ? filtered.map(u => `
+        <tr><td>${escapeHtml(u.full_name || '—')}</td><td>${escapeHtml(u.email)}</td>
+        <td>${escapeHtml(u.role)}</td><td>${escapeHtml(u.store_name || (u.role === 'AS' ? (u.assigned_store_ids || []).length + ' assigned stores' : '—'))}</td>
+        <td>${escapeHtml(u.status)}</td><td><button type="button" class="small" data-nems-user-edit="${escapeHtml(u.email)}">Edit / Approve</button></td></tr>
+    `).join('') : '<tr><td colspan="6">No matching accounts.</td></tr>';
+}
+ 
+async function nemsUserLoad() {
+    if (currentUser?.role !== 'ADMIN') return;
+    try {
+        const [users, stores] = await Promise.all([
+            api('/api/admin/users'), api('/api/admin/users/stores')
+        ]);
+        if (currentUser?.role !== 'ADMIN') return;
+        nemsUsers = users;
+        nemsUserStores = stores;
+        nemsUserRender();
+    } catch (err) { showMessage(err.message, true); }
+}
+ 
+function nemsUserOpen(email = null) {
+    if (currentUser?.role !== 'ADMIN') return;
+    const user = email ? nemsUsers.find(u => u.email === email) : null;
+    if (email && !user) return;
+    nemsEditingEmail = user?.email || null;
+    el('nemsUserForm').reset();
+    el('nemsUserEditor').classList.remove('hidden');
+    el('nemsUserTitle').textContent = user ? 'Edit / Approve User' : 'Create New User (Inactive)';
+    el('nemsUserEmail').value = user?.email || '';
+    el('nemsUserEmail').disabled = Boolean(user);
+    el('nemsUserName').value = user?.full_name || '';
+    el('nemsUserRole').value = user?.role || 'HEAD';
+    el('nemsUserStatusBox').classList.toggle('hidden', !user);
+    el('nemsUserStatus').value = user?.status || 'INACTIVE';
+    el('nemsUserPasswordBox').classList.toggle('hidden', Boolean(user));
+    el('nemsUserPassword').required = !user;
+    el('nemsUserPassword').value = '';
+    nemsUserStorePicker();
+    if (user?.role === 'STORE') {
+        const store = nemsUserStores.find(s => s.store_name === user.store_name && s.store_email?.toLowerCase() === user.email.toLowerCase());
+        el('nemsUserStore').value = store?.store_id || '';
+    }
+    if (user?.role === 'AS') {
+        const assigned = new Set((user.assigned_store_ids || []).map(Number));
+        el('nemsUserASStores').querySelectorAll('[data-nems-as-store]').forEach(c => { c.checked = assigned.has(Number(c.value)); });
+    }
+    el('nemsUserEditor').scrollIntoView({ behavior:'smooth', block:'start' });
+}
+ 
+async function nemsUserSave(event) {
+    event.preventDefault();
+    if (currentUser?.role !== 'ADMIN') return;
+    const role = el('nemsUserRole').value;
+    const payload = {
+        full_name: el('nemsUserName').value.trim(), role,
+        store_id: role === 'STORE' ? Number(el('nemsUserStore').value) : null,
+        store_ids: role === 'AS' ? [...el('nemsUserASStores').querySelectorAll('[data-nems-as-store]:checked')].map(c => Number(c.value)) : []
+    };
+    if (nemsEditingEmail) {
+        payload.status = el('nemsUserStatus').value;
+        const old = nemsUsers.find(u => u.email === nemsEditingEmail);
+        if (old?.status !== 'ACTIVE' && payload.status === 'ACTIVE' && !confirm(`Approve and activate ${nemsEditingEmail}?`)) return;
+        if (old?.status === 'ACTIVE' && payload.status === 'INACTIVE' && !confirm(`Deactivate ${nemsEditingEmail}?`)) return;
+    } else {
+        payload.email = el('nemsUserEmail').value.trim();
+        payload.password = el('nemsUserPassword').value;
+        if (!confirm(`Create ${payload.email} as INACTIVE? ADMIN approval will be required before login.`)) return;
+    }
+    const button = el('nemsUserSave');
+    button.disabled = true;
+    try {
+        await api(nemsEditingEmail ? '/api/admin/users/' + encodeURIComponent(nemsEditingEmail) : '/api/admin/users', {
+            method: nemsEditingEmail ? 'PATCH' : 'POST', body: JSON.stringify(payload)
+        });
+        el('nemsUserEditor').classList.add('hidden');
+        await nemsUserLoad();
+        showMessage(nemsEditingEmail ? 'User updated successfully.' : 'User created as INACTIVE. ADMIN must approve activation.');
+    } catch (err) { showMessage(err.message, true); }
+    finally { button.disabled = false; }
+}
+ 
+function nemsUserSetup() {
+    if (el('page-users')) return;
+    const nav = el('navigation');
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'adminOnly hidden';
+    button.dataset.page = 'users';
+    button.textContent = 'User Management';
+    button.addEventListener('click', () => showPage('users'));
+    nav.appendChild(button);
+    const page = document.createElement('section');
+    page.id = 'page-users';
+    page.className = 'page adminOnly hidden';
+    page.innerHTML = `
+        <div class="panel"><div class="row"><h2>ADMIN User Management</h2>
+        <button type="button" class="green" id="nemsUserAdd">+ Add User</button>
+        <button type="button" id="nemsUserRefresh">Refresh</button></div>
+        <p class="muted">All new accounts start INACTIVE. Only ADMIN can approve activation. Existing accounts are preserved.</p>
+        <input id="nemsUserSearch" placeholder="Search name, email, role, store or status">
+        <p class="muted" id="nemsUserCount"></p>
+        <div class="tablewrap"><table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Store access</th><th>Status</th><th>Action</th></tr></thead><tbody id="nemsUserRows"></tbody></table></div></div>
+        <div class="panel hidden" id="nemsUserEditor"><h2 id="nemsUserTitle">Create User</h2>
+        <form id="nemsUserForm"><div class="formgrid">
+        <div><label>Email *</label><input type="email" id="nemsUserEmail" required maxlength="255"></div>
+        <div><label>Full name *</label><input id="nemsUserName" required maxlength="255"></div>
+        <div><label>Role *</label><select id="nemsUserRole"><option>HEAD</option><option>AOM</option><option>AS</option><option>STORE</option><option>ADMIN</option></select></div>
+        <div id="nemsUserPasswordBox"><label>Temporary password (12+ characters) *</label><input type="password" id="nemsUserPassword" minlength="12" maxlength="128" autocomplete="new-password"></div>
+        <div class="hidden" id="nemsUserStatusBox"><label>Approval status</label><select id="nemsUserStatus"><option value="INACTIVE">INACTIVE — not approved</option><option value="ACTIVE">ACTIVE — approved</option></select></div>
+        <div class="hidden" id="nemsUserStoreBox"><label>STORE assignment *</label><select id="nemsUserStore"></select><p class="muted">STORE account email must match the registered store email.</p></div>
+        <div class="wide hidden" id="nemsUserASBox"><label>Assigned AS stores *</label><div id="nemsUserASStores" class="nems-task-store-list"></div></div>
+        </div><div class="formactions"><button id="nemsUserSave" type="submit">Save User</button><button type="button" class="secondary" id="nemsUserCancel">Cancel</button></div></form></div>`;
+    el('application').appendChild(page);
+    el('nemsUserAdd').addEventListener('click', () => nemsUserOpen());
+    el('nemsUserRefresh').addEventListener('click', nemsUserLoad);
+    el('nemsUserSearch').addEventListener('input', nemsUserRender);
+    el('nemsUserRole').addEventListener('change', nemsUserStorePicker);
+    el('nemsUserCancel').addEventListener('click', () => el('nemsUserEditor').classList.add('hidden'));
+    el('nemsUserForm').addEventListener('submit', nemsUserSave);
+    el('nemsUserRows').addEventListener('click', event => {
+        const target = event.target.closest('[data-nems-user-edit]');
+        if (target) nemsUserOpen(target.dataset.nemsUserEdit);
+    });
+}
+ 
+const nemsUserOriginalShowPage = showPage;
+showPage = function(page) {
+    if (page === 'users') {
+        if (currentUser?.role !== 'ADMIN') return;
+        nemsUserOriginalShowPage(page);
+        nemsUserLoad();
+        return;
+    }
+    nemsUserOriginalShowPage(page);
+};
+nemsUserSetup();
+ 
 </script>
  
 </body>
