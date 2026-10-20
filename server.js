@@ -63,8 +63,7 @@ app.get('/', (req, res) => {
 function sendError(res, status, message) {
     return res.status(status).json({
         error: message
-    });
-}
+    });}
  
 function cleanEmail(email) {
     return String(email || '')
@@ -1836,6 +1835,9 @@ require('./nems-tasks')({
  
 // ADMIN USER MANAGEMENT ROUTES
 require('./nems-users')({ app, pool, authenticate, adminOnly });
+ 
+// ADMIN STORE MANAGEMENT ROUTES
+require('./nems-stores')({ app, pool, authenticate, adminOnly });
  
 // ==========================================
 // START SERVER
