@@ -47,6 +47,60 @@ module.exports = function registerUserRoutes({ app, pool, authenticate, adminOnl
         }
     }
  
+    // ADMIN creates a one-use Supabase recovery link for an existing NEMS account.
+    // The link is returned only to the ADMIN, who can share it privately.
+    app.post('/api/admin/users/password-link', ...route, async (req, res) => {
+        const email = emailOf(req.body?.email);
+        if (!email) return fail(res, 400, 'Email required');
+        try {
+            const existing = await pool.query('SELECT 1 FROM public.users WHERE LOWER(email)=$1', [email]);
+            if (!existing.rowCount) return fail(res, 404, 'NEMS account not found');
+            const redirectTo = (process.env.NEMS_PUBLIC_URL || 'https://nems-app.onrender.com').replace(/\/$/, '') + '/';
+            const generated = await authAdmin('generate_link', 'POST', {
+                type: 'recovery', email, options: { redirect_to: redirectTo }
+            });
+            const link = generated.action_link || generated.properties?.action_link;
+            if (!link) return fail(res, 502, 'Supabase did not return a password setup link');
+            res.set('Cache-Control', 'no-store');
+            return res.json({ link });
+        } catch (err) {
+            console.error('[NEMS USERS password link]', err.status || err.message);
+            return fail(res, 500, 'Unable to generate password setup link');
+        }
+    });
+ 
+    // A recovery token changes only the authenticated Supabase user's password.
+    // This does not approve/activate the corresponding NEMS account.
+    app.post('/api/password/setup', async (req, res) => {
+        const accessToken = req.body?.access_token;
+        const password = req.body?.password;
+        if (typeof accessToken !== 'string' || !accessToken ||
+            typeof password !== 'string' || password.length < 12 || password.length > 128) {
+            return fail(res, 400, 'Valid recovery token and password (12–128 characters) required');
+        }
+        try {
+            const headers = { apikey: process.env.SUPABASE_ANON_KEY,
+                Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' };
+            const identity = await fetch(`${base}/auth/v1/user`, { headers });
+            if (!identity.ok) return fail(res, 401, 'Password setup link has expired or is invalid');
+            const authUser = await identity.json();
+            const account = await pool.query(
+                'SELECT 1 FROM public.users WHERE auth_user_id=$1::uuid AND LOWER(email)=$2',
+                [authUser.id, emailOf(authUser.email)]
+            );
+            if (!account.rowCount) return fail(res, 403, 'NEMS account not found');
+            const changed = await fetch(`${base}/auth/v1/user`, {
+                method: 'PUT', headers, body: JSON.stringify({ password })
+            });
+            if (!changed.ok) return fail(res, 400, 'Could not save password. Request a new link.');
+            res.set('Cache-Control', 'no-store');
+            return res.json({ message: 'Password saved. You may log in once ADMIN has activated your account.' });
+        } catch (err) {
+            console.error('[NEMS USERS password setup]', err.message);
+            return fail(res, 500, 'Password setup temporarily unavailable');
+        }
+    });
+ 
     app.get('/api/admin/users/stores', ...route, async (req, res) => {
         try {
             const { rows } = await pool.query(
