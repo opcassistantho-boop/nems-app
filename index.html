@@ -313,6 +313,17 @@ td button { margin:2px; }
  
 <main>
  
+<section id="nemsPasswordSetup" class="panel hidden" style="max-width:480px;margin:65px auto">
+    <h2>Create Your NEMS Password</h2>
+    <p>Choose a password with at least 12 characters. Your account still requires ADMIN approval before login.</p>
+    <div id="nemsPasswordSetupMessage" class="message hidden"></div>
+    <form id="nemsPasswordSetupForm">
+        <label>New password</label><input type="password" id="nemsNewPassword" minlength="12" maxlength="128" autocomplete="new-password" required>
+        <label>Confirm new password</label><input type="password" id="nemsConfirmPassword" minlength="12" maxlength="128" autocomplete="new-password" required>
+        <div class="formactions"><button type="submit" id="nemsSetPasswordButton">Save Password</button></div>
+    </form>
+</section>
+ 
 <section id="loginPanel" class="panel">
     <h2>NEMS Login</h2>
     <div id="loginMessage" class="message hidden"></div>
@@ -3150,7 +3161,7 @@ function nemsUserRender() {
     el('nemsUserRows').innerHTML = filtered.length ? filtered.map(u => `
         <tr><td>${escapeHtml(u.full_name || '—')}</td><td>${escapeHtml(u.email)}</td>
         <td>${escapeHtml(u.role)}</td><td>${escapeHtml(u.store_name || (u.role === 'AS' ? (u.assigned_store_ids || []).length + ' assigned stores' : '—'))}</td>
-        <td>${escapeHtml(u.status)}</td><td><button type="button" class="small" data-nems-user-edit="${escapeHtml(u.email)}">Edit / Approve</button></td></tr>
+        <td>${escapeHtml(u.status)}</td><td><button type="button" class="small" data-nems-user-edit="${escapeHtml(u.email)}">Edit / Approve</button> <button type="button" class="small secondary" data-nems-password-link="${escapeHtml(u.email)}">Password Link</button></td></tr>
     `).join('') : '<tr><td colspan="6">No matching accounts.</td></tr>';
 }
  
@@ -3266,6 +3277,27 @@ function nemsUserSetup() {
     el('nemsUserRole').addEventListener('change', nemsUserStorePicker);
     el('nemsUserCancel').addEventListener('click', () => el('nemsUserEditor').classList.add('hidden'));
     el('nemsUserForm').addEventListener('submit', nemsUserSave);
+    el('nemsUserRows').addEventListener('click', async event => {
+        const button = event.target.closest('[data-nems-password-link]');
+        if (!button) return;
+        const email = button.dataset.nemsPasswordLink;
+        if (!confirm(`Generate a password setup link for ${email}? Share it privately.`)) return;
+        button.disabled = true;
+        try {
+            const result = await api('/api/admin/users/password-link', {
+                method: 'POST', body: JSON.stringify({ email })
+            });
+            // The ADMIN must share the generated link privately; do not log it.
+            const link = result.link;
+            try {
+                await navigator.clipboard.writeText(link);
+                alert('Password setup link copied. Send it privately to ' + email + '.');
+            } catch (_) {
+                prompt('Copy this password setup link and send it privately:', link);
+            }
+        } catch (err) { showMessage(err.message, true); }
+        finally { button.disabled = false; }
+    });
     el('nemsUserRows').addEventListener('click', event => {
         const target = event.target.closest('[data-nems-user-edit]');
         if (target) nemsUserOpen(target.dataset.nemsUserEdit);
@@ -3435,6 +3467,44 @@ showPage = function(page) {
     nemsStoresOriginalShowPage(page);
 };
 nemsStoresSetup();
+ 
+// Supabase recovery redirects to this page with an access token in the URL fragment.
+// Remove the fragment immediately to avoid exposing it in browser history.
+let nemsRecoveryAccessToken = '';
+(function nemsInitializePasswordSetup() {
+    const params = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+    if (params.get('type') !== 'recovery' || !params.get('access_token')) return;
+    nemsRecoveryAccessToken = params.get('access_token');
+    history.replaceState(null, '', window.location.pathname + window.location.search);
+    el('loginPanel').classList.add('hidden');
+    el('nemsPasswordSetup').classList.remove('hidden');
+})();
+ 
+el('nemsPasswordSetupForm').addEventListener('submit', async event => {
+    event.preventDefault();
+    const message = el('nemsPasswordSetupMessage');
+    const password = el('nemsNewPassword').value;
+    if (password !== el('nemsConfirmPassword').value) {
+        message.textContent = 'Passwords do not match.';
+        message.className = 'message error';
+        return;
+    }
+    const button = el('nemsSetPasswordButton');
+    button.disabled = true;
+    try {
+        const result = await api('/api/password/setup', {
+            method: 'POST', body: JSON.stringify({ access_token: nemsRecoveryAccessToken, password })
+        });
+        nemsRecoveryAccessToken = '';
+        el('nemsPasswordSetupForm').reset();
+        message.textContent = result.message;
+        message.className = 'message';
+        el('loginPanel').classList.remove('hidden');
+    } catch (err) {
+        message.textContent = err.message;
+        message.className = 'message error';
+    } finally { button.disabled = false; }
+});
  
 </script>
  
