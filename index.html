@@ -3161,7 +3161,7 @@ function nemsUserRender() {
     el('nemsUserRows').innerHTML = filtered.length ? filtered.map(u => `
         <tr><td>${escapeHtml(u.full_name || '—')}</td><td>${escapeHtml(u.email)}</td>
         <td>${escapeHtml(u.role)}</td><td>${escapeHtml(u.store_name || (u.role === 'AS' ? (u.assigned_store_ids || []).length + ' assigned stores' : '—'))}</td>
-        <td>${escapeHtml(u.status)}</td><td><button type="button" class="small" data-nems-user-edit="${escapeHtml(u.email)}">Edit / Approve</button> <button type="button" class="small secondary" data-nems-password-link="${escapeHtml(u.email)}">Password Link</button></td></tr>
+        <td>${escapeHtml(u.status)}</td><td><button type="button" class="small" data-nems-user-edit="${escapeHtml(u.email)}">Edit / Approve</button> <button type="button" class="small secondary" data-nems-password-link="${escapeHtml(u.email)}">Send Invitation</button></td></tr>
     `).join('') : '<tr><td colspan="6">No matching accounts.</td></tr>';
 }
  
@@ -3229,12 +3229,14 @@ async function nemsUserSave(event) {
     const button = el('nemsUserSave');
     button.disabled = true;
     try {
-        await api(nemsEditingEmail ? '/api/admin/users/' + encodeURIComponent(nemsEditingEmail) : '/api/admin/users', {
+        const result = await api(nemsEditingEmail ? '/api/admin/users/' + encodeURIComponent(nemsEditingEmail) : '/api/admin/users', {
             method: nemsEditingEmail ? 'PATCH' : 'POST', body: JSON.stringify(payload)
         });
         el('nemsUserEditor').classList.add('hidden');
         await nemsUserLoad();
-        showMessage(nemsEditingEmail ? 'User updated successfully.' : 'User created as INACTIVE. ADMIN must approve activation.');
+        showMessage(nemsEditingEmail ? 'User updated successfully.' :
+            (result.message || 'User created as INACTIVE. ADMIN must approve activation.'),
+            !nemsEditingEmail && result.invitation_sent === false);
     } catch (err) { showMessage(err.message, true); }
     finally { button.disabled = false; }
 }
@@ -3281,20 +3283,14 @@ function nemsUserSetup() {
         const button = event.target.closest('[data-nems-password-link]');
         if (!button) return;
         const email = button.dataset.nemsPasswordLink;
-        if (!confirm(`Generate a password setup link for ${email}? Share it privately.`)) return;
+        if (!confirm(`Send a NEMS password setup invitation email to ${email}?`)) return;
         button.disabled = true;
         try {
             const result = await api('/api/admin/users/password-link', {
                 method: 'POST', body: JSON.stringify({ email })
             });
-            // The ADMIN must share the generated link privately; do not log it.
-            const link = result.link;
-            try {
-                await navigator.clipboard.writeText(link);
-                alert('Password setup link copied. Send it privately to ' + email + '.');
-            } catch (_) {
-                prompt('Copy this password setup link and send it privately:', link);
-            }
+            if (!result.sent) throw new Error('Email delivery was not confirmed by NEMS.');
+            showMessage(result.message || 'Password invitation emailed to ' + email + '.');
         } catch (err) { showMessage(err.message, true); }
         finally { button.disabled = false; }
     });
