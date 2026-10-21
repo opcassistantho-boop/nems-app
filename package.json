@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "express": "^4.21.2",
+    "nodemailer": "^6.10.1",
     "pg": "^8.13.1",
     "xlsx": "^0.18.5"
   }
