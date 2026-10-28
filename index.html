@@ -2987,46 +2987,35 @@ nemsTaskSetup();
  
 let nemsStoreTasks = [];
 let nemsStoreTasksBusy = false;
- 
+let nemsActiveTaskId = null;
+let nemsTaskProducts = [];
+let nemsTaskLocked = false;
+
 function nemsStoreTaskRender() {
     const tbody = el('nemsStoreTaskRows');
     if (!tbody) return;
     const search = el('nemsStoreTaskSearch').value.trim().toLowerCase();
     const status = el('nemsStoreTaskStatus').value;
-    const visible = nemsStoreTasks.filter(task => {
-        const content = [task.assignment_id, task.supplier_name, task.store_name]
-            .join(' ').toLowerCase();
-        return content.includes(search) &&
-            (!status || task.display_status === status);
-    });
- 
-    el('nemsStoreTaskCount').textContent =
-        `${visible.length} of ${nemsStoreTasks.length} assigned tasks`;
- 
+    const visible = nemsStoreTasks.filter(task =>
+        [task.assignment_id, task.supplier_name, task.store_name].join(' ').toLowerCase().includes(search) &&
+        (!status || task.display_status === status));
+    el('nemsStoreTaskCount').textContent = `${visible.length} of ${nemsStoreTasks.length} assigned tasks`;
     tbody.innerHTML = visible.length ? visible.map(task => {
         const id = Number(task.assignment_id);
-        const state = String(task.display_status || 'PENDING');
-        const canSubmit = task.status === 'ACTIVE' &&
-            Number(task.submission_count || 0) === 0;
-        return `<tr>
-            <td>${escapeHtml(task.assignment_id)}</td>
-            <td>${escapeHtml(task.supplier_name)}</td>
-            <td>${escapeHtml(task.expiry_scope)}</td>
-            <td>${task.due_at ? escapeHtml(dateTimeText(task.due_at)) : 'No deadline'}</td>
-            <td>${escapeHtml(state)}</td>
-            <td>${Number(task.submission_count || 0)}</td>
-            <td>${canSubmit ?
-                `<button type="button" data-nems-store-submit="${id}">Submit task</button>` :
-                '<span class="muted">Not available</span>'}</td>
-        </tr>`;
+        return `<tr><td>${escapeHtml(task.assignment_id)}</td>
+          <td>${escapeHtml(task.supplier_name)}</td>
+          <td>${escapeHtml(task.expiry_scope)}</td>
+          <td>${task.due_at ? escapeHtml(dateTimeText(task.due_at)) : 'No deadline'}</td>
+          <td>${escapeHtml(task.display_status || 'PENDING')}</td>
+          <td>${Number(task.submission_count || 0)}</td>
+          <td><button type="button" data-nems-open-task="${id}">View products</button></td></tr>`;
     }).join('') : '<tr><td colspan="7">No tasks found for your store.</td></tr>';
 }
- 
+
 async function nemsStoreTaskLoad() {
     if (currentUser?.role !== 'STORE') return;
     const account = currentUser.email;
-    el('nemsStoreTaskRows').innerHTML =
-        '<tr><td colspan="7">Loading your tasks...</td></tr>';
+    el('nemsStoreTaskRows').innerHTML = '<tr><td colspan="7">Loading tasks...</td></tr>';
     try {
         const result = await api('/api/store/tasks');
         if (currentUser?.role !== 'STORE' || currentUser.email !== account) return;
@@ -3034,50 +3023,124 @@ async function nemsStoreTaskLoad() {
         nemsStoreTasks = result;
         nemsStoreTaskRender();
     } catch (error) {
-        el('nemsStoreTaskRows').innerHTML =
-            '<tr><td colspan="7">Could not load tasks.</td></tr>';
+        el('nemsStoreTaskRows').innerHTML = '<tr><td colspan="7">Could not load tasks.</td></tr>';
         showMessage(error.message, true);
     }
 }
- 
-async function nemsStoreTaskSubmit(id) {
+
+function nemsTaskProductCounts() {
+    const encoded = nemsTaskProducts.filter(p => p.encoded &&
+        (p.expiration_1 || p.expiration_2 || p.expiration_3)).length;
+    el('nemsTaskProductCount').textContent =
+        `${encoded} of ${nemsTaskProducts.length} active supplier products encoded`;
+    const submit = el('nemsTaskSubmitProducts');
+    submit.disabled = nemsTaskLocked || nemsStoreTasksBusy ||
+        !nemsTaskProducts.length || encoded !== nemsTaskProducts.length;
+}
+
+function nemsTaskProductRender() {
+    const body = el('nemsTaskProductRows');
+    const term = el('nemsTaskProductSearch').value.trim().toLowerCase();
+    const products = nemsTaskProducts.filter(p =>
+        [p.sku, p.product_name].join(' ').toLowerCase().includes(term));
+    const input = (p, n, kind) => {
+        const key = kind === 'date' ? `expiration_${n}` : `qty_${n}`;
+        const value = p[key] == null ? '' : String(p[key]).slice(0, kind === 'date' ? 10 : undefined);
+        return `<input aria-label="${kind === 'date' ? 'Expiration' : 'Quantity'} ${n}" type="${kind === 'date' ? 'date' : 'number'}" ${kind === 'date' ? '' : 'min="0" max="500" step="1"'}
+            data-nems-field="${key}" value="${escapeHtml(value)}" ${nemsTaskLocked ? 'disabled' : ''} style="min-width:110px;max-width:155px">`;
+    };
+    body.innerHTML = products.length ? products.map(p => `
+      <tr data-nems-product="${Number(p.product_id)}">
+        <td>${escapeHtml(p.sku || '')}</td><td>${escapeHtml(p.product_name)}</td>
+        <td>${input(p,1,'date')}</td><td>${input(p,1,'qty')}</td>
+        <td>${input(p,2,'date')}</td><td>${input(p,2,'qty')}</td>
+        <td>${input(p,3,'date')}</td><td>${input(p,3,'qty')}</td>
+        <td>${p.encoded ? 'Saved' : 'Not encoded'}</td>
+        <td>${nemsTaskLocked ? 'Locked' : `<button type="button" data-nems-save-product="${Number(p.product_id)}">Save</button>`}</td>
+      </tr>`).join('') : '<tr><td colspan="10">No matching products.</td></tr>';
+    nemsTaskProductCounts();
+}
+
+async function nemsOpenTaskProducts(id) {
     if (currentUser?.role !== 'STORE' || nemsStoreTasksBusy) return;
-    const task = nemsStoreTasks.find(t => Number(t.assignment_id) === id);
-    if (!task || task.status !== 'ACTIVE' || Number(task.submission_count) > 0) return;
- 
-    const remarks = window.prompt(
-        `Submit task #${id} for ${task.supplier_name}?\n\nEnter completion remarks (optional, up to 2000 characters).`,
-        ''
-    );
-    if (remarks === null) return;
-    if (remarks.trim().length > 2000) {
-        showMessage('Remarks must not exceed 2000 characters.', true);
+    nemsActiveTaskId = id;
+    el('nemsTaskProductPanel').classList.remove('hidden');
+    el('nemsTaskProductRows').innerHTML = '<tr><td colspan="10">Loading products...</td></tr>';
+    try {
+        const result = await api(`/api/store/tasks/${id}/products`);
+        if (nemsActiveTaskId !== id) return;
+        nemsTaskProducts = result.products || [];
+        nemsTaskLocked = Boolean(result.locked);
+        el('nemsTaskProductHeading').textContent = `Task #${id} — ${result.task.supplier_name}`;
+        el('nemsTaskLockNote').textContent = nemsTaskLocked
+            ? 'READ ONLY: Task submitted, overdue, or closed. Only ADMIN can reopen it.'
+            : 'Save each product before submitting. All active supplier products must be encoded.';
+        el('nemsTaskProductSearch').value = '';
+        nemsTaskProductRender();
+    } catch (error) {
+        el('nemsTaskProductRows').innerHTML = '<tr><td colspan="10">Unable to load products.</td></tr>';
+        showMessage(error.message, true);
+    }
+}
+
+async function nemsSaveTaskProduct(productId) {
+    if (nemsTaskLocked || nemsStoreTasksBusy || !nemsActiveTaskId) return;
+    const row = [...el('nemsTaskProductRows').querySelectorAll('[data-nems-product]')]
+        .find(r => Number(r.dataset.nemsProduct) === productId);
+    if (!row) return;
+    const payload = {};
+    row.querySelectorAll('[data-nems-field]').forEach(input => payload[input.dataset.nemsField] = input.value);
+    nemsStoreTasksBusy = true;
+    try {
+        await api(`/api/store/tasks/${nemsActiveTaskId}/products/${productId}`, {
+            method: 'PUT', body: JSON.stringify(payload)
+        });
+        const p = nemsTaskProducts.find(p => Number(p.product_id) === productId);
+        if (p) {
+            Object.assign(p, payload, {encoded:true});
+        }
+        nemsTaskProductRender();
+        showMessage('Product progress saved.');
+    } catch (error) {
+        showMessage(error.message, true);
+    } finally {
+        nemsStoreTasksBusy = false;
+        nemsTaskProductCounts();
+    }
+}
+
+async function nemsStoreTaskSubmit(id) {
+    if (currentUser?.role !== 'STORE' || nemsTaskLocked || nemsStoreTasksBusy) return;
+    if (nemsTaskProducts.some(p => !p.encoded ||
+        !(p.expiration_1 || p.expiration_2 || p.expiration_3))) {
+        showMessage('Save all active supplier products before submitting.', true);
         return;
     }
-    if (!window.confirm(
-        'Confirm that you have completed the assigned supplier monitoring. Submit this task?'
-    )) return;
- 
+    const remarks = window.prompt('Completion remarks (optional, maximum 2000 characters):', '');
+    if (remarks === null) return;
+    if (remarks.trim().length > 2000) return showMessage('Remarks too long.', true);
+    if (!window.confirm('Submit this task permanently? The submitted values cannot be changed.')) return;
     nemsStoreTasksBusy = true;
     try {
         await api(`/api/store/tasks/${id}/submit`, {
-            method: 'POST',
-            body: JSON.stringify({ remarks: remarks.trim() })
+            method:'POST', body: JSON.stringify({remarks:remarks.trim()})
         });
-        showMessage('Task submitted successfully.');
+        showMessage('Task submitted. Permanent snapshot saved.');
         await nemsStoreTaskLoad();
+        nemsTaskLocked = true;
+        nemsTaskProductRender();
+        el('nemsTaskLockNote').textContent = 'READ ONLY: Submitted. Permanent snapshot saved.';
     } catch (error) {
         showMessage(error.message, true);
     } finally {
         nemsStoreTasksBusy = false;
     }
 }
- 
+
 function nemsStoreTaskSetup() {
     const nav = el('navigation');
     const appRoot = el('application');
     if (!nav || !appRoot || el('page-storetasks')) return;
- 
     const button = document.createElement('button');
     button.type = 'button';
     button.dataset.page = 'storetasks';
@@ -3085,45 +3148,51 @@ function nemsStoreTaskSetup() {
     button.textContent = 'My Tasks';
     button.addEventListener('click', () => showPage('storetasks'));
     nav.appendChild(button);
- 
     const page = document.createElement('section');
     page.id = 'page-storetasks';
     page.className = 'page storeOnly hidden';
     page.innerHTML = `
-        <div class="panel">
-            <h2>My Assigned Tasks</h2>
-            <p class="muted">Tasks assigned to your store only. Complete your supplier monitoring before submitting.</p>
-            <div class="nems-task-grid">
-                <input id="nemsStoreTaskSearch" placeholder="Search supplier or task ID">
-                <select id="nemsStoreTaskStatus">
-                    <option value="">All statuses</option>
-                    <option value="PENDING">PENDING</option>
-                    <option value="OVERDUE">OVERDUE</option>
-                    <option value="SUBMITTED">SUBMITTED</option>
-                    <option value="CANCELLED">CANCELLED</option>
-                </select>
-            </div>
-            <div class="nems-task-actions">
-                <button type="button" id="nemsStoreTaskRefresh">Refresh my tasks</button>
-            </div>
-            <p class="muted" id="nemsStoreTaskCount"></p>
-            <div class="tablewrap"><table>
-                <thead><tr><th>ID</th><th>Supplier</th><th>Expiry scope</th><th>Deadline</th><th>Status</th><th>Submissions</th><th>Action</th></tr></thead>
-                <tbody id="nemsStoreTaskRows"></tbody>
-            </table></div>
-            <p class="muted">Submitting confirms completion of the assigned task. A submitted task cannot be submitted again.</p>
-        </div>`;
+      <div class="panel"><h2>My Assigned Tasks</h2>
+        <p class="muted">Select a task to encode every active product belonging to its supplier.</p>
+        <div class="nems-task-grid"><input id="nemsStoreTaskSearch" placeholder="Search supplier or task ID">
+          <select id="nemsStoreTaskStatus"><option value="">All statuses</option>
+          <option>PENDING</option><option>OVERDUE</option><option>SUBMITTED</option><option>CANCELLED</option></select></div>
+        <button type="button" id="nemsStoreTaskRefresh">Refresh my tasks</button>
+        <p class="muted" id="nemsStoreTaskCount"></p>
+        <div class="tablewrap"><table><thead><tr><th>ID</th><th>Supplier</th><th>Scope</th>
+        <th>Deadline</th><th>Status</th><th>Submissions</th><th>Action</th></tr></thead>
+        <tbody id="nemsStoreTaskRows"></tbody></table></div>
+      </div>
+      <div class="panel hidden" id="nemsTaskProductPanel">
+        <h2 id="nemsTaskProductHeading">Supplier products</h2>
+        <p id="nemsTaskLockNote" class="muted"></p>
+        <input id="nemsTaskProductSearch" placeholder="Search SKU or product name">
+        <p id="nemsTaskProductCount" class="muted"></p>
+        <div class="tablewrap"><table><thead><tr>
+          <th>SKU</th><th>Product</th><th>Expiration 1</th><th>Qty 1</th>
+          <th>Expiration 2</th><th>Qty 2</th><th>Expiration 3</th><th>Qty 3</th>
+          <th>Progress</th><th>Action</th></tr></thead>
+          <tbody id="nemsTaskProductRows"></tbody></table></div>
+        <div class="nems-task-actions"><button type="button" id="nemsTaskSubmitProducts">Submit completed task</button></div>
+      </div>`;
     appRoot.appendChild(page);
- 
     el('nemsStoreTaskSearch').addEventListener('input', nemsStoreTaskRender);
     el('nemsStoreTaskStatus').addEventListener('change', nemsStoreTaskRender);
     el('nemsStoreTaskRefresh').addEventListener('click', nemsStoreTaskLoad);
-    el('nemsStoreTaskRows').addEventListener('click', event => {
-        const button = event.target.closest('[data-nems-store-submit]');
-        if (button) nemsStoreTaskSubmit(Number(button.dataset.nemsStoreSubmit));
+    el('nemsStoreTaskRows').addEventListener('click', e => {
+        const btn = e.target.closest('[data-nems-open-task]');
+        if (btn) nemsOpenTaskProducts(Number(btn.dataset.nemsOpenTask));
+    });
+    el('nemsTaskProductSearch').addEventListener('input', nemsTaskProductRender);
+    el('nemsTaskProductRows').addEventListener('click', e => {
+        const btn = e.target.closest('[data-nems-save-product]');
+        if (btn) nemsSaveTaskProduct(Number(btn.dataset.nemsSaveProduct));
+    });
+    el('nemsTaskSubmitProducts').addEventListener('click', () => {
+        if (nemsActiveTaskId) nemsStoreTaskSubmit(nemsActiveTaskId);
     });
 }
- 
+
 const nemsStoreOriginalShowPage = showPage;
 showPage = function(page) {
     if (page === 'storetasks') {
