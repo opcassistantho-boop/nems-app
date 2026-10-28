@@ -120,6 +120,8 @@ main {
     font-size:30px;
 }
 .metric small { font-weight:bold; }
+.metric[role="button"] { cursor:pointer; }
+.metric[role="button"]:focus-visible { outline:3px solid #142b47; outline-offset:3px; }
  
 .red { background:#b72c39; }
 .blue { background:#2760b5; }
@@ -399,22 +401,22 @@ td button { margin:2px; }
 <section id="page-dashboard" class="page">
  
     <div class="grid">
-        <div class="metric red">
+        <div class="metric red" role="button" tabindex="0" aria-label="Show RED monitoring records" onclick="openMonitoringCategory('RED')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openMonitoringCategory('RED');}">
             <strong id="countRed">0</strong>
             <small>RED · Within 30 Days</small>
         </div>
  
-        <div class="metric blue">
+        <div class="metric blue" role="button" tabindex="0" aria-label="Show BLUE monitoring records" onclick="openMonitoringCategory('BLUE')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openMonitoringCategory('BLUE');}">
             <strong id="countBlue">0</strong>
             <small>BLUE · 31–60 Days</small>
         </div>
  
-        <div class="metric greenbg">
+        <div class="metric greenbg" role="button" tabindex="0" aria-label="Show GREEN monitoring records" onclick="openMonitoringCategory('GREEN')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openMonitoringCategory('GREEN');}">
             <strong id="countGreen">0</strong>
             <small>GREEN · 61–90 Days</small>
         </div>
  
-        <div class="metric gray">
+        <div class="metric gray" role="button" tabindex="0" aria-label="Show EXPIRED monitoring records" onclick="openMonitoringCategory('EXPIRED')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openMonitoringCategory('EXPIRED');}">
             <strong id="countExpired">0</strong>
             <small>EXPIRED PRODUCTS</small>
         </div>
@@ -1566,6 +1568,12 @@ async function refreshDashboard() {
     ) {
         loadRecentActivities();
     }
+}
+ 
+function openMonitoringCategory(category) {
+    el('monitorCategory').value = category;
+    el('monitorSearch').value = '';
+    showPage('monitoring');
 }
  
 // ==========================================
