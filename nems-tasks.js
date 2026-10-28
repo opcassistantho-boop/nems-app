@@ -537,6 +537,7 @@ module.exports = function registerTaskRoutes({
                       ON pr.assignment_id = a.assignment_id
                      AND pr.product_id = p.product_id
                     WHERE a.assignment_id = $1 AND p.status = 'ACTIVE'
+                      AND p.store_task_visible = TRUE
                 `, [assignmentId]);
                 const counts = completeness.rows[0];
                 if (!counts.total || counts.encoded !== counts.total) {
@@ -572,6 +573,7 @@ module.exports = function registerTaskRoutes({
                     FROM public.nems_task_product_progress pr
                     JOIN public.products p ON p.product_id = pr.product_id
                     WHERE pr.assignment_id = $2 AND p.status = 'ACTIVE'
+                      AND p.store_task_visible = TRUE
                 `, [result.rows[0].submission_id, assignmentId]);
  
                 await client.query('COMMIT');
@@ -636,6 +638,7 @@ module.exports = function registerTaskRoutes({
                 LEFT JOIN public.nems_task_product_progress pr
                   ON pr.product_id = p.product_id AND pr.assignment_id = $1
                 WHERE p.status = 'ACTIVE'
+                  AND p.store_task_visible = TRUE
                   AND LOWER(TRIM(p.supplier_name)) = LOWER(TRIM($2))
                 ORDER BY p.product_name, p.product_id
             `, [id, a.supplier_name]);
@@ -696,6 +699,7 @@ module.exports = function registerTaskRoutes({
             const product = await client.query(`
                 SELECT product_id FROM public.products
                 WHERE product_id = $1 AND status = 'ACTIVE'
+                  AND store_task_visible = TRUE
                   AND LOWER(TRIM(supplier_name)) = LOWER(TRIM($2))
             `, [productId, a.supplier_name]);
             if (!product.rowCount) {
@@ -766,6 +770,67 @@ module.exports = function registerTaskRoutes({
         } catch (error) {
             if (client) await client.query('ROLLBACK').catch(() => {});
             return handleError(res, error, 'Could not reopen task');
+        } finally { if (client) client.release(); }
+    });
+ 
+    // ADMIN: Review visible and hidden products for an assigned supplier.
+    app.get('/api/admin/task-products', authenticate, adminOnly, async (req, res) => {
+        const supplierId = positiveId(req.query.supplier_id);
+        if (!supplierId) return fail(res, 400, 'Invalid supplier ID');
+        try {
+            const supplier = await pool.query(
+                'SELECT supplier_id, supplier_name FROM public.suppliers WHERE supplier_id = $1',
+                [supplierId]);
+            if (!supplier.rowCount) return fail(res, 404, 'Supplier not found');
+            const products = await pool.query(`
+                SELECT product_id, sku, product_name, supplier_name,
+                       store_task_visible,
+                       (product_name ~* '(^|[^[:alnum:]])(CS|CASE|BOX)([^[:alnum:]]|$)') AS possible_case
+                FROM public.products
+                WHERE status = 'ACTIVE'
+                  AND LOWER(TRIM(supplier_name)) = LOWER(TRIM($1))
+                ORDER BY product_name, product_id
+            `, [supplier.rows[0].supplier_name]);
+            return res.json({supplier: supplier.rows[0], products: products.rows});
+        } catch (error) { return handleError(res, error, 'Could not load product visibility'); }
+    });
+ 
+    // ADMIN: Set visibility for selected products. Never delete product records.
+    app.patch('/api/admin/task-products/visibility', authenticate, adminOnly, async (req, res) => {
+        const supplierId = positiveId(req.body?.supplier_id);
+        const ids = req.body?.product_ids;
+        const visible = req.body?.visible;
+        if (!supplierId || !Array.isArray(ids) || !ids.length || ids.length > 3000 ||
+            ids.some(id => !positiveId(id)) || typeof visible !== 'boolean') {
+            return fail(res, 400, 'Valid supplier, product IDs, and visibility are required');
+        }
+        const uniqueIds = [...new Set(ids.map(Number))];
+        let client;
+        try {
+            client = await pool.connect();
+            await client.query('BEGIN');
+            const supplier = await client.query(
+                'SELECT supplier_name FROM public.suppliers WHERE supplier_id = $1', [supplierId]);
+            if (!supplier.rowCount) {
+                await client.query('ROLLBACK');
+                return fail(res, 404, 'Supplier not found');
+            }
+            const result = await client.query(`
+                UPDATE public.products SET store_task_visible = $1
+                WHERE product_id = ANY($2::integer[])
+                  AND status = 'ACTIVE'
+                  AND LOWER(TRIM(supplier_name)) = LOWER(TRIM($3))
+                RETURNING product_id
+            `, [visible, uniqueIds, supplier.rows[0].supplier_name]);
+            if (result.rowCount !== uniqueIds.length) {
+                await client.query('ROLLBACK');
+                return fail(res, 409, 'Some products do not belong to this active supplier');
+            }
+            await client.query('COMMIT');
+            return res.json({updated: result.rowCount, visible});
+        } catch (error) {
+            if (client) await client.query('ROLLBACK').catch(() => {});
+            return handleError(res, error, 'Could not update product visibility');
         } finally { if (client) client.release(); }
     });
  
