@@ -2850,7 +2850,40 @@ function nemsTaskRowsRender() {
         <td>${t.due_at ? escapeHtml(dateTimeText(t.due_at)) : 'None'}</td>
         <td>${escapeHtml(t.display_status)}</td>
         <td>${Number(t.submission_count) || 0}</td>
-    </tr>`).join('') || '<tr><td colspan="7">No assignments found.</td></tr>';
+        <td>${['OVERDUE', 'SUBMITTED'].includes(t.display_status)
+            ? `<button type="button" data-nems-task-reopen="${Number(t.assignment_id)}">Reopen</button>`
+            : '—'}</td>
+    </tr>`).join('') || '<tr><td colspan="8">No assignments found.</td></tr>';
+}
+ 
+async function nemsTaskReopen(assignmentId) {
+    if (currentUser?.role !== 'ADMIN') return;
+    const task = nemsTaskRows.find(t => Number(t.assignment_id) === Number(assignmentId));
+    if (!task || !['OVERDUE', 'SUBMITTED'].includes(task.display_status)) {
+        return showMessage('Only overdue or submitted tasks can be reopened.', true);
+    }
+    const suggested = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    const localTime = new Date(suggested.getTime() - suggested.getTimezoneOffset() * 60000)
+        .toISOString().slice(0, 16);
+    const entry = prompt(`Reopen Task #${assignmentId}\n${task.store_name} — ${task.supplier_name}\n\nEnter NEW deadline (YYYY-MM-DD HH:MM):`, localTime.replace('T', ' '));
+    if (entry === null) return;
+    const dueAt = new Date(entry.trim().replace(' ', 'T'));
+    if (!Number.isFinite(dueAt.getTime()) || dueAt.getTime() <= Date.now()) {
+        return showMessage('Enter a valid future date and time.', true);
+    }
+    const reason = prompt('Reason for reopening (optional):', 'Additional time for encoding');
+    if (reason === null) return;
+    if (!confirm(`Reopen Task #${assignmentId} until ${dueAt.toLocaleString()}?\nPrevious submissions will remain saved.`)) return;
+    try {
+        const result = await api(`/api/admin/tasks/${assignmentId}/reopen`, {
+            method: 'POST',
+            body: JSON.stringify({ due_at: dueAt.toISOString(), reason: reason.trim() })
+        });
+        showMessage(result.message || 'Task reopened successfully.');
+        await nemsTaskLoad();
+    } catch (error) {
+        showMessage(error.message, true);
+    }
 }
  
 async function nemsTaskLoad() {
@@ -2938,13 +2971,17 @@ function nemsTaskSetup() {
         <div class="panel"><h2>Assigned tasks</h2>
             <div class="nems-task-grid"><input id="nemsTaskListSearch" placeholder="Search store, supplier, or task ID"><select id="nemsTaskStatus"><option value="">All statuses</option><option>PENDING</option><option>OVERDUE</option><option>SUBMITTED</option><option>CANCELLED</option></select></div>
             <p class="muted" id="nemsTaskListCount"></p>
-            <div class="tablewrap"><table><thead><tr><th>ID</th><th>Store</th><th>Supplier</th><th>Scope</th><th>Deadline</th><th>Status</th><th>Submissions</th></tr></thead><tbody id="nemsTaskRows"></tbody></table></div>
+            <div class="tablewrap"><table><thead><tr><th>ID</th><th>Store</th><th>Supplier</th><th>Scope</th><th>Deadline</th><th>Status</th><th>Submissions</th><th>Action</th></tr></thead><tbody id="nemsTaskRows"></tbody></table></div>
         </div>`;
     el('application').appendChild(page);
     el('nemsTaskStoreSearch').addEventListener('input', nemsTaskStoresRender);
     el('nemsTaskSupplierSearch').addEventListener('input', nemsTaskSuppliersRender);
     el('nemsTaskListSearch').addEventListener('input', nemsTaskRowsRender);
     el('nemsTaskStatus').addEventListener('change', nemsTaskRowsRender);
+    el('nemsTaskRows').addEventListener('click', event => {
+        const button = event.target.closest('[data-nems-task-reopen]');
+        if (button) nemsTaskReopen(Number(button.dataset.nemsTaskReopen));
+    });
     el('nemsTaskDeadline').addEventListener('change', () => el('nemsTaskCustomBox').classList.toggle('hidden', el('nemsTaskDeadline').value !== 'custom'));
     el('nemsTaskStoresList').addEventListener('change', event => {
         const checkbox = event.target.closest('[data-task-store]');
@@ -2990,7 +3027,7 @@ let nemsStoreTasksBusy = false;
 let nemsActiveTaskId = null;
 let nemsTaskProducts = [];
 let nemsTaskLocked = false;
-
+ 
 function nemsStoreTaskRender() {
     const tbody = el('nemsStoreTaskRows');
     if (!tbody) return;
@@ -3011,7 +3048,7 @@ function nemsStoreTaskRender() {
           <td><button type="button" data-nems-open-task="${id}">View products</button></td></tr>`;
     }).join('') : '<tr><td colspan="7">No tasks found for your store.</td></tr>';
 }
-
+ 
 async function nemsStoreTaskLoad() {
     if (currentUser?.role !== 'STORE') return;
     const account = currentUser.email;
@@ -3027,7 +3064,7 @@ async function nemsStoreTaskLoad() {
         showMessage(error.message, true);
     }
 }
-
+ 
 function nemsTaskProductCounts() {
     const encoded = nemsTaskProducts.filter(p => p.encoded &&
         (p.expiration_1 || p.expiration_2 || p.expiration_3)).length;
@@ -3037,7 +3074,7 @@ function nemsTaskProductCounts() {
     submit.disabled = nemsTaskLocked || nemsStoreTasksBusy ||
         !nemsTaskProducts.length || encoded !== nemsTaskProducts.length;
 }
-
+ 
 function nemsTaskProductRender() {
     const body = el('nemsTaskProductRows');
     const term = el('nemsTaskProductSearch').value.trim().toLowerCase();
@@ -3060,7 +3097,7 @@ function nemsTaskProductRender() {
       </tr>`).join('') : '<tr><td colspan="10">No matching products.</td></tr>';
     nemsTaskProductCounts();
 }
-
+ 
 async function nemsOpenTaskProducts(id) {
     if (currentUser?.role !== 'STORE' || nemsStoreTasksBusy) return;
     nemsActiveTaskId = id;
@@ -3082,7 +3119,7 @@ async function nemsOpenTaskProducts(id) {
         showMessage(error.message, true);
     }
 }
-
+ 
 async function nemsSaveTaskProduct(productId) {
     if (nemsTaskLocked || nemsStoreTasksBusy || !nemsActiveTaskId) return;
     const row = [...el('nemsTaskProductRows').querySelectorAll('[data-nems-product]')]
@@ -3108,7 +3145,7 @@ async function nemsSaveTaskProduct(productId) {
         nemsTaskProductCounts();
     }
 }
-
+ 
 async function nemsStoreTaskSubmit(id) {
     if (currentUser?.role !== 'STORE' || nemsTaskLocked || nemsStoreTasksBusy) return;
     if (nemsTaskProducts.some(p => !p.encoded ||
@@ -3127,16 +3164,14 @@ async function nemsStoreTaskSubmit(id) {
         });
         showMessage('Task submitted. Permanent snapshot saved.');
         await nemsStoreTaskLoad();
-        nemsTaskLocked = true;
-        nemsTaskProductRender();
-        el('nemsTaskLockNote').textContent = 'READ ONLY: Submitted. Permanent snapshot saved.';
+        await nemsOpenTaskProducts(id);
     } catch (error) {
         showMessage(error.message, true);
     } finally {
         nemsStoreTasksBusy = false;
     }
 }
-
+ 
 function nemsStoreTaskSetup() {
     const nav = el('navigation');
     const appRoot = el('application');
@@ -3192,7 +3227,7 @@ function nemsStoreTaskSetup() {
         if (nemsActiveTaskId) nemsStoreTaskSubmit(nemsActiveTaskId);
     });
 }
-
+ 
 const nemsStoreOriginalShowPage = showPage;
 showPage = function(page) {
     if (page === 'storetasks') {
