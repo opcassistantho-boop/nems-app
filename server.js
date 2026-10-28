@@ -861,8 +861,11 @@ app.post(
             req.body.store_barcode || ''
         ).trim().slice(0, 150);
  
+        let client;
         try {
-            const storeResult = await pool.query(
+            client = await pool.connect();
+            await client.query('BEGIN');
+            const storeResult = await client.query(
                 `
                 SELECT store_name
                 FROM public.stores
@@ -884,7 +887,7 @@ app.post(
                 );
             }
  
-            const productResult = await pool.query(
+            const productResult = await client.query(
                 `
                 SELECT
                     product_id,
@@ -909,8 +912,39 @@ app.post(
             }
  
             const product = productResult.rows[0];
- 
-            const { rows } = await pool.query(
+
+            // Lock matching task assignments before writing monitoring.
+            // This protects submitted and expired tasks even through the
+            // existing Store Monitoring screen, not only the task screen.
+            const taskLocks = await client.query(
+                `
+                SELECT a.assignment_id, a.due_at, a.status,
+                       EXISTS (
+                           SELECT 1
+                           FROM public.nems_monitoring_submissions sub
+                           WHERE sub.assignment_id = a.assignment_id
+                       ) AS submitted
+                FROM public.nems_task_assignments a
+                JOIN public.stores s ON s.store_id = a.store_id
+                JOIN public.suppliers sp ON sp.supplier_id = a.supplier_id
+                WHERE LOWER(TRIM(s.store_email)) = LOWER(TRIM($1))
+                  AND LOWER(TRIM(s.store_name)) = LOWER(TRIM($2))
+                  AND LOWER(TRIM(sp.supplier_name)) = LOWER(TRIM($3))
+                FOR UPDATE OF a
+                `,
+                [user.email, user.store_name, product.supplier_name]
+            );
+
+            for (const task of taskLocks.rows) {
+                if (task.status !== 'ACTIVE' || task.submitted ||
+                    (task.due_at && new Date(task.due_at).getTime() <= Date.now())) {
+                    await client.query('ROLLBACK');
+                    return sendError(res, 409,
+                        'This supplier task is submitted, expired, or inactive. Only ADMIN can reopen it.');
+                }
+            }
+
+            const { rows } = await client.query(
                 `
                 INSERT INTO public.monitoring
                 (
@@ -973,17 +1007,23 @@ app.post(
                 ]
             );
  
+            await client.query('COMMIT');
             res.json({
                 message: 'Monitoring saved',
                 monitoring_id: rows[0].monitoring_id
             });
  
         } catch (error) {
+            if (client) {
+                try { await client.query('ROLLBACK'); } catch (_) {}
+            }
             databaseError(
                 res,
                 error,
                 'Unable to save monitoring'
             );
+        } finally {
+            if (client) client.release();
         }
     }
 );
