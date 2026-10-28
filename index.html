@@ -2863,27 +2863,91 @@ async function nemsTaskEdit(assignmentId) {
     if (!task || task.display_status !== 'PENDING') {
         return showMessage('Only pending assignments can be edited. Use Reopen for overdue or submitted tasks.', true);
     }
-    const scopeEntry = prompt(`Edit Task #${assignmentId}\n${task.store_name} — ${task.supplier_name}\n\nExpiry scope (EXPIRED, NEAR, BOTH):`, task.expiry_scope || 'BOTH');
-    if (scopeEntry === null) return;
-    const scope = scopeEntry.trim().toUpperCase();
-    if (!['EXPIRED', 'NEAR', 'BOTH'].includes(scope)) {
-        return showMessage('Choose EXPIRED, NEAR or BOTH.', true);
+ 
+    // Show scope and deadline in ONE form; browser prompts previously showed them one at a time.
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.58);display:flex;align-items:center;justify-content:center;padding:18px';
+    const panel = document.createElement('form');
+    panel.style.cssText = 'background:white;color:#142b47;width:min(100%,480px);border-radius:12px;padding:24px;box-shadow:0 12px 45px #0004;display:grid;gap:14px';
+    const heading = document.createElement('h3');
+    heading.textContent = `Edit Task #${assignmentId}`;
+    heading.style.margin = '0';
+    const description = document.createElement('div');
+    description.textContent = `${task.store_name} — ${task.supplier_name}`;
+    const scopeLabel = document.createElement('label');
+    scopeLabel.textContent = 'Expiry scope';
+    scopeLabel.style.cssText = 'display:grid;gap:6px;font-weight:bold';
+    const scopeSelect = document.createElement('select');
+    scopeSelect.style.cssText = 'width:100%;padding:10px;border:1px solid #b7c5d6;border-radius:6px';
+    ['EXPIRED','NEAR','BOTH'].forEach(value => {
+        const option = document.createElement('option');
+        option.value = value;
+        option.textContent = value;
+        scopeSelect.appendChild(option);
+    });
+    scopeSelect.value = ['EXPIRED','NEAR','BOTH'].includes(task.expiry_scope) ? task.expiry_scope : 'BOTH';
+    scopeLabel.appendChild(scopeSelect);
+    const dueLabel = document.createElement('label');
+    dueLabel.textContent = 'Deadline (date and time)';
+    dueLabel.style.cssText = 'display:grid;gap:6px;font-weight:bold';
+    const dueInput = document.createElement('input');
+    dueInput.type = 'datetime-local';
+    dueInput.style.cssText = 'width:100%;padding:10px;border:1px solid #b7c5d6;border-radius:6px';
+    if (task.due_at) {
+        const date = new Date(task.due_at);
+        if (!Number.isNaN(date.getTime())) {
+            dueInput.value = new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0,16);
+        }
     }
-    const local = task.due_at ? new Date(task.due_at) : null;
-    const defaultDeadline = local && !Number.isNaN(local.getTime())
-        ? new Date(local.getTime() - local.getTimezoneOffset() * 60000).toISOString().slice(0, 16).replace('T', ' ')
-        : '';
-    const entry = prompt('New deadline (YYYY-MM-DD HH:MM). Leave blank for NO deadline:', defaultDeadline);
-    if (entry === null) return;
-    const dueDate = entry.trim() ? new Date(entry.trim().replace(' ', 'T')) : null;
-    if (dueDate && (Number.isNaN(dueDate.getTime()) || dueDate.getTime() <= Date.now())) {
-        return showMessage('Please enter a valid future deadline.', true);
-    }
-    if (!confirm(`Save changes to Task #${assignmentId}?\nScope: ${scope}\nDeadline: ${dueDate ? dueDate.toLocaleString() : 'None'}`)) return;
+    dueLabel.appendChild(dueInput);
+    const hint = document.createElement('small');
+    hint.textContent = 'Leave the deadline blank for no deadline. A new deadline must be in the future.';
+    const actions = document.createElement('div');
+    actions.style.cssText = 'display:flex;justify-content:flex-end;gap:10px';
+    const cancel = document.createElement('button');
+    cancel.type = 'button';
+    cancel.textContent = 'Cancel';
+    cancel.className = 'secondary';
+    const save = document.createElement('button');
+    save.type = 'submit';
+    save.textContent = 'Save changes';
+    actions.append(cancel,save);
+    panel.append(heading,description,scopeLabel,dueLabel,hint,actions);
+    overlay.appendChild(panel);
+    document.body.appendChild(overlay);
+ 
+    const values = await new Promise(resolve => {
+        let finished = false;
+        const finish = value => {
+            if (finished) return;
+            finished = true;
+            document.removeEventListener('keydown', onKeyDown);
+            overlay.remove();
+            resolve(value);
+        };
+        const onKeyDown = event => {
+            if (event.key === 'Escape') finish(null);
+        };
+        document.addEventListener('keydown', onKeyDown);
+        cancel.addEventListener('click', () => finish(null));
+        overlay.addEventListener('click', event => { if (event.target === overlay) finish(null); });
+        panel.addEventListener('submit', event => {
+            event.preventDefault();
+            const dueDate = dueInput.value ? new Date(dueInput.value) : null;
+            if (dueDate && (Number.isNaN(dueDate.getTime()) || dueDate.getTime() <= Date.now())) {
+                alert('Please choose a future deadline, or clear the deadline field.');
+                dueInput.focus();
+                return;
+            }
+            finish({expiry_scope:scopeSelect.value, due_at:dueDate ? dueDate.toISOString() : null});
+        });
+        scopeSelect.focus();
+    });
+    if (!values) return;
     try {
         const result = await api(`/api/admin/tasks/${assignmentId}`, {
             method: 'PATCH',
-            body: JSON.stringify({expiry_scope:scope, due_at:dueDate ? dueDate.toISOString() : null})
+            body: JSON.stringify(values)
         });
         showMessage(result.message || 'Task updated.');
         await nemsTaskLoad();
