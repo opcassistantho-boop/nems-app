@@ -22,45 +22,49 @@ module.exports = function registerUserRoutes({ app, pool, authenticate, adminOnl
  
  
  
-    // Resend email delivery. Set RESEND_API_KEY and optionally RESEND_FROM in Render.
-    // Without a verified domain, Resend's onboarding sender is restricted to test recipients.
-    const resendApiKey = String(process.env.RESEND_API_KEY || '').trim();
-    const resendFrom = String(process.env.RESEND_FROM || 'CARD INDOGROSIR NEMS <onboarding@resend.dev>').trim();
+    // Brevo transactional email delivery. Keep credentials only in Render.
+    const brevoApiKey = String(process.env.BREVO_API_KEY || '').trim();
+    const brevoSenderEmail = String(process.env.BREVO_SENDER_EMAIL || '').trim();
+    const brevoSenderName = String(process.env.BREVO_SENDER_NAME || 'CARD INDOGROSIR NEMS').trim();
  
     async function sendInvitation(email) {
-        if (!resendApiKey) throw new Error('RESEND_NOT_CONFIGURED');
+        if (!brevoApiKey) throw new Error('BREVO_NOT_CONFIGURED');
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(brevoSenderEmail)) {
+            throw new Error('BREVO_SENDER_NOT_CONFIGURED');
+        }
         const redirectTo = (process.env.NEMS_PUBLIC_URL || 'https://nems-app.onrender.com').replace(/\/$/, '') + '/';
         const generated = await authAdmin('generate_link', 'POST', {
             type: 'recovery', email, options: { redirect_to: redirectTo }
         });
         const link = generated.action_link || generated.properties?.action_link;
         if (!link) throw new Error('SUPABASE_LINK_NOT_RETURNED');
-        const response = await fetch('https://api.resend.com/emails', {
+        const safeLink = link.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+        const response = await fetch('https://api.brevo.com/v3/smtp/email', {
             method: 'POST',
             headers: {
-                Authorization: `Bearer ${resendApiKey}`,
-                'Content-Type': 'application/json'
+                'api-key': brevoApiKey,
+                'Content-Type': 'application/json',
+                accept: 'application/json'
             },
             body: JSON.stringify({
-                from: resendFrom,
-                to: [email],
+                sender: { name: brevoSenderName, email: brevoSenderEmail },
+                to: [{ email }],
                 subject: 'NEMS - Set up your password',
-                text: 'You have a NEMS account. Open this private link to set your password:\n\n' +
+                textContent: 'You have a NEMS account. Open this private link to set your password:\n\n' +
                     link + '\n\nIf you did not expect this invitation, ignore this message. ' +
                     'You can sign in only after an ADMIN activates your account.',
-                html: '<p>You have a NEMS account.</p><p><a href="' +
-                    link.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;') +
+                htmlContent: '<p>You have a NEMS account.</p><p><a href="' + safeLink +
                     '">Set up your NEMS password</a></p><p>If you did not expect this invitation, ignore this message. ' +
                     'You can sign in only after an ADMIN activates your account.</p>'
             })
         });
         const result = await response.json().catch(() => ({}));
         if (!response.ok) {
-            const err = new Error('RESEND_SEND_FAILED: ' + (result.message || response.status));
+            const err = new Error('BREVO_SEND_FAILED: ' + (result.message || response.status));
             err.status = response.status;
             throw err;
         }
-        if (!result.id) throw new Error('RESEND_NO_EMAIL_ID');
+        if (!result.messageId && !result.messageIds?.length) throw new Error('BREVO_NO_MESSAGE_ID');
     }
  
  
@@ -162,11 +166,15 @@ module.exports = function registerUserRoutes({ app, pool, authenticate, adminOnl
  
             console.error('[NEMS USERS invitation]', err.message);
  
-            return fail(res, 502, err.message === 'RESEND_NOT_CONFIGURED' ?
+            return fail(res, 502, err.message === 'BREVO_NOT_CONFIGURED' ?
  
-                'Resend API key is not configured in Render' :
+                'Brevo API key is not configured in Render' :
  
-                'Unable to send invitation email. Check Render logs and Resend sender permissions.');
+                err.message === 'BREVO_SENDER_NOT_CONFIGURED' ?
+ 
+                'Brevo sender email is not configured in Render' :
+ 
+                'Unable to send invitation email. Check Render logs and Brevo sender verification.');
  
         }
  
