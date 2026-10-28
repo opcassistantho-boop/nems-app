@@ -2850,9 +2850,9 @@ function nemsTaskRowsRender() {
         <td>${t.due_at ? escapeHtml(dateTimeText(t.due_at)) : 'None'}</td>
         <td>${escapeHtml(t.display_status)}</td>
         <td>${Number(t.submission_count) || 0}</td>
-        <td>${['OVERDUE', 'SUBMITTED'].includes(t.display_status)
+        <td><button type="button" data-nems-visibility="${Number(t.supplier_id)}">Products</button> ${['OVERDUE', 'SUBMITTED'].includes(t.display_status)
             ? `<button type="button" data-nems-task-reopen="${Number(t.assignment_id)}">Reopen</button>`
-            : '—'}</td>
+            : ''}</td>
     </tr>`).join('') || '<tr><td colspan="8">No assignments found.</td></tr>';
 }
  
@@ -2981,6 +2981,8 @@ function nemsTaskSetup() {
     el('nemsTaskRows').addEventListener('click', event => {
         const button = event.target.closest('[data-nems-task-reopen]');
         if (button) nemsTaskReopen(Number(button.dataset.nemsTaskReopen));
+        const visibility = event.target.closest('[data-nems-visibility]');
+        if (visibility) nemsOpenProductVisibility(Number(visibility.dataset.nemsVisibility));
     });
     el('nemsTaskDeadline').addEventListener('change', () => el('nemsTaskCustomBox').classList.toggle('hidden', el('nemsTaskDeadline').value !== 'custom'));
     el('nemsTaskStoresList').addEventListener('change', event => {
@@ -3613,6 +3615,93 @@ el('nemsPasswordSetupForm').addEventListener('submit', async event => {
         message.className = 'message error';
     } finally { button.disabled = false; }
 });
+ 
+ 
+// ADMIN supplier product visibility. All product categories are treated equally.
+let nemsVisibilitySupplierId = null;
+let nemsVisibilityProducts = [];
+let nemsVisibilityOnly = 'all';
+ 
+async function nemsOpenProductVisibility(supplierId) {
+    if (currentUser?.role !== 'ADMIN' || !supplierId) return;
+    nemsVisibilitySupplierId = supplierId;
+    try {
+        const result = await api('/api/admin/task-products?supplier_id=' + supplierId);
+        nemsVisibilityProducts = result.products || [];
+        let panel = document.getElementById('nemsVisibilityPanel');
+        if (!panel) {
+            panel = document.createElement('section');
+            panel.id = 'nemsVisibilityPanel';
+            panel.className = 'panel';
+            const table = document.getElementById('nemsTaskRows')?.closest('.panel');
+            if (!table) throw new Error('Task Assignment panel not found');
+            table.parentNode.insertBefore(panel, table.nextSibling);
+        }
+        panel.innerHTML = `<h2>Supplier product visibility — ${escapeHtml(result.supplier.supplier_name)}</h2>
+          <p class="muted">Hide products from STORE task encoding without deleting them. Possible cases are suggestions only.</p>
+          <div class="nems-task-grid">
+            <input id="nemsVisibilitySearch" placeholder="Search SKU or product name">
+            <select id="nemsVisibilityFilter"><option value="all">All products</option><option value="visible">Visible only</option><option value="hidden">Hidden only</option><option value="possible">Possible cases (review)</option></select>
+            <button type="button" id="nemsVisibilityHide">Hide selected</button>
+            <button type="button" id="nemsVisibilityShow">Unhide selected</button>
+            <button type="button" id="nemsVisibilityClose">Close</button>
+          </div>
+          <p id="nemsVisibilityCounts" class="muted"></p>
+          <div class="tablewrap" style="max-height:440px;overflow:auto"><table>
+            <thead><tr><th><input type="checkbox" id="nemsVisibilitySelectAll" aria-label="Select displayed products"></th><th>SKU</th><th>Product</th><th>Visibility</th><th>Review</th></tr></thead>
+            <tbody id="nemsVisibilityRows"></tbody></table></div>`;
+        document.getElementById('nemsVisibilitySearch').addEventListener('input', nemsRenderVisibility);
+        document.getElementById('nemsVisibilityFilter').addEventListener('change', nemsRenderVisibility);
+        document.getElementById('nemsVisibilityHide').addEventListener('click', () => nemsSetVisibility(false));
+        document.getElementById('nemsVisibilityShow').addEventListener('click', () => nemsSetVisibility(true));
+        document.getElementById('nemsVisibilityClose').addEventListener('click', () => panel.remove());
+        document.getElementById('nemsVisibilitySelectAll').addEventListener('change', e => {
+            panel.querySelectorAll('[data-nems-visible-product]').forEach(c => c.checked = e.target.checked);
+        });
+        nemsRenderVisibility();
+        panel.scrollIntoView({behavior:'smooth', block:'start'});
+    } catch (error) { showMessage(error.message, true); }
+}
+ 
+function nemsRenderVisibility() {
+    const panel = document.getElementById('nemsVisibilityPanel');
+    if (!panel) return;
+    const search = document.getElementById('nemsVisibilitySearch').value.trim().toLowerCase();
+    const filter = document.getElementById('nemsVisibilityFilter').value;
+    const visible = nemsVisibilityProducts.filter(p => p.store_task_visible).length;
+    const hidden = nemsVisibilityProducts.length - visible;
+    document.getElementById('nemsVisibilityCounts').textContent =
+        `${visible} visible · ${hidden} hidden · ${nemsVisibilityProducts.length} total`;
+    const items = nemsVisibilityProducts.filter(p => {
+        const match = (String(p.sku || '') + ' ' + String(p.product_name || '')).toLowerCase().includes(search);
+        return match && (filter === 'all' ||
+            (filter === 'visible' && p.store_task_visible) ||
+            (filter === 'hidden' && !p.store_task_visible) ||
+            (filter === 'possible' && p.possible_case));
+    });
+    document.getElementById('nemsVisibilityRows').innerHTML = items.map(p => `<tr>
+      <td><input type="checkbox" data-nems-visible-product="${Number(p.product_id)}"></td>
+      <td>${escapeHtml(p.sku || '')}</td><td>${escapeHtml(p.product_name)}</td>
+      <td>${p.store_task_visible ? 'Visible' : 'Hidden'}</td>
+      <td>${p.possible_case ? 'Possible case — review' : '—'}</td></tr>`).join('') ||
+      '<tr><td colspan="5">No matching products.</td></tr>';
+    document.getElementById('nemsVisibilitySelectAll').checked = false;
+}
+ 
+async function nemsSetVisibility(visible) {
+    if (currentUser?.role !== 'ADMIN') return;
+    const ids = [...document.querySelectorAll('#nemsVisibilityPanel [data-nems-visible-product]:checked')]
+        .map(el => Number(el.dataset.nemsVisibleProduct));
+    if (!ids.length) return showMessage('Select at least one product first.', true);
+    if (!confirm(`${visible ? 'Unhide' : 'Hide'} ${ids.length} selected product(s) for all stores?`)) return;
+    try {
+        const result = await api('/api/admin/task-products/visibility', {
+            method: 'PATCH', body: JSON.stringify({supplier_id:nemsVisibilitySupplierId, product_ids:ids, visible})
+        });
+        showMessage(`${result.updated} product(s) ${visible ? 'unhidden' : 'hidden'} successfully.`);
+        await nemsOpenProductVisibility(nemsVisibilitySupplierId);
+    } catch (error) { showMessage(error.message, true); }
+}
  
 </script>
  
