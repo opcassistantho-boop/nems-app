@@ -2850,10 +2850,46 @@ function nemsTaskRowsRender() {
         <td>${t.due_at ? escapeHtml(dateTimeText(t.due_at)) : 'None'}</td>
         <td>${escapeHtml(t.display_status)}</td>
         <td>${Number(t.submission_count) || 0}</td>
-        <td><button type="button" data-nems-visibility="${Number(t.supplier_id)}">Products</button> ${['OVERDUE', 'SUBMITTED'].includes(t.display_status)
+        <td><button type="button" data-nems-visibility="${Number(t.supplier_id)}">Products</button> ${t.display_status === 'PENDING'
+            ? `<button type="button" data-nems-task-edit="${Number(t.assignment_id)}">Edit</button>` : ''} ${['OVERDUE', 'SUBMITTED'].includes(t.display_status)
             ? `<button type="button" data-nems-task-reopen="${Number(t.assignment_id)}">Reopen</button>`
             : ''}</td>
     </tr>`).join('') || '<tr><td colspan="8">No assignments found.</td></tr>';
+}
+ 
+async function nemsTaskEdit(assignmentId) {
+    if (currentUser?.role !== 'ADMIN') return;
+    const task = nemsTaskRows.find(t => Number(t.assignment_id) === Number(assignmentId));
+    if (!task || task.display_status !== 'PENDING') {
+        return showMessage('Only pending assignments can be edited. Use Reopen for overdue or submitted tasks.', true);
+    }
+    const scopeEntry = prompt(`Edit Task #${assignmentId}\n${task.store_name} — ${task.supplier_name}\n\nExpiry scope (EXPIRED, NEAR, BOTH):`, task.expiry_scope || 'BOTH');
+    if (scopeEntry === null) return;
+    const scope = scopeEntry.trim().toUpperCase();
+    if (!['EXPIRED', 'NEAR', 'BOTH'].includes(scope)) {
+        return showMessage('Choose EXPIRED, NEAR or BOTH.', true);
+    }
+    const local = task.due_at ? new Date(task.due_at) : null;
+    const defaultDeadline = local && !Number.isNaN(local.getTime())
+        ? new Date(local.getTime() - local.getTimezoneOffset() * 60000).toISOString().slice(0, 16).replace('T', ' ')
+        : '';
+    const entry = prompt('New deadline (YYYY-MM-DD HH:MM). Leave blank for NO deadline:', defaultDeadline);
+    if (entry === null) return;
+    const dueDate = entry.trim() ? new Date(entry.trim().replace(' ', 'T')) : null;
+    if (dueDate && (Number.isNaN(dueDate.getTime()) || dueDate.getTime() <= Date.now())) {
+        return showMessage('Please enter a valid future deadline.', true);
+    }
+    if (!confirm(`Save changes to Task #${assignmentId}?\nScope: ${scope}\nDeadline: ${dueDate ? dueDate.toLocaleString() : 'None'}`)) return;
+    try {
+        const result = await api(`/api/admin/tasks/${assignmentId}`, {
+            method: 'PATCH',
+            body: JSON.stringify({expiry_scope:scope, due_at:dueDate ? dueDate.toISOString() : null})
+        });
+        showMessage(result.message || 'Task updated.');
+        await nemsTaskLoad();
+    } catch (error) {
+        showMessage(error.message || 'Could not update task.', true);
+    }
 }
  
 async function nemsTaskReopen(assignmentId) {
@@ -2979,6 +3015,8 @@ function nemsTaskSetup() {
     el('nemsTaskListSearch').addEventListener('input', nemsTaskRowsRender);
     el('nemsTaskStatus').addEventListener('change', nemsTaskRowsRender);
     el('nemsTaskRows').addEventListener('click', event => {
+        const edit = event.target.closest('[data-nems-task-edit]');
+        if (edit) nemsTaskEdit(Number(edit.dataset.nemsTaskEdit));
         const button = event.target.closest('[data-nems-task-reopen]');
         if (button) nemsTaskReopen(Number(button.dataset.nemsTaskReopen));
         const visibility = event.target.closest('[data-nems-visibility]');
