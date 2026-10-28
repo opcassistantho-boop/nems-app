@@ -726,6 +726,64 @@ module.exports = function registerTaskRoutes({
         } finally { if (client) client.release(); }
     });
  
+    // ADMIN: Edit an OPEN assignment only; never change submitted/overdue cycles.
+    app.patch('/api/admin/tasks/:id', authenticate, adminOnly, async (req, res) => {
+        const id = positiveId(req.params.id);
+        const scope = validScope(req.body?.expiry_scope);
+        const rawDeadline = req.body?.due_at;
+        const dueAt = rawDeadline === null || rawDeadline === '' ? null : parseDueAt(rawDeadline);
+        if (!id || !scope || (rawDeadline !== null && rawDeadline !== '' && !dueAt)) {
+            return fail(res, 400, 'Invalid task ID, expiry scope or deadline');
+        }
+        if (dueAt && new Date(dueAt).getTime() <= Date.now()) {
+            return fail(res, 400, 'Deadline must be in the future');
+        }
+        let client;
+        try {
+            client = await pool.connect();
+            await client.query('BEGIN');
+            const result = await client.query(`
+                SELECT assignment_id, status, due_at FROM public.nems_task_assignments
+                WHERE assignment_id=$1 FOR UPDATE
+            `, [id]);
+            if (!result.rowCount) {
+                await client.query('ROLLBACK');
+                return fail(res, 404, 'Assignment not found');
+            }
+            const task = result.rows[0];
+            if (task.status !== 'ACTIVE' ||
+                (task.due_at && new Date(task.due_at).getTime() <= Date.now())) {
+                await client.query('ROLLBACK');
+                return fail(res, 409, 'Closed or overdue task: use Reopen instead');
+            }
+            const latest = await client.query(`
+                SELECT
+                    (SELECT MAX(submitted_at) FROM public.nems_monitoring_submissions
+                     WHERE assignment_id=$1) AS last_submission,
+                    (SELECT MAX(reopened_at) FROM public.nems_task_reopen_history
+                     WHERE assignment_id=$1) AS last_reopen
+            `, [id]);
+            const {last_submission, last_reopen} = latest.rows[0];
+            if (last_submission && (!last_reopen || new Date(last_submission) > new Date(last_reopen))) {
+                await client.query('ROLLBACK');
+                return fail(res, 409, 'Submitted task: use Reopen instead');
+            }
+            const updated = await client.query(`
+                UPDATE public.nems_task_assignments
+                SET expiry_scope=$2, due_at=$3, due_date=$3::timestamptz::date
+                WHERE assignment_id=$1
+                RETURNING assignment_id, expiry_scope, due_at
+            `, [id, scope, dueAt]);
+            await client.query('COMMIT');
+            return res.json({message:'Task updated', task:updated.rows[0]});
+        } catch (error) {
+            if (client) await client.query('ROLLBACK').catch(() => {});
+            return handleError(res, error, 'Could not update assignment');
+        } finally {
+            if (client) client.release();
+        }
+    });
+ 
     // ADMIN: Reopen a task, preserving all previous submission snapshots.
     app.post('/api/admin/tasks/:id/reopen', authenticate, adminOnly, async (req, res) => {
         const id = positiveId(req.params.id);
