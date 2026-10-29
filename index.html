@@ -305,6 +305,12 @@ td button { margin:2px; }
 #monitorBody .nems-exp-orange { color:#c05b00; }
 #monitorBody .nems-exp-black { color:#111111; }
  
+/* STORE task flexible expiration rows */
+.nems-exp-entries {display:flex;flex-direction:column;gap:8px;margin-bottom:8px;min-width:310px}
+.nems-exp-entry {display:flex;gap:7px;align-items:center}
+.nems-exp-entry input[type=date] {min-width:135px;flex:2}
+.nems-exp-entry input[type=number] {min-width:75px;max-width:105px;flex:1}
+.nems-exp-entry button {white-space:nowrap}
 </style>
 </head>
  
@@ -3205,7 +3211,7 @@ async function nemsStoreTaskLoad() {
  
 function nemsTaskProductCounts() {
     const encoded = nemsTaskProducts.filter(p => p.encoded &&
-        (p.expiration_1 || p.expiration_2 || p.expiration_3)).length;
+        (p.expiration_1 || p.expiration_2 || p.expiration_3 || (Array.isArray(p.extra_expirations) && p.extra_expirations.length))).length;
     el('nemsTaskProductCount').textContent =
         `${encoded} of ${nemsTaskProducts.length} active supplier products encoded`;
     const submit = el('nemsTaskSubmitProducts');
@@ -3213,34 +3219,49 @@ function nemsTaskProductCounts() {
         !nemsTaskProducts.length || encoded !== nemsTaskProducts.length;
 }
  
+function nemsProductExpirationRows(p) {
+    if (Array.isArray(p._draftRows)) return p._draftRows;
+    const rows = [];
+    for (let n = 1; n <= 3; n++) {
+        const date = p[`expiration_${n}`];
+        const qty = p[`qty_${n}`];
+        if (date || (qty !== null && qty !== undefined && qty !== ''))
+            rows.push({date: date ? String(date).slice(0,10) : '', qty: qty == null ? '' : String(qty)});
+    }
+    for (const item of (Array.isArray(p.extra_expirations) ? p.extra_expirations : []))
+        rows.push({date: item.date || '', qty: item.qty == null ? '' : String(item.qty)});
+    if (!rows.length) rows.push({date:'',qty:''});
+    p._draftRows = rows;
+    return rows;
+}
+
 function nemsTaskProductRender() {
     const body = el('nemsTaskProductRows');
     const term = el('nemsTaskProductSearch').value.trim().toLowerCase();
     const products = nemsTaskProducts.filter(p =>
         [p.sku, p.product_name].join(' ').toLowerCase().includes(term));
-    const input = (p, n, kind) => {
-        const key = kind === 'date' ? `expiration_${n}` : `qty_${n}`;
-        const value = p[key] == null ? '' : String(p[key]).slice(0, kind === 'date' ? 10 : undefined);
-        return `<input aria-label="${kind === 'date' ? 'Expiration' : 'Quantity'} ${n}" type="${kind === 'date' ? 'date' : 'number'}" ${kind === 'date' ? '' : 'min="0" max="500" step="1"'}
-            data-nems-field="${key}" value="${escapeHtml(value)}" ${nemsTaskLocked ? 'disabled' : ''} style="min-width:110px;max-width:155px">`;
-    };
-    body.innerHTML = products.length ? products.map(p => `
-      <tr data-nems-product="${Number(p.product_id)}">
-        <td>${escapeHtml(p.sku || '')}</td><td>${escapeHtml(p.product_name)}</td>
-        <td>${input(p,1,'date')}</td><td>${input(p,1,'qty')}</td>
-        <td>${input(p,2,'date')}</td><td>${input(p,2,'qty')}</td>
-        <td>${input(p,3,'date')}</td><td>${input(p,3,'qty')}</td>
-        <td>${p.encoded ? 'Saved' : 'Not encoded'}</td>
-        <td>${nemsTaskLocked ? 'Locked' : `<button type="button" data-nems-save-product="${Number(p.product_id)}">Save</button>`}</td>
-      </tr>`).join('') : '<tr><td colspan="10">No matching products.</td></tr>';
+    body.innerHTML = products.length ? products.map(p => {
+        const id = Number(p.product_id);
+        const rows = nemsProductExpirationRows(p);
+        const entries = rows.map((item, index) => `<div class="nems-exp-entry">
+          <input aria-label="Expiration date ${index+1}" type="date" data-nems-row="${index}" data-nems-kind="date" value="${escapeHtml(item.date)}" ${nemsTaskLocked ? 'disabled' : ''}>
+          <input aria-label="Quantity ${index+1}" type="number" min="0" max="500" step="1" data-nems-row="${index}" data-nems-kind="qty" value="${escapeHtml(item.qty)}" ${nemsTaskLocked ? 'disabled' : ''}>
+          ${!nemsTaskLocked && rows.length > 1 ? `<button type="button" class="secondary small" data-nems-remove-row="${index}" aria-label="Remove expiration row">Remove</button>` : ''}
+        </div>`).join('');
+        return `<tr data-nems-product="${id}"><td>${escapeHtml(p.sku || '')}</td>
+          <td>${escapeHtml(p.product_name)}</td><td><div class="nems-exp-entries">${entries}</div>
+          ${nemsTaskLocked ? '' : `<button type="button" class="small secondary" data-nems-add-row="${id}">+ Add Expiration Date</button>`}</td>
+          <td>${p.encoded ? 'Saved' : 'Not encoded'}</td>
+          <td>${nemsTaskLocked ? 'Locked' : `<button type="button" data-nems-save-product="${id}">Save</button>`}</td></tr>`;
+    }).join('') : '<tr><td colspan="5">No matching products.</td></tr>';
     nemsTaskProductCounts();
 }
- 
+
 async function nemsOpenTaskProducts(id) {
     if (currentUser?.role !== 'STORE' || nemsStoreTasksBusy) return;
     nemsActiveTaskId = id;
     el('nemsTaskProductPanel').classList.remove('hidden');
-    el('nemsTaskProductRows').innerHTML = '<tr><td colspan="10">Loading products...</td></tr>';
+    el('nemsTaskProductRows').innerHTML = '<tr><td colspan="5">Loading products...</td></tr>';
     try {
         const result = await api(`/api/store/tasks/${id}/products`);
         if (nemsActiveTaskId !== id) return;
@@ -3253,7 +3274,7 @@ async function nemsOpenTaskProducts(id) {
         el('nemsTaskProductSearch').value = '';
         nemsTaskProductRender();
     } catch (error) {
-        el('nemsTaskProductRows').innerHTML = '<tr><td colspan="10">Unable to load products.</td></tr>';
+        el('nemsTaskProductRows').innerHTML = '<tr><td colspan="5">Unable to load products.</td></tr>';
         showMessage(error.message, true);
     }
 }
@@ -3263,16 +3284,29 @@ async function nemsSaveTaskProduct(productId) {
     const row = [...el('nemsTaskProductRows').querySelectorAll('[data-nems-product]')]
         .find(r => Number(r.dataset.nemsProduct) === productId);
     if (!row) return;
+    const p = nemsTaskProducts.find(p => Number(p.product_id) === productId);
+    if (!p) return;
+    const rows = nemsProductExpirationRows(p).filter(item => item.date || item.qty !== '');
+    if (!rows.length) return showMessage('Enter at least one expiration date and quantity.', true);
+    for (const item of rows) {
+        if (!item.date || item.qty === '' || !Number.isInteger(Number(item.qty)) ||
+            Number(item.qty) < 0 || Number(item.qty) > 500)
+            return showMessage('Each expiration date needs a quantity from 0 to 500.', true);
+    }
     const payload = {};
-    row.querySelectorAll('[data-nems-field]').forEach(input => payload[input.dataset.nemsField] = input.value);
+    for (let n = 1; n <= 3; n++) {
+        payload[`expiration_${n}`] = rows[n-1]?.date || null;
+        payload[`qty_${n}`] = rows[n-1]?.qty ?? null;
+    }
+    payload.extra_expirations = rows.slice(3).map(item => ({date:item.date, qty:Number(item.qty)}));
     nemsStoreTasksBusy = true;
     try {
         await api(`/api/store/tasks/${nemsActiveTaskId}/products/${productId}`, {
             method: 'PUT', body: JSON.stringify(payload)
         });
-        const p = nemsTaskProducts.find(p => Number(p.product_id) === productId);
         if (p) {
             Object.assign(p, payload, {encoded:true});
+            delete p._draftRows;
         }
         nemsTaskProductRender();
         showMessage('Product progress saved.');
@@ -3287,7 +3321,7 @@ async function nemsSaveTaskProduct(productId) {
 async function nemsStoreTaskSubmit(id) {
     if (currentUser?.role !== 'STORE' || nemsTaskLocked || nemsStoreTasksBusy) return;
     if (nemsTaskProducts.some(p => !p.encoded ||
-        !(p.expiration_1 || p.expiration_2 || p.expiration_3))) {
+        !(p.expiration_1 || p.expiration_2 || p.expiration_3 || (Array.isArray(p.extra_expirations) && p.extra_expirations.length)))) {
         showMessage('Save all active supplier products before submitting.', true);
         return;
     }
@@ -3342,8 +3376,7 @@ function nemsStoreTaskSetup() {
         <input id="nemsTaskProductSearch" placeholder="Search SKU or product name">
         <p id="nemsTaskProductCount" class="muted"></p>
         <div class="tablewrap"><table><thead><tr>
-          <th>SKU</th><th>Product</th><th>Expiration 1</th><th>Qty 1</th>
-          <th>Expiration 2</th><th>Qty 2</th><th>Expiration 3</th><th>Qty 3</th>
+          <th>SKU</th><th>Product</th><th>Expiration Dates / Quantities</th>
           <th>Progress</th><th>Action</th></tr></thead>
           <tbody id="nemsTaskProductRows"></tbody></table></div>
         <div class="nems-task-actions"><button type="button" id="nemsTaskSubmitProducts">Submit completed task</button></div>
@@ -3357,9 +3390,28 @@ function nemsStoreTaskSetup() {
         if (btn) nemsOpenTaskProducts(Number(btn.dataset.nemsOpenTask));
     });
     el('nemsTaskProductSearch').addEventListener('input', nemsTaskProductRender);
+    el('nemsTaskProductRows').addEventListener('input', e => {
+        const field = e.target.closest('[data-nems-kind]');
+        if (!field) return;
+        const tr = field.closest('[data-nems-product]');
+        const p = nemsTaskProducts.find(p => Number(p.product_id) === Number(tr.dataset.nemsProduct));
+        if (p) nemsProductExpirationRows(p)[Number(field.dataset.nemsRow)][field.dataset.nemsKind] = field.value;
+    });
     el('nemsTaskProductRows').addEventListener('click', e => {
         const btn = e.target.closest('[data-nems-save-product]');
-        if (btn) nemsSaveTaskProduct(Number(btn.dataset.nemsSaveProduct));
+        if (btn) return nemsSaveTaskProduct(Number(btn.dataset.nemsSaveProduct));
+        const add = e.target.closest('[data-nems-add-row]');
+        const remove = e.target.closest('[data-nems-remove-row]');
+        if (!add && !remove) return;
+        const tr = e.target.closest('[data-nems-product]');
+        const p = nemsTaskProducts.find(p => Number(p.product_id) === Number(tr.dataset.nemsProduct));
+        if (!p || nemsTaskLocked) return;
+        const rows = nemsProductExpirationRows(p);
+        if (add) {
+            if (rows.length >= 100) return showMessage('Maximum 100 expiration dates.', true);
+            rows.push({date:'',qty:''});
+        } else if (rows.length > 1) rows.splice(Number(remove.dataset.nemsRemoveRow),1);
+        nemsTaskProductRender();
     });
     el('nemsTaskSubmitProducts').addEventListener('click', () => {
         if (nemsActiveTaskId) nemsStoreTaskSubmit(nemsActiveTaskId);
