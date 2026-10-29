@@ -553,6 +553,17 @@ td button { margin:2px; }
             >
         </div>
  
+        <details id="monitorExportOptions" style="margin:0 0 14px;padding:12px;border:1px solid #d7e0eb;border-radius:7px">
+            <summary style="cursor:pointer;font-weight:bold">Excel Download Options — suppliers and expiration category</summary>
+            <p class="muted">Choose suppliers below. If none are checked, all accessible suppliers are included. The category is selected using the existing Monitoring category filter above.</p>
+            <div class="row" style="margin-bottom:8px">
+                <button type="button" class="secondary small" onclick="setMonitoringExportSuppliers(true)">Select All Suppliers</button>
+                <button type="button" class="secondary small" onclick="setMonitoringExportSuppliers(false)">Clear Selection (All Suppliers)</button>
+            </div>
+            <div id="monitorExportSuppliers" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:6px;max-height:210px;overflow:auto"></div>
+            <p class="muted">Download Excel exports the selected suppliers and category. Search text does not affect the export.</p>
+        </details>
+ 
         <div class="tablewrap">
             <table>
                 <thead>
@@ -1546,6 +1557,7 @@ async function loadMonitoring() {
     try {
         monitoring = await api('/api/monitoring');
         renderMonitoring();
+        renderMonitoringExportSuppliers();
  
     } catch (error) {
         showMessage(error.message, true);
@@ -1654,11 +1666,25 @@ function renderMonitoring() {
         'Showing ' + rows.length + ' records';
 }
  
+function renderMonitoringExportSuppliers() {
+    const host = el('monitorExportSuppliers');
+    const previouslyChecked = new Set(Array.from(host.querySelectorAll('input:checked')).map(input => input.value));
+    const suppliers = [...new Set(monitoring.map(item => String(item.supplier || '').trim()).filter(Boolean))].sort((a,b) => a.localeCompare(b));
+    host.innerHTML = suppliers.map(name => `<label style="display:flex;align-items:center;gap:7px;font-weight:normal;font-size:13px;margin:0"><input type="checkbox" class="monitor-export-supplier" value="${escapeHtml(name)}" style="width:auto" ${previouslyChecked.has(name) ? 'checked' : ''}>${escapeHtml(name)}</label>`).join('') || '<span class="muted">No suppliers available.</span>';
+}
+ 
+function setMonitoringExportSuppliers(checked) {
+    el('monitorExportSuppliers').querySelectorAll('input.monitor-export-supplier').forEach(input => { input.checked = checked; });
+}
+ 
 async function downloadMonitoring() {
     try {
-        const response = await api(
-            '/api/export/monitoring'
-        );
+        const params = new URLSearchParams();
+        const category = el('monitorCategory').value;
+        if (category) params.set('category', category);
+        const suppliers = Array.from(el('monitorExportSuppliers').querySelectorAll('input.monitor-export-supplier:checked'));
+        suppliers.forEach(input => params.append('supplier', input.value));
+        const response = await api('/api/export/monitoring' + (params.toString() ? '?' + params.toString() : ''));
  
         const blob = await response.blob();
         const url = URL.createObjectURL(blob);
