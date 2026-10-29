@@ -1,5 +1,7 @@
 'use strict';
  
+const crypto = require('crypto');
+ 
  
  
 // NEMS ADMIN User Management. This module never exposes the Supabase secret to browsers.
@@ -142,6 +144,81 @@ module.exports = function registerUserRoutes({ app, pool, authenticate, adminOnl
  
  
  
+    // Resolve the Supabase Auth identity without changing the NEMS account's status or role.
+    async function findAuthUserByEmail(email) {
+        // Admin listing is paginated; avoid treating an existing identity as absent.
+        for (let page = 1; page <= 100; page++) {
+            const result = await authAdmin(`users?page=${page}&per_page=1000`, 'GET');
+            const users = Array.isArray(result.users) ? result.users : [];
+            const found = users.find(u => emailOf(u.email) === email);
+            if (found) return found;
+            if (users.length < 1000) return null;
+        }
+        throw new Error('SUPABASE_AUTH_LOOKUP_LIMIT');
+    }
+ 
+    async function ensureInvitationAuthUser(email) {
+        const client = await pool.connect();
+        try {
+            await client.query('BEGIN');
+            const record = await client.query(
+                'SELECT email, auth_user_id FROM public.users WHERE LOWER(email)=$1 FOR UPDATE',
+                [email]
+            );
+            if (!record.rowCount) {
+                await client.query('ROLLBACK');
+                const err = new Error('NEMS_ACCOUNT_NOT_FOUND'); err.status = 404; throw err;
+            }
+            const linkedId = record.rows[0].auth_user_id;
+            let authUser = null;
+            if (linkedId) {
+                try {
+                    const found = await authAdmin(`users/${encodeURIComponent(linkedId)}`, 'GET');
+                    authUser = found.user || found;
+                } catch (error) {
+                    if (error.status !== 404) throw error;
+                }
+                if (authUser && emailOf(authUser.email) !== email) {
+                    throw new Error('AUTH_EMAIL_MISMATCH');
+                }
+            }
+            if (!authUser) {
+                authUser = await findAuthUserByEmail(email);
+                if (!authUser) {
+                    try {
+                        const created = await authAdmin('users', 'POST', {
+                            email,
+                            password: crypto.randomBytes(48).toString('base64url'),
+                            email_confirm: true,
+                            app_metadata: { nems_pending_admin_approval: true }
+                        });
+                        authUser = created.user || created;
+                    } catch (error) {
+                        // Another request may have created the Auth identity concurrently.
+                        if (error.status !== 422) throw error;
+                        authUser = await findAuthUserByEmail(email);
+                        if (!authUser) throw error;
+                    }
+                }
+            }
+            if (!authUser.id || emailOf(authUser.email) !== email) {
+                throw new Error('AUTH_IDENTITY_VERIFICATION_FAILED');
+            }
+            if (String(linkedId || '') !== String(authUser.id)) {
+                await client.query(
+                    'UPDATE public.users SET auth_user_id=$1::uuid WHERE LOWER(email)=$2',
+                    [authUser.id, email]
+                );
+            }
+            await client.query('COMMIT');
+        } catch (error) {
+            await client.query('ROLLBACK').catch(() => {});
+            throw error;
+        } finally {
+            client.release();
+        }
+    }
+ 
     // ADMIN sends a password invitation to an existing NEMS account.
  
     app.post('/api/admin/users/password-link', ...route, async (req, res) => {
@@ -156,6 +233,7 @@ module.exports = function registerUserRoutes({ app, pool, authenticate, adminOnl
  
             if (!existing.rowCount) return fail(res, 404, 'NEMS account not found');
  
+            await ensureInvitationAuthUser(email);
             await sendInvitation(email);
  
             res.set('Cache-Control', 'no-store');
