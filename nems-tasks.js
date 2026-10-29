@@ -641,7 +641,52 @@ module.exports = function registerTaskRoutes({
                   AND LOWER(TRIM(p.supplier_name)) = LOWER(TRIM($2))
                 ORDER BY p.product_name, p.product_id
             `, [id, a.supplier_name]);
-            return res.json({task: a, locked: Boolean(locked), products: products.rows});
+            // Read-only synchronization: show existing, non-expired Monitoring
+            // stock as a task draft when no task progress has been saved.
+            // Saving task progress is still an explicit STORE action.
+            const monitoring = await pool.query(`
+                SELECT m.product_id, m.expiration_1, m.qty_1,
+                       m.expiration_2, m.qty_2, m.expiration_3, m.qty_3,
+                       COALESCE(m.extra_expirations, '[]'::jsonb) AS extra_expirations
+                FROM public.monitoring m
+                JOIN public.stores s ON LOWER(TRIM(s.store_email)) = LOWER(TRIM(m.store_email))
+                WHERE LOWER(TRIM(s.store_name)) = LOWER(TRIM($1))
+                  AND LOWER(TRIM(m.store_email)) = LOWER(TRIM($2))
+                  AND LOWER(TRIM(m.supplier)) = LOWER(TRIM($3))
+            `, [getStoreName(req), getEmail(req), a.supplier_name]);
+            const monitoringByProduct = new Map(monitoring.rows.map(m => [Number(m.product_id), m]));
+            const today = new Date().toISOString().slice(0, 10);
+            const mergedProducts = products.rows.map(product => {
+                if (product.encoded) return product;
+                const m = monitoringByProduct.get(Number(product.product_id));
+                if (!m) return product;
+                const valid = [];
+                for (let i = 1; i <= 3; i++) {
+                    const date = m[`expiration_${i}`];
+                    const qty = m[`qty_${i}`];
+                    if (date && qty != null) {
+                        const iso = new Date(date).toISOString().slice(0, 10);
+                        if (iso >= today) valid.push({date: iso, qty: Number(qty)});
+                    }
+                }
+                for (const item of (Array.isArray(m.extra_expirations) ? m.extra_expirations : [])) {
+                    const rawDate = item.date || item.expiration_date;
+                    if (!rawDate) continue;
+                    const iso = String(rawDate).slice(0, 10);
+                    const qty = Number(item.qty ?? item.quantity);
+                    if (iso >= today && Number.isInteger(qty) && qty >= 0)
+                        valid.push({date: iso, qty});
+                }
+                if (!valid.length) return product;
+                const draft = {...product, monitoring_available: true};
+                for (let i = 1; i <= 3; i++) {
+                    draft[`expiration_${i}`] = valid[i-1]?.date || null;
+                    draft[`qty_${i}`] = valid[i-1]?.qty ?? null;
+                }
+                draft.extra_expirations = valid.slice(3);
+                return draft;
+            });
+            return res.json({task: a, locked: Boolean(locked), products: mergedProducts});
         } catch (error) { return handleError(res, error, 'Could not load task products'); }
     });
  
