@@ -447,15 +447,19 @@ const monitoringEntries = `
       ON p.product_id = m.product_id
  
     CROSS JOIN LATERAL (
-        VALUES
+        SELECT legacy.expiration_date, legacy.quantity, legacy.slot
+        FROM (VALUES
             (m.expiration_1, m.qty_1, 1),
             (m.expiration_2, m.qty_2, 2),
             (m.expiration_3, m.qty_3, 3)
-    ) AS v(
-        expiration_date,
-        quantity,
-        slot
-    )
+        ) AS legacy(expiration_date, quantity, slot)
+        UNION ALL
+        SELECT (extra.item->>'expiration_date')::date,
+               (extra.item->>'quantity')::integer,
+               extra.ordinality::integer + 3
+        FROM jsonb_array_elements(COALESCE(m.extra_expirations, '[]'::jsonb))
+             WITH ORDINALITY AS extra(item, ordinality)
+    ) AS v
  
     WHERE v.expiration_date IS NOT NULL
       AND v.quantity > 0
@@ -769,72 +773,40 @@ app.post(
             );
         }
  
-        const dates = [
-            req.body.exp1,
-            req.body.exp2,
-            req.body.exp3
-        ];
+        const rawEntries = Array.isArray(req.body.expirations)
+            ? req.body.expirations
+            : [1, 2, 3].map(i => ({
+                expiration_date: req.body[`exp${i}`],
+                quantity: req.body[`qty${i}`]
+            }));
  
-        const quantities = [
-            req.body.qty1,
-            req.body.qty2,
-            req.body.qty3
-        ];
+        if (rawEntries.length > 100) {
+            return sendError(res, 400, 'Maximum 100 expiration entries per product');
+        }
  
-        let hasValue = false;
- 
-        for (let i = 0; i < 3; i++) {
-            const date = dates[i];
-            const qty = quantities[i];
- 
-            if (
-                (date == null || date === '') &&
-                (qty == null || qty === '')
-            ) {
-                dates[i] = null;
-                quantities[i] = null;
-                continue;
+        const entries = [];
+        for (let i = 0; i < rawEntries.length; i++) {
+            const entry = rawEntries[i] || {};
+            const date = entry.expiration_date;
+            const qty = entry.quantity;
+            if ((date == null || date === '') && (qty == null || qty === '')) continue;
+            if (typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date) ||
+                Number.isNaN(Date.parse(date + 'T00:00:00Z')) ||
+                new Date(date + 'T00:00:00Z').toISOString().slice(0, 10) !== date) {
+                return sendError(res, 400, `Invalid expiration date ${i + 1}`);
             }
- 
-            if (
-                typeof date !== 'string' ||
-                !/^\d{4}-\d{2}-\d{2}$/.test(date) ||
-                Number.isNaN(
-                    Date.parse(date + 'T00:00:00Z')
-                )
-            ) {
-                return sendError(
-                    res,
-                    400,
-                    `Invalid expiration date ${i + 1}`
-                );
-            }
- 
             const number = Number(qty);
- 
-            if (
-                !Number.isInteger(number) ||
-                number < 0 ||
-                number > 500
-            ) {
-                return sendError(
-                    res,
-                    400,
-                    `Quantity ${i + 1} must be 0–500 pieces`
-                );
+            if (qty == null || qty === '' || !Number.isInteger(number) || number < 0 || number > 500) {
+                return sendError(res, 400, `Quantity ${i + 1} must be 0–500 pieces`);
             }
- 
-            quantities[i] = number;
-            hasValue = true;
+            entries.push({expiration_date: date, quantity: number});
         }
- 
-        if (!hasValue) {
-            return sendError(
-                res,
-                400,
-                'Enter at least one expiration date and quantity'
-            );
+        if (!entries.length) {
+            return sendError(res, 400, 'Enter at least one expiration date and quantity');
         }
+        const dates = [0, 1, 2].map(i => entries[i]?.expiration_date ?? null);
+        const quantities = [0, 1, 2].map(i => entries[i]?.quantity ?? null);
+        const extraExpirations = JSON.stringify(entries.slice(3));
  
         const srp = (
             req.body.srp == null ||
@@ -912,7 +884,7 @@ app.post(
             }
  
             const product = productResult.rows[0];
-
+ 
             // Lock matching task assignments before writing monitoring.
             // This protects submitted and expired tasks even through the
             // existing Store Monitoring screen, not only the task screen.
@@ -934,7 +906,7 @@ app.post(
                 `,
                 [user.email, user.store_name, product.supplier_name]
             );
-
+ 
             for (const task of taskLocks.rows) {
                 if (task.status !== 'ACTIVE' || task.submitted ||
                     (task.due_at && new Date(task.due_at).getTime() <= Date.now())) {
@@ -943,7 +915,7 @@ app.post(
                         'This supplier task is submitted, expired, or inactive. Only ADMIN can reopen it.');
                 }
             }
-
+ 
             const { rows } = await client.query(
                 `
                 INSERT INTO public.monitoring
@@ -962,6 +934,7 @@ app.post(
                     qty_2,
                     expiration_3,
                     qty_3,
+                    extra_expirations,
                     updated_at,
                     updated_by
                 )
@@ -970,7 +943,7 @@ app.post(
                     $1, $2, $3, $4, $5,
                     $6, $7, $8, $9, $10,
                     $11, $12, $13, $14,
-                    NOW(), $15
+                    $16::jsonb, NOW(), $15
                 )
                 ON CONFLICT (store_email, product_id)
                 DO UPDATE SET
@@ -982,6 +955,7 @@ app.post(
                     qty_2 = EXCLUDED.qty_2,
                     expiration_3 = EXCLUDED.expiration_3,
                     qty_3 = EXCLUDED.qty_3,
+                    extra_expirations = EXCLUDED.extra_expirations,
                     updated_at = NOW(),
                     updated_by = EXCLUDED.updated_by
                 RETURNING monitoring_id
@@ -1003,7 +977,8 @@ app.post(
                     quantities[1],
                     dates[2],
                     quantities[2],
-                    user.email
+                    user.email,
+                    extraExpirations
                 ]
             );
  
