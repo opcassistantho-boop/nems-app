@@ -1003,6 +1003,91 @@ app.post(
     }
 );
  
+// ADMIN ONLY: dispose one expired expiration-date entry, preserving all other dates.
+app.post('/api/admin/monitoring/dispose-expired', authenticate, adminOnly, async (req, res) => {
+    const monitoringId = Number(req.body?.monitoring_id);
+    const expirationDate = req.body?.expiration_date;
+    if (!Number.isSafeInteger(monitoringId) || monitoringId <= 0 ||
+        typeof expirationDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(expirationDate) ||
+        Number.isNaN(Date.parse(expirationDate + 'T00:00:00Z')) ||
+        new Date(expirationDate + 'T00:00:00Z').toISOString().slice(0, 10) !== expirationDate) {
+        return sendError(res, 400, 'Valid monitoring ID and expiration date required');
+    }
+    let client;
+    try {
+        client = await pool.connect();
+        await client.query('BEGIN');
+        const result = await client.query(
+            'SELECT * FROM public.monitoring WHERE monitoring_id = $1 FOR UPDATE', [monitoringId]
+        );
+        if (!result.rowCount) {
+            await client.query('ROLLBACK');
+            return sendError(res, 404, 'Monitoring record not found');
+        }
+        const m = result.rows[0];
+        const asDate = v => v == null ? null :
+            (v instanceof Date ? v.toISOString().slice(0, 10) : String(v).slice(0, 10));
+        const entries = [1, 2, 3].map(i => ({
+            expiration_date: asDate(m['expiration_' + i]),
+            quantity: m['qty_' + i]
+        })).filter(e => e.expiration_date !== null);
+        const extras = Array.isArray(m.extra_expirations) ? m.extra_expirations : [];
+        for (const e of extras) {
+            if (e && e.expiration_date) entries.push({
+                expiration_date: asDate(e.expiration_date), quantity: Number(e.quantity)
+            });
+        }
+        const matching = entries.filter(e => e.expiration_date === expirationDate);
+        if (!matching.length) {
+            await client.query('ROLLBACK');
+            return sendError(res, 404, 'Expiration date not found in monitoring');
+        }
+        const todayResult = await client.query('SELECT CURRENT_DATE::text AS today');
+        const today = todayResult.rows[0].today;
+        if (expirationDate >= today) {
+            await client.query('ROLLBACK');
+            return sendError(res, 409, 'Only expired stock may be disposed');
+        }
+        const qty = matching.reduce((sum, e) => sum + Number(e.quantity || 0), 0);
+        if (!Number.isSafeInteger(qty) || qty <= 0) {
+            await client.query('ROLLBACK');
+            return sendError(res, 409, 'No positive expired quantity to dispose');
+        }
+        const remaining = entries.filter(e => e.expiration_date !== expirationDate);
+        await client.query(`
+            INSERT INTO public.nems_expired_disposal_history
+            (monitoring_id, store_name, store_email, product_id, sku, product_name,
+             supplier, expiration_date, quantity_disposed, disposed_by)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+        `, [m.monitoring_id, m.store_name, m.store_email, m.product_id, m.sku,
+            m.product_name, m.supplier, expirationDate, qty, req.user.email]);
+        if (remaining.length === 0) {
+            await client.query('DELETE FROM public.monitoring WHERE monitoring_id = $1', [monitoringId]);
+        } else {
+            const primary = remaining.slice(0, 3);
+            const get = (i, key) => primary[i]?.[key] ?? null;
+            await client.query(`
+                UPDATE public.monitoring SET
+                    expiration_1=$2, qty_1=$3, expiration_2=$4, qty_2=$5,
+                    expiration_3=$6, qty_3=$7, extra_expirations=$8::jsonb,
+                    updated_at=NOW(), updated_by=$9
+                WHERE monitoring_id=$1
+            `, [monitoringId, get(0,'expiration_date'), get(0,'quantity'),
+                get(1,'expiration_date'), get(1,'quantity'),
+                get(2,'expiration_date'), get(2,'quantity'),
+                JSON.stringify(remaining.slice(3)), req.user.email]);
+        }
+        await client.query('COMMIT');
+        return res.json({message:'Expired stock disposed', quantity_disposed:qty,
+            expiration_date:expirationDate});
+    } catch (error) {
+        if (client) await client.query('ROLLBACK').catch(() => {});
+        return databaseError(res, error, 'Unable to dispose expired stock');
+    } finally {
+        if (client) client.release();
+    }
+});
+ 
 // ==========================================
 // EXPORT MONITORING TO EXCEL
 // ==========================================
