@@ -3167,7 +3167,7 @@ async function nemsStoreTaskLoad() {
  
 function nemsTaskProductCounts() {
     const encoded = nemsTaskProducts.filter(p => p.encoded &&
-        (p.expiration_1 || p.expiration_2 || p.expiration_3 || (Array.isArray(p.extra_expirations) && p.extra_expirations.length))).length;
+        (p.no_stock || p.expiration_1 || p.expiration_2 || p.expiration_3 || (Array.isArray(p.extra_expirations) && p.extra_expirations.length))).length;
     el('nemsTaskProductCount').textContent =
         `${encoded} of ${nemsTaskProducts.length} active supplier products encoded`;
     const submit = el('nemsTaskSubmitProducts');
@@ -3199,15 +3199,16 @@ function nemsTaskProductRender() {
     body.innerHTML = products.length ? products.map(p => {
         const id = Number(p.product_id);
         const rows = nemsProductExpirationRows(p);
+        const noStock = p._draftNoStock === undefined ? Boolean(p.no_stock) : p._draftNoStock;
         const entries = rows.map((item, index) => `<div class="nems-exp-entry">
-          <input aria-label="Expiration date ${index+1}" type="date" data-nems-row="${index}" data-nems-kind="date" value="${escapeHtml(item.date)}" ${nemsTaskLocked ? 'disabled' : ''}>
-          <input aria-label="Quantity ${index+1}" type="number" min="0" max="500" step="1" data-nems-row="${index}" data-nems-kind="qty" value="${escapeHtml(item.qty)}" ${nemsTaskLocked ? 'disabled' : ''}>
-          ${!nemsTaskLocked && rows.length > 1 ? `<button type="button" class="secondary small" data-nems-remove-row="${index}" aria-label="Remove expiration row">Remove</button>` : ''}
+          <input aria-label="Expiration date ${index+1}" type="date" data-nems-row="${index}" data-nems-kind="date" value="${escapeHtml(item.date)}" ${nemsTaskLocked || noStock ? 'disabled' : ''}>
+          <input aria-label="Quantity ${index+1}" type="number" min="0" max="500" step="1" data-nems-row="${index}" data-nems-kind="qty" value="${escapeHtml(item.qty)}" ${nemsTaskLocked || noStock ? 'disabled' : ''}>
+          ${!nemsTaskLocked && !noStock && rows.length > 1 ? `<button type="button" class="secondary small" data-nems-remove-row="${index}" aria-label="Remove expiration row">Remove</button>` : ''}
         </div>`).join('');
         return `<tr data-nems-product="${id}"><td>${escapeHtml(p.sku || '')}</td>
-          <td>${escapeHtml(p.product_name)}</td><td><div class="nems-exp-entries">${entries}</div>
-          ${nemsTaskLocked ? '' : `<button type="button" class="small secondary" data-nems-add-row="${id}">+ Add Expiration Date</button>`}</td>
-          <td>${p.encoded ? 'Saved' : 'Not encoded'}</td>
+          <td>${escapeHtml(p.product_name)}</td><td>${nemsTaskLocked ? (noStock ? '<b>NO STOCK</b>' : '') : `<label style="display:flex;align-items:center;gap:7px;margin-bottom:10px"><input type="checkbox" data-nems-no-stock style="width:auto" ${noStock ? 'checked' : ''}> NO STOCK — item not available</label>`}<div class="nems-exp-entries" style="${noStock ? 'display:none' : ''}">${entries}</div>
+          ${nemsTaskLocked || noStock ? '' : `<button type="button" class="small secondary" data-nems-add-row="${id}">+ Add Expiration Date</button>`}</td>
+          <td>${p.encoded ? (p.no_stock ? 'NO STOCK · Saved' : 'Saved') : 'Not encoded'}</td>
           <td>${nemsTaskLocked ? 'Locked' : `<button type="button" data-nems-save-product="${id}">Save</button>`}</td></tr>`;
     }).join('') : '<tr><td colspan="5">No matching products.</td></tr>';
     nemsTaskProductCounts();
@@ -3242,14 +3243,15 @@ async function nemsSaveTaskProduct(productId) {
     if (!row) return;
     const p = nemsTaskProducts.find(p => Number(p.product_id) === productId);
     if (!p) return;
-    const rows = nemsProductExpirationRows(p).filter(item => item.date || item.qty !== '');
-    if (!rows.length) return showMessage('Enter at least one expiration date and quantity.', true);
+    const noStock = p._draftNoStock === undefined ? Boolean(p.no_stock) : p._draftNoStock;
+    const rows = noStock ? [] : nemsProductExpirationRows(p).filter(item => item.date || item.qty !== '');
+    if (!noStock && !rows.length) return showMessage('Enter at least one expiration date and quantity.', true);
     for (const item of rows) {
         if (!item.date || item.qty === '' || !Number.isInteger(Number(item.qty)) ||
             Number(item.qty) < 0 || Number(item.qty) > 500)
             return showMessage('Each expiration date needs a quantity from 0 to 500.', true);
     }
-    const payload = {};
+    const payload = {no_stock: noStock};
     for (let n = 1; n <= 3; n++) {
         payload[`expiration_${n}`] = rows[n-1]?.date || null;
         payload[`qty_${n}`] = rows[n-1]?.qty ?? null;
@@ -3261,8 +3263,14 @@ async function nemsSaveTaskProduct(productId) {
             method: 'PUT', body: JSON.stringify(payload)
         });
         if (p) {
-            Object.assign(p, payload, {encoded:true});
-            delete p._draftRows;
+            if (noStock) {
+                p.no_stock = true;
+            } else {
+                Object.assign(p, payload, {encoded:true, no_stock:false});
+                delete p._draftRows;
+            }
+            p.encoded = true;
+            delete p._draftNoStock;
         }
         nemsTaskProductRender();
         showMessage('Product progress saved.');
@@ -3277,7 +3285,7 @@ async function nemsSaveTaskProduct(productId) {
 async function nemsStoreTaskSubmit(id) {
     if (currentUser?.role !== 'STORE' || nemsTaskLocked || nemsStoreTasksBusy) return;
     if (nemsTaskProducts.some(p => !p.encoded ||
-        !(p.expiration_1 || p.expiration_2 || p.expiration_3 || (Array.isArray(p.extra_expirations) && p.extra_expirations.length)))) {
+        !(p.no_stock || p.expiration_1 || p.expiration_2 || p.expiration_3 || (Array.isArray(p.extra_expirations) && p.extra_expirations.length)))) {
         showMessage('Save all active supplier products before submitting.', true);
         return;
     }
@@ -3347,6 +3355,13 @@ function nemsStoreTaskSetup() {
     });
     el('nemsTaskProductSearch').addEventListener('input', nemsTaskProductRender);
     el('nemsTaskProductRows').addEventListener('input', e => {
+        const stockToggle = e.target.closest('[data-nems-no-stock]');
+        if (stockToggle) {
+            const tr = stockToggle.closest('[data-nems-product]');
+            const p = nemsTaskProducts.find(p => Number(p.product_id) === Number(tr.dataset.nemsProduct));
+            if (p) { p._draftNoStock = stockToggle.checked; nemsTaskProductRender(); }
+            return;
+        }
         const field = e.target.closest('[data-nems-kind]');
         if (!field) return;
         const tr = field.closest('[data-nems-product]');
@@ -3361,7 +3376,7 @@ function nemsStoreTaskSetup() {
         if (!add && !remove) return;
         const tr = e.target.closest('[data-nems-product]');
         const p = nemsTaskProducts.find(p => Number(p.product_id) === Number(tr.dataset.nemsProduct));
-        if (!p || nemsTaskLocked) return;
+        if (!p || nemsTaskLocked || (p._draftNoStock === undefined ? p.no_stock : p._draftNoStock)) return;
         const rows = nemsProductExpirationRows(p);
         if (add) {
             if (rows.length >= 100) return showMessage('Maximum 100 expiration dates.', true);
