@@ -575,6 +575,7 @@ td button { margin:2px; }
                         <th>Expiration</th>
                         <th>Qty (pcs)</th>
                         <th>Last Edited</th>
+                        <th>ADMIN Disposal</th>
                     </tr>
                 </thead>
                 <tbody id="monitorBody"></tbody>
@@ -1652,6 +1653,11 @@ function renderMonitoring() {
                         dateText(item.updated_at)
                     )}
                 </td>
+                <td>
+                    ${currentUser?.role === 'ADMIN' && item.category === 'EXPIRED'
+                        ? `<button type="button" class="secondary small" onclick="disposeExpiredMonitoring(${Number(item.monitoring_id)}, '${String(item.expiration_date).slice(0,10)}')">Dispose Expired</button>`
+                        : ''}
+                </td>
             </tr>
         `).join('')
         : `
@@ -1666,6 +1672,31 @@ function renderMonitoring() {
         'Showing ' + rows.length + ' records';
 }
  
+async function disposeExpiredMonitoring(monitoringId, expirationDate) {
+    if (currentUser?.role !== 'ADMIN') {
+        showMessage('Only ADMIN can dispose expired stock.', true);
+        return;
+    }
+    const confirmed = window.confirm(
+        'Confirm physical disposal of expired stock dated ' + expirationDate +
+        '? This permanently removes the expired quantity from current Monitoring Records and records the disposal history.'
+    );
+    if (!confirmed) return;
+    try {
+        const result = await api('/api/admin/monitoring/dispose-expired', {
+            method: 'POST',
+            body: JSON.stringify({
+                monitoring_id: monitoringId,
+                expiration_date: expirationDate
+            })
+        });
+        showMessage(result.message || 'Expired stock disposed.');
+        await loadMonitoring();
+    } catch (error) {
+        showMessage(error.message || 'Disposal failed.', true);
+    }
+}
+
 function renderMonitoringExportSuppliers() {
     const host = el('monitorExportSuppliers');
     const previouslyChecked = new Set(Array.from(host.querySelectorAll('input:checked')).map(input => input.value));
