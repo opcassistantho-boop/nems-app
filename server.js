@@ -1013,21 +1013,36 @@ app.get(
     async (req, res) => {
         try {
             const scope = storeScope(req.user);
+            const allowedCategories = new Set(['EXPIRED', 'RED', 'BLUE', 'GREEN', 'LATER']);
+            const category = String(req.query.category || '').trim().toUpperCase();
+            if (category && !allowedCategories.has(category)) {
+                return sendError(res, 400, 'Invalid monitoring category');
+            }
+            const rawSuppliers = req.query.supplier == null ? [] :
+                (Array.isArray(req.query.supplier) ? req.query.supplier : [req.query.supplier]);
+            if (rawSuppliers.length > 500 || rawSuppliers.some(name => typeof name !== 'string' || !name.trim() || name.length > 255)) {
+                return sendError(res, 400, 'Invalid supplier selection');
+            }
+            const suppliers = [...new Set(rawSuppliers.map(name => name.trim()))];
+            const supplierCondition = suppliers.length ?
+                ` AND m.supplier = ANY($${scope.args.length + 1}::text[])` : '';
+            const queryArgs = suppliers.length ? [...scope.args, suppliers] : scope.args;
  
             const { rows } = await pool.query(
                 `
                 SELECT *
                 FROM (${monitoringEntries}) m
-                WHERE ${scope.sql}
+                WHERE ${scope.sql}${supplierCondition}
                 ORDER BY
                     store_name,
                     expiration_date
                 LIMIT 50000
                 `,
-                scope.args
+                queryArgs
             );
  
-            const records = rows.map(record => ({
+            const filteredRows = category ? rows.filter(record => expiryCategory(record.expiration_date) === category) : rows;
+            const records = filteredRows.map(record => ({
                 Store: record.store_name,
                 Supplier: record.supplier,
                 SKU: record.sku,
