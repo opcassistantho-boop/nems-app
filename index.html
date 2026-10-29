@@ -555,13 +555,26 @@ td button { margin:2px; }
  
         <details id="monitorExportOptions" style="margin:0 0 14px;padding:12px;border:1px solid #d7e0eb;border-radius:7px">
             <summary style="cursor:pointer;font-weight:bold">Excel Download Options — suppliers and expiration category</summary>
-            <p class="muted">Choose suppliers below. If none are checked, all accessible suppliers are included. The category is selected using the existing Monitoring category filter above.</p>
+            <p class="muted">Choose suppliers and expiration categories for Excel. If none are selected in either group, all accessible records in that group are included.</p>
             <div class="row" style="margin-bottom:8px">
                 <button type="button" class="secondary small" onclick="setMonitoringExportSuppliers(true)">Select All Suppliers</button>
                 <button type="button" class="secondary small" onclick="setMonitoringExportSuppliers(false)">Clear Selection (All Suppliers)</button>
             </div>
             <div id="monitorExportSuppliers" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:6px;max-height:210px;overflow:auto"></div>
-            <p class="muted">Download Excel exports the selected suppliers and category. Search text does not affect the export.</p>
+            <p><strong>Expiration categories for Excel</strong></p>
+            <div class="row" style="margin-bottom:8px">
+                <button type="button" class="secondary small" onclick="setMonitoringExportCategories(true)">Select All Categories</button>
+                <button type="button" class="secondary small" onclick="setMonitoringExportCategories(false)">Clear Selection (All Categories)</button>
+            </div>
+            <div id="monitorExportCategories" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:7px">
+                <label><input type="checkbox" class="monitor-export-category" value="EXPIRED"> EXPIRED</label>
+                <label><input type="checkbox" class="monitor-export-category" value="RED"> RED (0–30 days)</label>
+                <label><input type="checkbox" class="monitor-export-category" value="BLUE"> BLUE (31–60 days)</label>
+                <label><input type="checkbox" class="monitor-export-category" value="GREEN"> GREEN (61–90 days)</label>
+                <label><input type="checkbox" class="monitor-export-category" value="ORANGE"> ORANGE (91 days–6 months)</label>
+                <label><input type="checkbox" class="monitor-export-category" value="LATER"> LATER (over 6 months)</label>
+            </div>
+            <p class="muted">Download Excel exports selected suppliers and selected expiration categories. The Monitoring search/filter does not affect the export.</p>
         </details>
  
         <div class="tablewrap">
@@ -1708,11 +1721,18 @@ function setMonitoringExportSuppliers(checked) {
     el('monitorExportSuppliers').querySelectorAll('input.monitor-export-supplier').forEach(input => { input.checked = checked; });
 }
  
+function setMonitoringExportCategories(checked) {
+    el('monitorExportCategories').querySelectorAll('input.monitor-export-category').forEach(input => {
+        input.checked = checked;
+    });
+}
+
 async function downloadMonitoring() {
     try {
         const params = new URLSearchParams();
-        const category = el('monitorCategory').value;
-        if (category) params.set('category', category);
+        el('monitorExportCategories').querySelectorAll('input.monitor-export-category:checked').forEach(input => {
+            params.append('category', input.value);
+        });
         const suppliers = Array.from(el('monitorExportSuppliers').querySelectorAll('input.monitor-export-supplier:checked'));
         suppliers.forEach(input => params.append('supplier', input.value));
         const response = await api('/api/export/monitoring' + (params.toString() ? '?' + params.toString() : ''));
