@@ -527,7 +527,7 @@ module.exports = function registerTaskRoutes({
  
                 const completeness = await client.query(`
                     SELECT COUNT(*)::int AS total,
-                           COUNT(pr.product_id) FILTER (WHERE pr.expiration_1 IS NOT NULL OR pr.expiration_2 IS NOT NULL OR pr.expiration_3 IS NOT NULL)::int AS encoded
+                           COUNT(pr.product_id) FILTER (WHERE pr.expiration_1 IS NOT NULL OR pr.expiration_2 IS NOT NULL OR pr.expiration_3 IS NOT NULL OR jsonb_array_length(COALESCE(pr.extra_expirations, '[]'::jsonb)) > 0)::int AS encoded
                     FROM public.products p
                     JOIN public.suppliers sp
                       ON LOWER(TRIM(p.supplier_name)) = LOWER(TRIM(sp.supplier_name))
@@ -566,10 +566,10 @@ module.exports = function registerTaskRoutes({
                 await client.query(`
                     INSERT INTO public.nems_task_submission_items (
                         submission_id, product_id, sku, product_name, supplier_name,
-                        expiration_1, qty_1, expiration_2, qty_2, expiration_3, qty_3)
+                        expiration_1, qty_1, expiration_2, qty_2, expiration_3, qty_3, extra_expirations)
                     SELECT $1, p.product_id, p.sku, p.product_name, p.supplier_name,
                            pr.expiration_1, pr.qty_1, pr.expiration_2, pr.qty_2,
-                           pr.expiration_3, pr.qty_3
+                           pr.expiration_3, pr.qty_3, COALESCE(pr.extra_expirations, '[]'::jsonb)
                     FROM public.nems_task_product_progress pr
                     JOIN public.products p ON p.product_id = pr.product_id
                     WHERE pr.assignment_id = $2 AND p.status = 'ACTIVE'
@@ -632,7 +632,7 @@ module.exports = function registerTaskRoutes({
             const products = await pool.query(`
                 SELECT p.product_id, p.sku, p.product_name, p.supplier_name,
                        pr.expiration_1, pr.qty_1, pr.expiration_2, pr.qty_2,
-                       pr.expiration_3, pr.qty_3, pr.saved_at,
+                       pr.expiration_3, pr.qty_3, COALESCE(pr.extra_expirations, '[]'::jsonb) AS extra_expirations, pr.saved_at,
                        (pr.product_id IS NOT NULL) AS encoded
                 FROM public.products p
                 LEFT JOIN public.nems_task_product_progress pr
@@ -665,6 +665,18 @@ module.exports = function registerTaskRoutes({
             if ((d === null) !== (q === null))
                 return fail(res, 400, `Expiration date and quantity ${i} must be entered together`);
             dates.push(d); quantities.push(q);
+        }
+        const extras = Array.isArray(b.extra_expirations) ? b.extra_expirations : [];
+        if (extras.length > 97) return fail(res, 400, 'Maximum 100 expiration dates per product');
+        for (let i = 0; i < extras.length; i++) {
+            const item = extras[i];
+            const d = item?.date;
+            const q = Number(item?.qty);
+            if (typeof d !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(d) ||
+                Number.isNaN(Date.parse(d)) || new Date(d).toISOString().slice(0,10) !== d ||
+                !Number.isInteger(q) || q < 0 || q > 500 || item?.qty === '') {
+                return fail(res, 400, `Invalid additional expiration row ${i + 4}`);
+            }
         }
         let client;
         try {
@@ -708,16 +720,16 @@ module.exports = function registerTaskRoutes({
             const saved = await client.query(`
                 INSERT INTO public.nems_task_product_progress
                 (assignment_id, product_id, expiration_1, qty_1,
-                 expiration_2, qty_2, expiration_3, qty_3, saved_by)
-                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+                 expiration_2, qty_2, expiration_3, qty_3, saved_by, extra_expirations)
+                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb)
                 ON CONFLICT (assignment_id, product_id) DO UPDATE SET
                   expiration_1=EXCLUDED.expiration_1, qty_1=EXCLUDED.qty_1,
                   expiration_2=EXCLUDED.expiration_2, qty_2=EXCLUDED.qty_2,
                   expiration_3=EXCLUDED.expiration_3, qty_3=EXCLUDED.qty_3,
-                  saved_by=EXCLUDED.saved_by, saved_at=NOW()
+                  saved_by=EXCLUDED.saved_by, extra_expirations=EXCLUDED.extra_expirations, saved_at=NOW()
                 RETURNING *
             `, [id, productId, dates[0], quantities[0], dates[1], quantities[1],
-                dates[2], quantities[2], getEmail(req)]);
+                dates[2], quantities[2], getEmail(req), JSON.stringify(extras)]);
             await client.query('COMMIT');
             return res.json(saved.rows[0]);
         } catch (error) {
