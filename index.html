@@ -296,6 +296,15 @@ td button { margin:2px; }
 #page-tasks .panel { margin-bottom:18px; }
 #page-tasks input, #page-tasks select { padding:9px; }
  
+ 
+/* Monitoring Records: expiration-based text colors only. */
+#monitorBody .nems-exp-expired { color:#737d8c; }
+#monitorBody .nems-exp-red { color:#c62828; }
+#monitorBody .nems-exp-blue { color:#1565c0; }
+#monitorBody .nems-exp-green { color:#188038; }
+#monitorBody .nems-exp-orange { color:#c05b00; }
+#monitorBody .nems-exp-black { color:#111111; }
+ 
 </style>
 </head>
  
@@ -1590,6 +1599,31 @@ async function loadMonitoring() {
     }
 }
  
+// Color only Monitoring Records product fields by remaining shelf life.
+function nemsMonitoringExpiryClass(value) {
+    const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(value || ''));
+    if (!match) return '';
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+    const expiry = Date.UTC(year, month - 1, day);
+    const check = new Date(expiry);
+    if (check.getUTCFullYear() !== year || check.getUTCMonth() !== month - 1 || check.getUTCDate() !== day) return '';
+    const now = new Date();
+    const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+    const days = Math.round((expiry - today) / 86400000);
+    if (days < 0) return 'nems-exp-expired';
+    if (days <= 30) return 'nems-exp-red';
+    if (days <= 60) return 'nems-exp-blue';
+    if (days <= 90) return 'nems-exp-green';
+    const sixMonthIndex = now.getMonth() + 6;
+    const sixMonthYear = now.getFullYear() + Math.floor(sixMonthIndex / 12);
+    const sixMonthMonth = sixMonthIndex % 12;
+    const lastDay = new Date(Date.UTC(sixMonthYear, sixMonthMonth + 1, 0)).getUTCDate();
+    const sixMonthLimit = Date.UTC(sixMonthYear, sixMonthMonth, Math.min(now.getDate(), lastDay));
+    return expiry <= sixMonthLimit ? 'nems-exp-orange' : 'nems-exp-black';
+}
+ 
 function renderMonitoring() {
     const category = el('monitorCategory').value;
  
@@ -1631,20 +1665,20 @@ function renderMonitoring() {
                     ${escapeHtml(item.supplier)}
                 </td>
  
-                <td>
+                <td class="${nemsMonitoringExpiryClass(item.expiration_date)}">
                     <b>${escapeHtml(item.sku)}</b>
                     <div>
                         ${escapeHtml(item.product_name)}
                     </div>
                 </td>
  
-                <td>
+                <td class="${nemsMonitoringExpiryClass(item.expiration_date)}">
                     ${escapeHtml(
                         dateText(item.expiration_date)
                     )}
                 </td>
  
-                <td>
+                <td class="${nemsMonitoringExpiryClass(item.expiration_date)}">
                     ${escapeHtml(item.quantity)}
                 </td>
  
