@@ -1,4 +1,3 @@
- 
 'use strict';
  
 module.exports = function registerTaskRoutes({
@@ -527,7 +526,7 @@ module.exports = function registerTaskRoutes({
  
                 const completeness = await client.query(`
                     SELECT COUNT(*)::int AS total,
-                           COUNT(pr.product_id) FILTER (WHERE pr.expiration_1 IS NOT NULL OR pr.expiration_2 IS NOT NULL OR pr.expiration_3 IS NOT NULL OR jsonb_array_length(COALESCE(pr.extra_expirations, '[]'::jsonb)) > 0)::int AS encoded
+                           COUNT(pr.product_id) FILTER (WHERE pr.no_stock = TRUE OR pr.expiration_1 IS NOT NULL OR pr.expiration_2 IS NOT NULL OR pr.expiration_3 IS NOT NULL OR jsonb_array_length(COALESCE(pr.extra_expirations, '[]'::jsonb)) > 0)::int AS encoded
                     FROM public.products p
                     JOIN public.suppliers sp
                       ON LOWER(TRIM(p.supplier_name)) = LOWER(TRIM(sp.supplier_name))
@@ -566,10 +565,10 @@ module.exports = function registerTaskRoutes({
                 await client.query(`
                     INSERT INTO public.nems_task_submission_items (
                         submission_id, product_id, sku, product_name, supplier_name,
-                        expiration_1, qty_1, expiration_2, qty_2, expiration_3, qty_3, extra_expirations)
+                        expiration_1, qty_1, expiration_2, qty_2, expiration_3, qty_3, extra_expirations, no_stock)
                     SELECT $1, p.product_id, p.sku, p.product_name, p.supplier_name,
                            pr.expiration_1, pr.qty_1, pr.expiration_2, pr.qty_2,
-                           pr.expiration_3, pr.qty_3, COALESCE(pr.extra_expirations, '[]'::jsonb)
+                           pr.expiration_3, pr.qty_3, COALESCE(pr.extra_expirations, '[]'::jsonb), pr.no_stock
                     FROM public.nems_task_product_progress pr
                     JOIN public.products p ON p.product_id = pr.product_id
                     WHERE pr.assignment_id = $2 AND p.status = 'ACTIVE'
@@ -632,7 +631,7 @@ module.exports = function registerTaskRoutes({
             const products = await pool.query(`
                 SELECT p.product_id, p.sku, p.product_name, p.supplier_name,
                        pr.expiration_1, pr.qty_1, pr.expiration_2, pr.qty_2,
-                       pr.expiration_3, pr.qty_3, COALESCE(pr.extra_expirations, '[]'::jsonb) AS extra_expirations, pr.saved_at,
+                       pr.expiration_3, pr.qty_3, COALESCE(pr.extra_expirations, '[]'::jsonb) AS extra_expirations, COALESCE(pr.no_stock, FALSE) AS no_stock, pr.saved_at,
                        (pr.product_id IS NOT NULL) AS encoded
                 FROM public.products p
                 LEFT JOIN public.nems_task_product_progress pr
@@ -653,6 +652,9 @@ module.exports = function registerTaskRoutes({
         const productId = positiveId(req.params.productId);
         if (!id || !productId) return fail(res, 400, 'Invalid task or product ID');
         const b = req.body || {};
+        if (b.no_stock !== undefined && typeof b.no_stock !== 'boolean')
+            return fail(res, 400, 'Invalid NO STOCK value');
+        const noStock = b.no_stock === true;
         const dates = [], quantities = [];
         for (let i = 1; i <= 3; i++) {
             const d = b[`expiration_${i}`] || null;
@@ -717,16 +719,23 @@ module.exports = function registerTaskRoutes({
             if (!product.rowCount) {
                 await client.query('ROLLBACK'); return fail(res, 404, 'Product not in assigned supplier');
             }
-            const saved = await client.query(`
+            const saved = noStock ? await client.query(`
+                INSERT INTO public.nems_task_product_progress
+                    (assignment_id, product_id, no_stock, saved_by)
+                VALUES ($1, $2, TRUE, $3)
+                ON CONFLICT (assignment_id, product_id) DO UPDATE SET
+                    no_stock=TRUE, saved_by=EXCLUDED.saved_by, saved_at=NOW()
+                RETURNING *
+            `, [id, productId, getEmail(req)]) : await client.query(`
                 INSERT INTO public.nems_task_product_progress
                 (assignment_id, product_id, expiration_1, qty_1,
-                 expiration_2, qty_2, expiration_3, qty_3, saved_by, extra_expirations)
-                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb)
+                 expiration_2, qty_2, expiration_3, qty_3, saved_by, extra_expirations, no_stock)
+                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,FALSE)
                 ON CONFLICT (assignment_id, product_id) DO UPDATE SET
                   expiration_1=EXCLUDED.expiration_1, qty_1=EXCLUDED.qty_1,
                   expiration_2=EXCLUDED.expiration_2, qty_2=EXCLUDED.qty_2,
                   expiration_3=EXCLUDED.expiration_3, qty_3=EXCLUDED.qty_3,
-                  saved_by=EXCLUDED.saved_by, extra_expirations=EXCLUDED.extra_expirations, saved_at=NOW()
+                  saved_by=EXCLUDED.saved_by, extra_expirations=EXCLUDED.extra_expirations, no_stock=FALSE, saved_at=NOW()
                 RETURNING *
             `, [id, productId, dates[0], quantities[0], dates[1], quantities[1],
                 dates[2], quantities[2], getEmail(req), JSON.stringify(extras)]);
