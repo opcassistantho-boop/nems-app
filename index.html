@@ -912,62 +912,9 @@ td button { margin:2px; }
             </div>
  
             <h3>Expiration Dates and Quantities</h3>
- 
-            <div class="formgrid">
- 
-                <div>
-                    <label>Expiration Date 1</label>
-                    <input id="exp1" type="date">
-                </div>
- 
-                <div>
-                    <label>Quantity 1 (pcs)</label>
-                    <input
-                        id="qty1"
-                        type="number"
-                        min="0"
-                        max="500"
-                        step="1"
-                    >
-                </div>
- 
-                <div></div>
- 
-                <div>
-                    <label>Expiration Date 2</label>
-                    <input id="exp2" type="date">
-                </div>
- 
-                <div>
-                    <label>Quantity 2 (pcs)</label>
-                    <input
-                        id="qty2"
-                        type="number"
-                        min="0"
-                        max="500"
-                        step="1"
-                    >
-                </div>
- 
-                <div></div>
- 
-                <div>
-                    <label>Expiration Date 3</label>
-                    <input id="exp3" type="date">
-                </div>
- 
-                <div>
-                    <label>Quantity 3 (pcs)</label>
-                    <input
-                        id="qty3"
-                        type="number"
-                        min="0"
-                        max="500"
-                        step="1"
-                    >
-                </div>
- 
-            </div>
+            <p class="muted">Enter one expiration date and quantity, or add more as needed (0–500 pcs per row).</p>
+            <div id="storeExpiryRows"></div>
+            <button type="button" class="secondary small" onclick="addStoreExpiryRow()">+ Add Expiration Date</button>
  
             <div class="formactions">
                 <button type="submit" id="storeSaveBtn">
@@ -2257,49 +2204,58 @@ el('entryProduct').addEventListener(
     }
 );
  
-el('storeForm').addEventListener(
-    'submit',
-    async event => {
-        event.preventDefault();
+function addStoreExpiryRow(date = '', qty = '') {
+    const holder = el('storeExpiryRows');
+    if (holder.children.length >= 100) { showMessage('Maximum 100 expiration entries per product.', true); return; }
+    const row = document.createElement('div');
+    row.className = 'formgrid nems-store-expiry-row';
+    row.style.marginBottom = '10px';
+    row.innerHTML = `<div><label>Expiration Date</label><input type="date" class="store-exp-date"></div>
+        <div><label>Quantity (pcs)</label><input type="number" min="0" max="500" step="1" class="store-exp-qty"></div>
+        <div style="display:flex;align-items:end"><button type="button" class="secondary small" onclick="removeStoreExpiryRow(this)">Remove</button></div>`;
+    row.querySelector('.store-exp-date').value = date;
+    row.querySelector('.store-exp-qty').value = qty;
+    holder.appendChild(row);
+    updateStoreExpiryRemoveButtons();
+}
+function removeStoreExpiryRow(button) {
+    button.closest('.nems-store-expiry-row').remove();
+    updateStoreExpiryRemoveButtons();
+}
+function updateStoreExpiryRemoveButtons() {
+    const rows = [...document.querySelectorAll('#storeExpiryRows .nems-store-expiry-row')];
+    rows.forEach(row => row.querySelector('button').disabled = rows.length === 1);
+}
+addStoreExpiryRow();
  
-        const payload = {
-            product_id:Number(
-                el('entryProduct').value
-            ),
-            store_barcode:el('entryBarcode').value,
-            srp:el('entrySrp').value,
-            exp1:el('exp1').value,
-            qty1:el('qty1').value,
-            exp2:el('exp2').value,
-            qty2:el('qty2').value,
-            exp3:el('exp3').value,
-            qty3:el('qty3').value
-        };
- 
-        const button = el('storeSaveBtn');
-        button.disabled = true;
- 
-        try {
-            await api(
-                '/api/store/monitoring',
-                {
-                    method:'POST',
-                    body:JSON.stringify(payload)
-                }
-            );
- 
-            showMessage(
-                'Store monitoring saved successfully.'
-            );
- 
-        } catch (error) {
-            showMessage(error.message, true);
- 
-        } finally {
-            button.disabled = false;
-        }
+el('storeForm').addEventListener('submit', async event => {
+    event.preventDefault();
+    const entries = [...document.querySelectorAll('#storeExpiryRows .nems-store-expiry-row')]
+        .map(row => ({
+            expiration_date: row.querySelector('.store-exp-date').value,
+            quantity: row.querySelector('.store-exp-qty').value
+        }));
+    if (entries.some(item => !item.expiration_date || item.quantity === '')) {
+        showMessage('Complete both the expiration date and quantity for every row.', true);
+        return;
     }
-);
+    const payload = {
+        product_id: Number(el('entryProduct').value),
+        store_barcode: el('entryBarcode').value,
+        srp: el('entrySrp').value,
+        expirations: entries
+    };
+    const button = el('storeSaveBtn');
+    button.disabled = true;
+    try {
+        await api('/api/store/monitoring', {method:'POST', body:JSON.stringify(payload)});
+        showMessage('Store monitoring saved successfully.');
+    } catch (error) {
+        showMessage(error.message, true);
+    } finally {
+        button.disabled = false;
+    }
+});
  
 // ==========================================
 // RECENT ACTIVITIES
@@ -3234,7 +3190,7 @@ function nemsProductExpirationRows(p) {
     p._draftRows = rows;
     return rows;
 }
-
+ 
 function nemsTaskProductRender() {
     const body = el('nemsTaskProductRows');
     const term = el('nemsTaskProductSearch').value.trim().toLowerCase();
@@ -3256,7 +3212,7 @@ function nemsTaskProductRender() {
     }).join('') : '<tr><td colspan="5">No matching products.</td></tr>';
     nemsTaskProductCounts();
 }
-
+ 
 async function nemsOpenTaskProducts(id) {
     if (currentUser?.role !== 'STORE' || nemsStoreTasksBusy) return;
     nemsActiveTaskId = id;
