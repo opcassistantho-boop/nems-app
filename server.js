@@ -471,24 +471,22 @@ const monitoringEntries = `
  
 function expiryCategory(date) {
     const today = new Date();
- 
-    today.setUTCHours(0, 0, 0, 0);
- 
-    const days = Math.floor(
-        (
-            new Date(date).getTime() -
-            today.getTime()
-        ) / 86400000
-    );
- 
+    const todayUTC = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate());
+    const expiration = new Date(date);
+    const expiryUTC = Date.UTC(expiration.getUTCFullYear(), expiration.getUTCMonth(), expiration.getUTCDate());
+    const days = Math.round((expiryUTC - todayUTC) / 86400000);
+
     if (days < 0) return 'EXPIRED';
     if (days <= 30) return 'RED';
     if (days <= 60) return 'BLUE';
     if (days <= 90) return 'GREEN';
- 
-    return 'LATER';
+
+    const sixMonths = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() + 6, 1));
+    const lastDay = new Date(Date.UTC(sixMonths.getUTCFullYear(), sixMonths.getUTCMonth() + 1, 0)).getUTCDate();
+    const sixMonthLimit = Date.UTC(sixMonths.getUTCFullYear(), sixMonths.getUTCMonth(), Math.min(today.getUTCDate(), lastDay));
+    return expiryUTC <= sixMonthLimit ? 'ORANGE' : 'LATER';
 }
- 
+
 // ==========================================
 // CURRENT USER
 // ==========================================
@@ -1098,9 +1096,11 @@ app.get(
     async (req, res) => {
         try {
             const scope = storeScope(req.user);
-            const allowedCategories = new Set(['EXPIRED', 'RED', 'BLUE', 'GREEN', 'LATER']);
-            const category = String(req.query.category || '').trim().toUpperCase();
-            if (category && !allowedCategories.has(category)) {
+            const allowedCategories = new Set(['EXPIRED', 'RED', 'BLUE', 'GREEN', 'ORANGE', 'LATER']);
+            const rawCategories = req.query.category == null ? [] :
+                (Array.isArray(req.query.category) ? req.query.category : [req.query.category]);
+            const categories = [...new Set(rawCategories.map(value => String(value).trim().toUpperCase()))];
+            if (categories.length > 6 || categories.some(value => !allowedCategories.has(value))) {
                 return sendError(res, 400, 'Invalid monitoring category');
             }
             const rawSuppliers = req.query.supplier == null ? [] :
@@ -1126,7 +1126,7 @@ app.get(
                 queryArgs
             );
  
-            const filteredRows = category ? rows.filter(record => expiryCategory(record.expiration_date) === category) : rows;
+            const filteredRows = categories.length ? rows.filter(record => categories.includes(expiryCategory(record.expiration_date))) : rows;
             const records = filteredRows.map(record => ({
                 Store: record.store_name,
                 Supplier: record.supplier,
