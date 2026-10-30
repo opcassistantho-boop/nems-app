@@ -921,8 +921,8 @@ app.post(
                 return sendError(res, 400, `Invalid expiration date ${i + 1}`);
             }
             const number = Number(qty);
-            if (qty == null || qty === '' || !Number.isInteger(number) || number < 0 || number > 500) {
-                return sendError(res, 400, `Quantity ${i + 1} must be 0–500 pieces`);
+            if (qty == null || qty === '' || !Number.isInteger(number) || number < 0) {
+                return sendError(res, 400, `Quantity ${i + 1} must be a nonnegative whole number`);
             }
             entries.push({expiration_date: date, quantity: number});
         }
