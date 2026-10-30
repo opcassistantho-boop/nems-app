@@ -589,6 +589,7 @@ td button { margin:2px; }
                         <th>Qty (pcs)</th>
                         <th>Last Edited</th>
                         <th>ADMIN Disposal</th>
+                        <th class="adminOnly hidden">ACTION / REMARKS</th>
                     </tr>
                 </thead>
                 <tbody id="monitorBody"></tbody>
@@ -1671,11 +1672,16 @@ function renderMonitoring() {
                         ? `<button type="button" class="secondary small" onclick="disposeExpiredMonitoring(${Number(item.monitoring_id)}, '${String(item.expiration_date).slice(0,10)}')">Dispose Expired</button>`
                         : ''}
                 </td>
+                ${currentUser?.role === 'ADMIN' ? `
+                <td style="min-width:240px">
+                    <textarea id="remarks-${Number(item.monitoring_id)}-${String(item.expiration_date).slice(0,10)}" maxlength="2000" rows="2" style="min-height:58px">${escapeHtml(item.action_remarks || '')}</textarea>
+                    <button type="button" class="small" onclick="saveMonitoringRemarks(${Number(item.monitoring_id)}, '${String(item.expiration_date).slice(0,10)}')">Save Remarks</button>
+                </td>` : ''}
             </tr>
         `).join('')
         : `
             <tr>
-                <td colspan="7">
+                <td colspan="${currentUser?.role === 'ADMIN' ? 9 : 8}">
                     No matching records.
                 </td>
             </tr>
@@ -1683,6 +1689,20 @@ function renderMonitoring() {
  
     el('monitorCount').textContent =
         'Showing ' + rows.length + ' records';
+}
+ 
+async function saveMonitoringRemarks(id, date) {
+    if (currentUser?.role !== 'ADMIN') return;
+    const field = el('remarks-' + id + '-' + date);
+    if (!field) return;
+    try {
+        const result = await api('/api/admin/monitoring/action-remarks', {
+            method: 'PUT',
+            body: JSON.stringify({monitoring_id:id, expiration_date:date, action_remarks:field.value})
+        });
+        showMessage(result.message || 'Remarks saved.');
+        await loadMonitoring();
+    } catch (error) { showMessage(error.message || 'Could not save remarks', true); }
 }
  
 async function disposeExpiredMonitoring(monitoringId, expirationDate) {
@@ -1709,7 +1729,7 @@ async function disposeExpiredMonitoring(monitoringId, expirationDate) {
         showMessage(error.message || 'Disposal failed.', true);
     }
 }
-
+ 
 function renderMonitoringExportSuppliers() {
     const host = el('monitorExportSuppliers');
     const previouslyChecked = new Set(Array.from(host.querySelectorAll('input:checked')).map(input => input.value));
@@ -1726,7 +1746,7 @@ function setMonitoringExportCategories(checked) {
         input.checked = checked;
     });
 }
-
+ 
 async function downloadMonitoring() {
     try {
         const params = new URLSearchParams();
