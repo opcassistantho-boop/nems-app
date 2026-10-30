@@ -1668,8 +1668,10 @@ function renderMonitoring() {
                     )}
                 </td>
                 <td>
-                    ${currentUser?.role === 'ADMIN' && item.monitoring_id != null && item.category === 'EXPIRED'
-                        ? `<button type="button" class="secondary small" onclick="disposeExpiredMonitoring(${Number(item.monitoring_id)}, '${String(item.expiration_date).slice(0,10)}')">Dispose Expired</button>`
+                    ${currentUser?.role === 'ADMIN' && item.category === 'EXPIRED'
+                        ? (item.monitoring_id != null
+                            ? `<button type="button" class="secondary small" onclick="disposeExpiredMonitoring(${Number(item.monitoring_id)}, '${String(item.expiration_date).slice(0,10)}')">Dispose Expired</button>`
+                            : `<button type="button" class="secondary small" onclick="disposeExpiredTaskMonitoring(${Number(item.product_id)}, '${encodeURIComponent(String(item.store_email || ''))}', '${String(item.expiration_date).slice(0,10)}')">Dispose Expired</button>`)
                         : ''}
                 </td>
                 ${currentUser?.role === 'ADMIN' ? `
@@ -1739,6 +1741,32 @@ async function disposeExpiredMonitoring(monitoringId, expirationDate) {
             })
         });
         showMessage(result.message || 'Expired stock disposed.');
+        await loadMonitoring();
+    } catch (error) {
+        showMessage(error.message || 'Disposal failed.', true);
+    }
+}
+ 
+async function disposeExpiredTaskMonitoring(productId, encodedEmail, expirationDate) {
+    if (currentUser?.role !== 'ADMIN') {
+        showMessage('Only ADMIN can dispose expired stock.', true);
+        return;
+    }
+    const confirmed = window.confirm(
+        'Confirm physical disposal of expired task stock dated ' + expirationDate +
+        '? This removes the expired quantity from active task progress and records the disposal history.'
+    );
+    if (!confirmed) return;
+    try {
+        const result = await api('/api/admin/monitoring/dispose-task-expired', {
+            method: 'POST',
+            body: JSON.stringify({
+                product_id: productId,
+                store_email: decodeURIComponent(encodedEmail),
+                expiration_date: expirationDate
+            })
+        });
+        showMessage(result.message || 'Expired task stock disposed.');
         await loadMonitoring();
     } catch (error) {
         showMessage(error.message || 'Disposal failed.', true);
