@@ -1668,15 +1668,17 @@ function renderMonitoring() {
                     )}
                 </td>
                 <td>
-                    ${currentUser?.role === 'ADMIN' && item.category === 'EXPIRED'
+                    ${currentUser?.role === 'ADMIN' && item.monitoring_id != null && item.category === 'EXPIRED'
                         ? `<button type="button" class="secondary small" onclick="disposeExpiredMonitoring(${Number(item.monitoring_id)}, '${String(item.expiration_date).slice(0,10)}')">Dispose Expired</button>`
                         : ''}
                 </td>
-                ${currentUser?.role === 'ADMIN' ? `
+                ${currentUser?.role === 'ADMIN' ? (item.monitoring_id == null
+                    ? '<td>—</td>'
+                    : `
                 <td style="min-width:240px">
                     <textarea id="remarks-${Number(item.monitoring_id)}-${String(item.expiration_date).slice(0,10)}" maxlength="2000" rows="2" style="min-height:58px">${escapeHtml(item.action_remarks || '')}</textarea>
                     <button type="button" class="small" onclick="saveMonitoringRemarks(${Number(item.monitoring_id)}, '${String(item.expiration_date).slice(0,10)}')">Save Remarks</button>
-                </td>` : ''}
+                </td>`) : ''}
             </tr>
         `).join('')
         : `
