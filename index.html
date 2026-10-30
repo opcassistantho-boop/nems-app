@@ -1672,13 +1672,11 @@ function renderMonitoring() {
                         ? `<button type="button" class="secondary small" onclick="disposeExpiredMonitoring(${Number(item.monitoring_id)}, '${String(item.expiration_date).slice(0,10)}')">Dispose Expired</button>`
                         : ''}
                 </td>
-                ${currentUser?.role === 'ADMIN' ? (item.monitoring_id == null
-                    ? '<td>—</td>'
-                    : `
+                ${currentUser?.role === 'ADMIN' ? `
                 <td style="min-width:240px">
-                    <textarea id="remarks-${Number(item.monitoring_id)}-${String(item.expiration_date).slice(0,10)}" maxlength="2000" rows="2" style="min-height:58px">${escapeHtml(item.action_remarks || '')}</textarea>
-                    <button type="button" class="small" onclick="saveMonitoringRemarks(${Number(item.monitoring_id)}, '${String(item.expiration_date).slice(0,10)}')">Save Remarks</button>
-                </td>`) : ''}
+                    <textarea id="remarks-${item.monitoring_id == null ? 'task-' + Number(item.product_id) + '-' + encodeURIComponent(String(item.store_email || '')) : Number(item.monitoring_id)}-${String(item.expiration_date).slice(0,10)}" maxlength="2000" rows="2" style="min-height:58px">${escapeHtml(item.action_remarks || '')}</textarea>
+                    <button type="button" class="small" onclick="${item.monitoring_id == null ? `saveTaskMonitoringRemarks(${Number(item.product_id)}, '${encodeURIComponent(String(item.store_email || ''))}', '${String(item.expiration_date).slice(0,10)}')` : `saveMonitoringRemarks(${Number(item.monitoring_id)}, '${String(item.expiration_date).slice(0,10)}')`}">Save Remarks</button>
+                </td>` : ''}
             </tr>
         `).join('')
         : `
@@ -1701,6 +1699,21 @@ async function saveMonitoringRemarks(id, date) {
         const result = await api('/api/admin/monitoring/action-remarks', {
             method: 'PUT',
             body: JSON.stringify({monitoring_id:id, expiration_date:date, action_remarks:field.value})
+        });
+        showMessage(result.message || 'Remarks saved.');
+        await loadMonitoring();
+    } catch (error) { showMessage(error.message || 'Could not save remarks', true); }
+}
+ 
+async function saveTaskMonitoringRemarks(productId, encodedEmail, date) {
+    if (currentUser?.role !== 'ADMIN') return;
+    const field = el('remarks-task-' + productId + '-' + encodedEmail + '-' + date);
+    if (!field) return;
+    try {
+        const result = await api('/api/admin/monitoring/task-action-remarks', {
+            method: 'PUT',
+            body: JSON.stringify({product_id:productId, store_email:decodeURIComponent(encodedEmail),
+                expiration_date:date, action_remarks:field.value})
         });
         showMessage(result.message || 'Remarks saved.');
         await loadMonitoring();
@@ -3317,6 +3330,7 @@ async function nemsOpenTaskProducts(id) {
     if (currentUser?.role !== 'STORE' || nemsStoreTasksBusy) return;
     nemsActiveTaskId = id;
     el('nemsTaskProductPanel').classList.remove('hidden');
+    el('nemsTaskProductPanel').scrollIntoView({behavior:'smooth', block:'start'});
     el('nemsTaskProductRows').innerHTML = '<tr><td colspan="5">Loading products...</td></tr>';
     try {
         const result = await api(`/api/store/tasks/${id}/products`);
@@ -3329,6 +3343,7 @@ async function nemsOpenTaskProducts(id) {
             : 'Save each product before submitting. All active supplier products must be encoded.';
         el('nemsTaskProductSearch').value = '';
         nemsTaskProductRender();
+        el('nemsTaskProductPanel').scrollIntoView({behavior:'smooth', block:'start'});
     } catch (error) {
         el('nemsTaskProductRows').innerHTML = '<tr><td colspan="5">Unable to load products.</td></tr>';
         showMessage(error.message, true);
