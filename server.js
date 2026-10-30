@@ -676,7 +676,11 @@ app.get(
                         pr.saved_by AS updated_by,
                         p.shelf_life, p.condition, p.remarks, p.master_barcode,
                         v.expiration_date, v.quantity, v.slot,
-                        NULL::text AS action_remarks
+                         (SELECT ar.action_remarks FROM public.nems_task_action_remarks ar
+                          WHERE LOWER(ar.store_email) = LOWER(s.store_email)
+                            AND ar.product_id = p.product_id
+                            AND ar.expiration_date = v.expiration_date
+                          LIMIT 1) AS action_remarks
                     FROM public.nems_task_product_progress pr
                     JOIN public.nems_task_assignments a ON a.assignment_id = pr.assignment_id
                     JOIN public.stores s ON s.store_id = a.store_id
@@ -740,6 +744,51 @@ app.get(
         }
     }
 );
+ 
+// My Tasks remarks are separate from stock and existing monitoring remarks.
+app.put('/api/admin/monitoring/task-action-remarks', authenticate, adminOnly, async (req, res) => {
+    const storeEmail = cleanEmail(req.body?.store_email);
+    const productId = validId(req.body?.product_id);
+    const date = req.body?.expiration_date;
+    const remarks = req.body?.action_remarks;
+    if (!storeEmail || storeEmail.length > 255 || !productId ||
+        typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date) ||
+        Number.isNaN(Date.parse(date + 'T00:00:00Z')) ||
+        new Date(date + 'T00:00:00Z').toISOString().slice(0, 10) !== date ||
+        typeof remarks !== 'string' || remarks.length > 2000) {
+        return sendError(res, 400, 'Invalid task record or remarks');
+    }
+    try {
+        const found = await pool.query(`
+            SELECT 1 FROM public.nems_task_product_progress pr
+            JOIN public.nems_task_assignments a ON a.assignment_id = pr.assignment_id
+            JOIN public.stores s ON s.store_id = a.store_id
+            CROSS JOIN LATERAL (
+                SELECT x.expiration_date, x.quantity FROM (VALUES
+                    (pr.expiration_1, pr.qty_1), (pr.expiration_2, pr.qty_2),
+                    (pr.expiration_3, pr.qty_3)
+                ) x(expiration_date, quantity)
+                UNION ALL
+                SELECT COALESCE(e.item->>'date', e.item->>'expiration_date')::date,
+                       COALESCE(e.item->>'qty', e.item->>'quantity')::integer
+                FROM jsonb_array_elements(COALESCE(pr.extra_expirations, '[]'::jsonb)) e(item)
+            ) v
+            WHERE LOWER(TRIM(s.store_email)) = $1 AND pr.product_id = $2
+              AND v.expiration_date = $3::date AND v.quantity > 0
+              AND COALESCE(pr.no_stock, FALSE) = FALSE
+            LIMIT 1`, [storeEmail, productId, date]);
+        if (!found.rowCount) return sendError(res, 404, 'Saved task monitoring entry not found');
+        await pool.query(`
+            INSERT INTO public.nems_task_action_remarks
+              (store_email, product_id, expiration_date, action_remarks, updated_by)
+            VALUES ($1, $2, $3::date, $4, $5)
+            ON CONFLICT (store_email, product_id, expiration_date)
+            DO UPDATE SET action_remarks = EXCLUDED.action_remarks,
+                          updated_by = EXCLUDED.updated_by, updated_at = NOW()`,
+            [storeEmail, productId, date, remarks.trim(), req.user.email]);
+        res.json({message:'Remarks saved'});
+    } catch (error) { databaseError(res, error, 'Could not save task remarks'); }
+});
  
 // ==========================================
 app.put('/api/admin/monitoring/action-remarks', authenticate, adminOnly, async (req, res) => {
