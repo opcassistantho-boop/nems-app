@@ -707,8 +707,8 @@ module.exports = function registerTaskRoutes({
             if (d !== null && (!/^\d{4}-\d{2}-\d{2}$/.test(d) ||
                 Number.isNaN(Date.parse(d)) || new Date(d).toISOString().slice(0,10) !== d))
                 return fail(res, 400, `Invalid expiration date ${i}`);
-            if (q !== null && (!Number.isInteger(q) || q < 0 || q > 500))
-                return fail(res, 400, `Invalid quantity ${i} (0–500)`);
+            if (q !== null && (!Number.isInteger(q) || q < 0))
+                return fail(res, 400, `Invalid quantity ${i} (nonnegative whole number)`);
             if ((d === null) !== (q === null))
                 return fail(res, 400, `Expiration date and quantity ${i} must be entered together`);
             dates.push(d); quantities.push(q);
@@ -721,7 +721,7 @@ module.exports = function registerTaskRoutes({
             const q = Number(item?.qty);
             if (typeof d !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(d) ||
                 Number.isNaN(Date.parse(d)) || new Date(d).toISOString().slice(0,10) !== d ||
-                !Number.isInteger(q) || q < 0 || q > 500 || item?.qty === '') {
+                !Number.isInteger(q) || q < 0 || item?.qty === '') {
                 return fail(res, 400, `Invalid additional expiration row ${i + 4}`);
             }
         }
