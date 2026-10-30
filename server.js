@@ -664,12 +664,58 @@ app.get(
  
             const { rows } = await pool.query(
                 `
-                SELECT *
-                FROM (${monitoringEntries}) m
+                WITH saved_task_rows AS (
+                    SELECT DISTINCT ON (LOWER(TRIM(s.store_email)), p.product_id, v.expiration_date)
+                        NULL::integer AS monitoring_id,
+                        s.store_name, s.store_email,
+                        p.product_id, p.sku, p.product_name,
+                        p.supplier_name AS supplier,
+                        p.master_barcode AS store_barcode,
+                        p.master_srp AS srp,
+                        pr.saved_at AS updated_at,
+                        pr.saved_by AS updated_by,
+                        p.shelf_life, p.condition, p.remarks, p.master_barcode,
+                        v.expiration_date, v.quantity, v.slot,
+                        NULL::text AS action_remarks
+                    FROM public.nems_task_product_progress pr
+                    JOIN public.nems_task_assignments a ON a.assignment_id = pr.assignment_id
+                    JOIN public.stores s ON s.store_id = a.store_id
+                    JOIN public.products p ON p.product_id = pr.product_id
+                    CROSS JOIN LATERAL (
+                        SELECT x.expiration_date, x.quantity, x.slot
+                        FROM (VALUES
+                            (pr.expiration_1, pr.qty_1, 1),
+                            (pr.expiration_2, pr.qty_2, 2),
+                            (pr.expiration_3, pr.qty_3, 3)
+                        ) AS x(expiration_date, quantity, slot)
+                        UNION ALL
+                        SELECT COALESCE(e.item->>'date', e.item->>'expiration_date')::date,
+                               COALESCE(e.item->>'qty', e.item->>'quantity')::integer,
+                               e.ordinality::integer + 3
+                        FROM jsonb_array_elements(COALESCE(pr.extra_expirations, '[]'::jsonb))
+                             WITH ORDINALITY AS e(item, ordinality)
+                    ) v
+                    WHERE COALESCE(pr.no_stock, FALSE) = FALSE
+                      AND v.expiration_date IS NOT NULL
+                      AND v.quantity > 0
+                      AND s.store_email IS NOT NULL
+                    ORDER BY LOWER(TRIM(s.store_email)), p.product_id,
+                             v.expiration_date, pr.saved_at DESC NULLS LAST,
+                             pr.assignment_id DESC
+                ), combined AS (
+                    SELECT * FROM (${monitoringEntries})
+                    UNION ALL
+                    SELECT t.* FROM saved_task_rows t
+                    WHERE NOT EXISTS (
+                        SELECT 1 FROM (${monitoringEntries}) existing
+                        WHERE LOWER(TRIM(existing.store_email)) = LOWER(TRIM(t.store_email))
+                          AND existing.product_id = t.product_id
+                          AND existing.expiration_date = t.expiration_date
+                    )
+                )
+                SELECT * FROM combined m
                 WHERE ${scope.sql}
-                ORDER BY
-                    expiration_date ASC,
-                    store_name
+                ORDER BY expiration_date ASC, store_name
                 LIMIT 10000
                 `,
                 scope.args
