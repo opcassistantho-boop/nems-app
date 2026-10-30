@@ -439,7 +439,11 @@ const monitoringEntries = `
         p.master_barcode,
         v.expiration_date,
         v.quantity,
-        v.slot
+        v.slot,
+        (SELECT ar.action_remarks FROM public.nems_monitoring_action_remarks ar
+         WHERE ar.monitoring_id = m.monitoring_id
+           AND ar.expiration_date = v.expiration_date
+         LIMIT 1) AS action_remarks
  
     FROM public.monitoring m
  
@@ -475,18 +479,18 @@ function expiryCategory(date) {
     const expiration = new Date(date);
     const expiryUTC = Date.UTC(expiration.getUTCFullYear(), expiration.getUTCMonth(), expiration.getUTCDate());
     const days = Math.round((expiryUTC - todayUTC) / 86400000);
-
+ 
     if (days < 0) return 'EXPIRED';
     if (days <= 30) return 'RED';
     if (days <= 60) return 'BLUE';
     if (days <= 90) return 'GREEN';
-
+ 
     const sixMonths = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() + 6, 1));
     const lastDay = new Date(Date.UTC(sixMonths.getUTCFullYear(), sixMonths.getUTCMonth() + 1, 0)).getUTCDate();
     const sixMonthLimit = Date.UTC(sixMonths.getUTCFullYear(), sixMonths.getUTCMonth(), Math.min(today.getUTCDate(), lastDay));
     return expiryUTC <= sixMonthLimit ? 'ORANGE' : 'LATER';
 }
-
+ 
 // ==========================================
 // CURRENT USER
 // ==========================================
@@ -673,6 +677,7 @@ app.get(
  
             const records = rows.map(record => ({
                 ...record,
+                action_remarks: req.user.role === "ADMIN" ? record.action_remarks : undefined,
                 category: expiryCategory(
                     record.expiration_date
                 )
@@ -691,6 +696,33 @@ app.get(
 );
  
 // ==========================================
+app.put('/api/admin/monitoring/action-remarks', authenticate, adminOnly, async (req, res) => {
+    const id = validId(req.body?.monitoring_id);
+    const date = req.body?.expiration_date;
+    const remarks = req.body?.action_remarks;
+    if (!id || typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date) ||
+        Number.isNaN(Date.parse(date + 'T00:00:00Z')) ||
+        new Date(date + 'T00:00:00Z').toISOString().slice(0,10) !== date ||
+        typeof remarks !== 'string' || remarks.length > 2000) {
+        return sendError(res, 400, 'Invalid date, record, or remarks (maximum 2000 characters)');
+    }
+    try {
+        const found = await pool.query(
+            `SELECT 1 FROM (${monitoringEntries}) m
+             WHERE m.monitoring_id=$1 AND m.expiration_date=$2::date LIMIT 1`, [id, date]);
+        if (!found.rowCount) return sendError(res, 404, 'Monitoring entry not found');
+        await pool.query(
+            `INSERT INTO public.nems_monitoring_action_remarks
+             (monitoring_id, expiration_date, action_remarks, updated_by)
+             VALUES ($1,$2::date,$3,$4)
+             ON CONFLICT (monitoring_id, expiration_date)
+             DO UPDATE SET action_remarks=EXCLUDED.action_remarks,
+                           updated_by=EXCLUDED.updated_by, updated_at=NOW()`,
+            [id,date,remarks.trim(),req.user.email]);
+        res.json({message:'Remarks saved'});
+    } catch(error) { databaseError(res,error,'Could not save remarks'); }
+});
+ 
 // DASHBOARD SUMMARY
 // ==========================================
  
@@ -1145,7 +1177,8 @@ app.get(
                 Category: expiryCategory(
                     record.expiration_date
                 ),
-                'Updated By': record.updated_by
+                'Updated By': record.updated_by,
+                ...(req.user.role === 'ADMIN' ? {'ACTION / REMARKS': record.action_remarks || ''} : {})
             }));
  
             const workbook = XLSX.utils.book_new();
