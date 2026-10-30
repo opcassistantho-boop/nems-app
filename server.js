@@ -1213,6 +1213,112 @@ app.post('/api/admin/monitoring/dispose-expired', authenticate, adminOnly, async
     }
 });
  
+// ADMIN ONLY: dispose an expired My Tasks date without touching other dates.
+app.post('/api/admin/monitoring/dispose-task-expired', authenticate, adminOnly, async (req, res) => {
+    const storeEmail = cleanEmail(req.body?.store_email);
+    const productId = validId(req.body?.product_id);
+    const expirationDate = req.body?.expiration_date;
+    if (!storeEmail || storeEmail.length > 255 || !productId ||
+        typeof expirationDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(expirationDate) ||
+        Number.isNaN(Date.parse(expirationDate + 'T00:00:00Z')) ||
+        new Date(expirationDate + 'T00:00:00Z').toISOString().slice(0, 10) !== expirationDate) {
+        return sendError(res, 400, 'Valid task product, store, and expiration date required');
+    }
+    let client;
+    try {
+        client = await pool.connect();
+        await client.query('BEGIN');
+        const todayResult = await client.query('SELECT CURRENT_DATE::text AS today');
+        if (expirationDate >= todayResult.rows[0].today) {
+            await client.query('ROLLBACK');
+            return sendError(res, 409, 'Only expired stock may be disposed');
+        }
+        // Lock every task-progress version for this store/product so an older
+        // assignment cannot make the disposed date reappear in Monitoring.
+        const found = await client.query(`
+            SELECT pr.*, s.store_name, s.store_email,
+                   p.sku, p.product_name, p.supplier_name AS supplier
+            FROM public.nems_task_product_progress pr
+            JOIN public.nems_task_assignments a ON a.assignment_id = pr.assignment_id
+            JOIN public.stores s ON s.store_id = a.store_id
+            JOIN public.products p ON p.product_id = pr.product_id
+            WHERE LOWER(TRIM(s.store_email)) = $1 AND pr.product_id = $2
+            ORDER BY pr.saved_at DESC NULLS LAST, pr.assignment_id DESC
+            FOR UPDATE OF pr
+        `, [storeEmail, productId]);
+        const asDate = v => v == null ? null :
+            (v instanceof Date ? v.toISOString().slice(0, 10) : String(v).slice(0, 10));
+        const edits = [];
+        let selected = null;
+        for (const row of found.rows) {
+            if (row.no_stock) continue;
+            const entries = [1, 2, 3].map(i => ({
+                date: asDate(row['expiration_' + i]),
+                qty: Number(row['qty_' + i] || 0)
+            })).filter(x => x.date);
+            const extra = Array.isArray(row.extra_expirations) ? row.extra_expirations : [];
+            for (const e of extra) {
+                const date = asDate(e?.date ?? e?.expiration_date);
+                if (date) entries.push({date, qty: Number(e?.qty ?? e?.quantity ?? 0)});
+            }
+            const matches = entries.filter(e => e.date === expirationDate && e.qty > 0);
+            if (!matches.length) continue;
+            const qty = matches.reduce((sum, e) => sum + e.qty, 0);
+            if (!Number.isSafeInteger(qty) || qty <= 0) {
+                await client.query('ROLLBACK');
+                return sendError(res, 409, 'Invalid expired quantity');
+            }
+            if (!selected) selected = {row, qty};
+            const remaining = entries.filter(e => e.date !== expirationDate);
+            edits.push({assignmentId: row.assignment_id, remaining});
+        }
+        if (!selected) {
+            await client.query('ROLLBACK');
+            return sendError(res, 404, 'Expired task entry not found');
+        }
+        // A normal Monitoring record takes precedence over a My Tasks row.
+        const existing = await client.query(`
+            SELECT 1 FROM (${monitoringEntries}) m
+            WHERE LOWER(TRIM(m.store_email)) = $1
+              AND m.product_id = $2 AND m.expiration_date = $3::date
+            LIMIT 1
+        `, [storeEmail, productId, expirationDate]);
+        if (existing.rowCount) {
+            await client.query('ROLLBACK');
+            return sendError(res, 409, 'This date belongs to Store Encoding; refresh Monitoring');
+        }
+        const m = selected.row;
+        await client.query(`
+            INSERT INTO public.nems_expired_disposal_history
+            (monitoring_id, store_name, store_email, product_id, sku, product_name,
+             supplier, expiration_date, quantity_disposed, disposed_by)
+            VALUES (NULL,$1,$2,$3,$4,$5,$6,$7,$8,$9)
+        `, [m.store_name, m.store_email, productId, m.sku, m.product_name,
+            m.supplier, expirationDate, selected.qty, req.user.email]);
+        for (const edit of edits) {
+            const primary = edit.remaining.slice(0, 3);
+            const get = (i, key) => primary[i]?.[key] ?? null;
+            const extras = edit.remaining.slice(3).map(e => ({date:e.date, qty:e.qty}));
+            await client.query(`
+                UPDATE public.nems_task_product_progress SET
+                    expiration_1=$3, qty_1=$4, expiration_2=$5, qty_2=$6,
+                    expiration_3=$7, qty_3=$8, extra_expirations=$9::jsonb
+                WHERE assignment_id=$1 AND product_id=$2
+            `, [edit.assignmentId, productId,
+                get(0,'date'), get(0,'qty'), get(1,'date'), get(1,'qty'),
+                get(2,'date'), get(2,'qty'), JSON.stringify(extras)]);
+        }
+        await client.query('COMMIT');
+        return res.json({message:'Expired task stock disposed',
+            quantity_disposed:selected.qty, expiration_date:expirationDate});
+    } catch (error) {
+        if (client) await client.query('ROLLBACK').catch(() => {});
+        return databaseError(res, error, 'Unable to dispose expired task stock');
+    } finally {
+        if (client) client.release();
+    }
+});
+ 
 // ==========================================
 // EXPORT MONITORING TO EXCEL
 // ==========================================
