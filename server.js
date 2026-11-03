@@ -1,19 +1,19 @@
 'use strict';
- 
+
 const express = require('express');
 const { Pool } = require('pg');
 const path = require('path');
 const XLSX = require('xlsx');
- 
+
 const app = express();
- 
+
 app.disable('x-powered-by');
 app.use(express.json({ limit: '100kb' }));
- 
+
 // ==========================================
 // DATABASE CONNECTION
 // ==========================================
- 
+
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
     ssl: process.env.PGSSL_DISABLE === 'true'
@@ -21,17 +21,17 @@ const pool = new Pool({
         : { rejectUnauthorized: false },
     max: 10
 });
- 
+
 // ==========================================
 // SUPABASE AUTHENTICATION
 // ==========================================
- 
+
 const SUPABASE_URL = (
     process.env.SUPABASE_URL || ''
 ).replace(/\/$/, '');
- 
+
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
- 
+
 if (
     !process.env.DATABASE_URL ||
     !SUPABASE_URL ||
@@ -42,35 +42,35 @@ if (
     );
     process.exit(1);
 }
- 
+
 app.use(
     express.static(
         path.join(__dirname, 'public'),
         { index: false }
     )
 );
- 
+
 app.get('/', (req, res) => {
     res.sendFile(
         path.join(__dirname, 'index.html')
     );
 });
- 
+
 // ==========================================
 // HELPERS
 // ==========================================
- 
+
 function sendError(res, status, message) {
     return res.status(status).json({
         error: message
     });}
- 
+
 function cleanEmail(email) {
     return String(email || '')
         .trim()
         .toLowerCase();
 }
- 
+
 const VALID_ROLES = [
     'STORE',
     'AS',
@@ -78,7 +78,7 @@ const VALID_ROLES = [
     'HEAD',
     'ADMIN'
 ];
- 
+
 function adminOnly(req, res, next) {
     if (req.user.role !== 'ADMIN') {
         return sendError(
@@ -87,22 +87,22 @@ function adminOnly(req, res, next) {
             'ADMIN access required'
         );
     }
- 
+
     next();
 }
- 
+
 function requiredText(value, max = 255) {
     if (typeof value !== 'string') {
         return null;
     }
- 
+
     const text = value.trim();
- 
+
     return text && text.length <= max
         ? text
         : null;
 }
- 
+
 function optionalText(value, max = 255) {
     if (
         value === null ||
@@ -111,17 +111,17 @@ function optionalText(value, max = 255) {
     ) {
         return null;
     }
- 
+
     if (
         typeof value !== 'string' ||
         value.trim().length > max
     ) {
         return undefined;
     }
- 
+
     return value.trim() || null;
 }
- 
+
 function optionalPrice(value) {
     if (
         value === null ||
@@ -130,9 +130,9 @@ function optionalPrice(value) {
     ) {
         return null;
     }
- 
+
     const number = Number(value);
- 
+
     return (
         Number.isFinite(number) &&
         number >= 0 &&
@@ -141,21 +141,21 @@ function optionalPrice(value) {
         ? number
         : undefined;
 }
- 
+
 function validId(value) {
     const id = Number(value);
- 
+
     return Number.isSafeInteger(id) && id > 0
         ? id
         : null;
 }
- 
+
 function databaseError(res, error, fallback) {
     console.error(
         'Database error:',
         error.code || error.message
     );
- 
+
     if (error.code === '23505') {
         return sendError(
             res,
@@ -163,7 +163,7 @@ function databaseError(res, error, fallback) {
             'This record already exists'
         );
     }
- 
+
     if (error.code === '23503') {
         return sendError(
             res,
@@ -171,18 +171,18 @@ function databaseError(res, error, fallback) {
             'A related supplier or product record is missing or in use'
         );
     }
- 
+
     return sendError(res, 500, fallback);
 }
- 
+
 // ==========================================
 // SECURE LOGIN
 // ==========================================
- 
+
 app.post('/api/login', async (req, res) => {
     const email = cleanEmail(req.body.email);
     const password = req.body.password;
- 
+
     if (
         !email ||
         typeof password !== 'string' ||
@@ -194,7 +194,7 @@ app.post('/api/login', async (req, res) => {
             'Email and password are required'
         );
     }
- 
+
     try {
         const response = await fetch(
             `${SUPABASE_URL}/auth/v1/token?grant_type=password`,
@@ -210,9 +210,9 @@ app.post('/api/login', async (req, res) => {
                 })
             }
         );
- 
+
         const result = await response.json();
- 
+
         if (
             !response.ok ||
             !result.access_token ||
@@ -224,7 +224,7 @@ app.post('/api/login', async (req, res) => {
                 'Invalid email or password'
             );
         }
- 
+
         const { rows } = await pool.query(
             `
             SELECT
@@ -242,7 +242,7 @@ app.post('/api/login', async (req, res) => {
                 email
             ]
         );
- 
+
         if (
             !rows.length ||
             !VALID_ROLES.includes(rows[0].role)
@@ -253,15 +253,15 @@ app.post('/api/login', async (req, res) => {
                 'Account not activated for NEMS'
             );
         }
- 
+
         res.json({
             token: result.access_token,
             user: rows[0]
         });
- 
+
     } catch (error) {
         console.error('Login error:', error);
- 
+
         sendError(
             res,
             500,
@@ -269,18 +269,78 @@ app.post('/api/login', async (req, res) => {
         );
     }
 });
- 
+
+// Password recovery uses Supabase Auth; always return a generic response to avoid account enumeration.
+const nemsPasswordResetAttempts = new Map();
+app.post('/api/password/forgot', async (req, res) => {
+    const email = cleanEmail(req.body?.email);
+    if (!email || email.length > 255 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return sendError(res, 400, 'Enter a valid email address');
+    }
+    const ip = req.ip || 'unknown';
+    const key = ip + ':' + email;
+    const now = Date.now();
+    for (const [k,v] of nemsPasswordResetAttempts) if (now - v > 3600000) nemsPasswordResetAttempts.delete(k);
+    if (nemsPasswordResetAttempts.has(key) && now - nemsPasswordResetAttempts.get(key) < 60000) {
+        return res.json({message:'If registered, a reset link will be sent.'});
+    }
+    nemsPasswordResetAttempts.set(key, now);
+    try {
+        const redirectTo = (process.env.NEMS_PUBLIC_URL || 'https://nems-app.onrender.com').replace(/\/$/, '') + '/';
+        const response = await fetch(`${SUPABASE_URL}/auth/v1/recover?redirect_to=${encodeURIComponent(redirectTo)}`, {
+            method:'POST', headers:{apikey:SUPABASE_ANON_KEY,'Content-Type':'application/json'},
+            body:JSON.stringify({email})
+        });
+        if (!response.ok) console.warn('Supabase password recovery request rejected:', response.status);
+        return res.json({message:'If registered, a reset link will be sent.'});
+    } catch(error) {
+        console.error('Password recovery request error:', error.message);
+        return sendError(res, 503, 'Password reset temporarily unavailable');
+    }
+});
+
+app.post('/api/password/change', authenticate, async (req, res) => {
+    const current = req.body?.current_password;
+    const password = req.body?.new_password;
+    if (typeof current !== 'string' || !current || typeof password !== 'string' ||
+        password.length < 12 || password.length > 128 || current === password) {
+        return sendError(res, 400, 'Current password required; new password must be different and 12–128 characters');
+    }
+    try {
+        const verify = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
+            method:'POST', headers:{apikey:SUPABASE_ANON_KEY,'Content-Type':'application/json'},
+            body:JSON.stringify({email:req.user.email,password:current})
+        });
+        if (!verify.ok) return sendError(res, 401, 'Current password is incorrect');
+        const verified = await verify.json();
+        const bearer = /^Bearer (.+)$/i.exec(req.headers.authorization || '')?.[1];
+        if (!verified.user?.id || verified.user.email?.toLowerCase() !== req.user.email.toLowerCase()) {
+            return sendError(res, 401, 'Current password verification failed');
+        }
+        const changed = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+            method:'PUT', headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${bearer}`,'Content-Type':'application/json'},
+            body:JSON.stringify({password})
+        });
+        if (!changed.ok) return sendError(res, 400, 'Unable to change password. Try again.');
+        res.set('Cache-Control','no-store');
+        return res.json({message:'Password changed successfully.'});
+    } catch(error) {
+        console.error('Password change error:', error.message);
+        return sendError(res, 503, 'Password change temporarily unavailable');
+    }
+});
+
 // ==========================================
 // AUTHENTICATION MIDDLEWARE
 // ==========================================
- 
+
 async function authenticate(req, res, next) {
     const match = /^Bearer (.+)$/i.exec(
         req.headers.authorization || ''
     );
- 
+
     const token = match?.[1];
- 
+
     if (!token) {
         return sendError(
             res,
@@ -288,7 +348,7 @@ async function authenticate(req, res, next) {
             'Login required'
         );
     }
- 
+
     try {
         const response = await fetch(
             `${SUPABASE_URL}/auth/v1/user`,
@@ -299,7 +359,7 @@ async function authenticate(req, res, next) {
                 }
             }
         );
- 
+
         if (!response.ok) {
             return sendError(
                 res,
@@ -307,9 +367,9 @@ async function authenticate(req, res, next) {
                 'Session expired. Log in again.'
             );
         }
- 
+
         const authUser = await response.json();
- 
+
         if (
             !authUser.id ||
             !authUser.email
@@ -320,7 +380,7 @@ async function authenticate(req, res, next) {
                 'Invalid session'
             );
         }
- 
+
         const { rows } = await pool.query(
             `
             SELECT
@@ -337,7 +397,7 @@ async function authenticate(req, res, next) {
                 cleanEmail(authUser.email)
             ]
         );
- 
+
         if (
             !rows.length ||
             !VALID_ROLES.includes(rows[0].role)
@@ -348,17 +408,17 @@ async function authenticate(req, res, next) {
                 'Account not active'
             );
         }
- 
+
         req.user = rows[0];
- 
+
         next();
- 
+
     } catch (error) {
         console.error(
             'Authentication error:',
             error
         );
- 
+
         sendError(
             res,
             500,
@@ -366,11 +426,11 @@ async function authenticate(req, res, next) {
         );
     }
 }
- 
+
 // ==========================================
 // STORE ACCESS CONTROL
 // ==========================================
- 
+
 function storeScope(user, alias = 'm') {
     if (
         ['ADMIN', 'AOM', 'HEAD'].includes(user.role)
@@ -380,7 +440,7 @@ function storeScope(user, alias = 'm') {
             args: []
         };
     }
- 
+
     if (user.role === 'STORE') {
         return {
             sql: `
@@ -393,7 +453,7 @@ function storeScope(user, alias = 'm') {
             ]
         };
     }
- 
+
     if (user.role === 'AS') {
         return {
             sql: `
@@ -409,17 +469,17 @@ function storeScope(user, alias = 'm') {
             args: [user.email]
         };
     }
- 
+
     return {
         sql: 'FALSE',
         args: []
     };
 }
- 
+
 // ==========================================
 // MONITORING DATA QUERY
 // ==========================================
- 
+
 const monitoringEntries = `
     SELECT
         m.monitoring_id,
@@ -444,12 +504,12 @@ const monitoringEntries = `
          WHERE ar.monitoring_id = m.monitoring_id
            AND ar.expiration_date = v.expiration_date
          LIMIT 1) AS action_remarks
- 
+
     FROM public.monitoring m
- 
+
     JOIN public.products p
       ON p.product_id = m.product_id
- 
+
     CROSS JOIN LATERAL (
         SELECT legacy.expiration_date, legacy.quantity, legacy.slot
         FROM (VALUES
@@ -464,45 +524,45 @@ const monitoringEntries = `
         FROM jsonb_array_elements(COALESCE(m.extra_expirations, '[]'::jsonb))
              WITH ORDINALITY AS extra(item, ordinality)
     ) AS v
- 
+
     WHERE v.expiration_date IS NOT NULL
       AND v.quantity > 0
 `;
- 
+
 // ==========================================
 // EXPIRATION CATEGORY
 // ==========================================
- 
+
 function expiryCategory(date) {
     const today = new Date();
     const todayUTC = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate());
     const expiration = new Date(date);
     const expiryUTC = Date.UTC(expiration.getUTCFullYear(), expiration.getUTCMonth(), expiration.getUTCDate());
     const days = Math.round((expiryUTC - todayUTC) / 86400000);
- 
+
     if (days < 0) return 'EXPIRED';
     if (days <= 30) return 'RED';
     if (days <= 60) return 'BLUE';
     if (days <= 90) return 'GREEN';
- 
+
     const sixMonths = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() + 6, 1));
     const lastDay = new Date(Date.UTC(sixMonths.getUTCFullYear(), sixMonths.getUTCMonth() + 1, 0)).getUTCDate();
     const sixMonthLimit = Date.UTC(sixMonths.getUTCFullYear(), sixMonths.getUTCMonth(), Math.min(today.getUTCDate(), lastDay));
     return expiryUTC <= sixMonthLimit ? 'ORANGE' : 'LATER';
 }
- 
+
 // ==========================================
 // CURRENT USER
 // ==========================================
- 
+
 app.get('/api/me', authenticate, (req, res) => {
     res.json(req.user);
 });
- 
+
 // ==========================================
 // GET ACTIVE SUPPLIERS
 // ==========================================
- 
+
 app.get(
     '/api/suppliers',
     authenticate,
@@ -514,9 +574,9 @@ app.get(
                 WHERE status = 'ACTIVE'
                 ORDER BY supplier_name
             `);
- 
+
             res.json(rows);
- 
+
         } catch (error) {
             databaseError(
                 res,
@@ -526,11 +586,11 @@ app.get(
         }
     }
 );
- 
+
 // ==========================================
 // SEARCH ACTIVE PRODUCTS
 // ==========================================
- 
+
 app.get(
     '/api/products',
     authenticate,
@@ -538,11 +598,11 @@ app.get(
         const supplier = String(
             req.query.supplier || ''
         ).slice(0, 255);
- 
+
         const search = String(
             req.query.search || ''
         ).trim().slice(0, 100);
- 
+
         try {
             const { rows } = await pool.query(
                 `
@@ -576,9 +636,9 @@ app.get(
                 `,
                 [supplier, search]
             );
- 
+
             res.json(rows);
- 
+
         } catch (error) {
             databaseError(
                 res,
@@ -588,37 +648,37 @@ app.get(
         }
     }
 );
- 
+
 // ==========================================
 // GET ACCESSIBLE STORES
 // ==========================================
- 
+
 app.get(
     '/api/stores',
     authenticate,
     async (req, res) => {
         try {
             const user = req.user;
- 
+
             let query = `
                 SELECT s.store_name
                 FROM public.stores s
                 WHERE s.status = 'ACTIVE'
             `;
- 
+
             let args = [];
- 
+
             if (user.role === 'STORE') {
                 query += `
                     AND s.store_name = $1
                     AND LOWER(s.store_email) = LOWER($2)
                 `;
- 
+
                 args = [
                     user.store_name,
                     user.email
                 ];
- 
+
             } else if (user.role === 'AS') {
                 query += `
                     AND EXISTS (
@@ -628,19 +688,19 @@ app.get(
                           AND LOWER(a.as_email) = LOWER($1)
                     )
                 `;
- 
+
                 args = [user.email];
             }
- 
+
             query += ' ORDER BY s.store_name';
- 
+
             const { rows } = await pool.query(
                 query,
                 args
             );
- 
+
             res.json(rows);
- 
+
         } catch (error) {
             databaseError(
                 res,
@@ -650,18 +710,18 @@ app.get(
         }
     }
 );
- 
+
 // ==========================================
 // GET MONITORING RECORDS
 // ==========================================
- 
+
 app.get(
     '/api/monitoring',
     authenticate,
     async (req, res) => {
         try {
             const scope = storeScope(req.user);
- 
+
             const { rows } = await pool.query(
                 `
                 WITH saved_task_rows AS (
@@ -724,7 +784,7 @@ app.get(
                 `,
                 scope.args
             );
- 
+
             const records = rows.map(record => ({
                 ...record,
                 action_remarks: req.user.role === "ADMIN" ? record.action_remarks : undefined,
@@ -732,9 +792,9 @@ app.get(
                     record.expiration_date
                 )
             }));
- 
+
             res.json(records);
- 
+
         } catch (error) {
             databaseError(
                 res,
@@ -744,7 +804,7 @@ app.get(
         }
     }
 );
- 
+
 // My Tasks remarks are separate from stock and existing monitoring remarks.
 app.put('/api/admin/monitoring/task-action-remarks', authenticate, adminOnly, async (req, res) => {
     const storeEmail = cleanEmail(req.body?.store_email);
@@ -789,7 +849,7 @@ app.put('/api/admin/monitoring/task-action-remarks', authenticate, adminOnly, as
         res.json({message:'Remarks saved'});
     } catch (error) { databaseError(res, error, 'Could not save task remarks'); }
 });
- 
+
 // ==========================================
 app.put('/api/admin/monitoring/action-remarks', authenticate, adminOnly, async (req, res) => {
     const id = validId(req.body?.monitoring_id);
@@ -817,17 +877,17 @@ app.put('/api/admin/monitoring/action-remarks', authenticate, adminOnly, async (
         res.json({message:'Remarks saved'});
     } catch(error) { databaseError(res,error,'Could not save remarks'); }
 });
- 
+
 // DASHBOARD SUMMARY
 // ==========================================
- 
+
 app.get(
     '/api/dashboard',
     authenticate,
     async (req, res) => {
         try {
             const scope = storeScope(req.user);
- 
+
             const { rows } = await pool.query(
                 `
                 WITH saved_task_rows AS (
@@ -901,7 +961,7 @@ app.get(
                 `,
                 scope.args
             );
- 
+
             const counts = {
                 RED: 0,
                 BLUE: 0,
@@ -910,12 +970,12 @@ app.get(
                 LATER: 0,
                 ORANGE: 0
             };
- 
+
             for (const record of rows) {
                 const category = expiryCategory(record.expiration_date);
                 counts[category]++;
             }
- 
+
             res.json(counts);
         } catch (error) {
             databaseError(res, error, 'Could not load dashboard');
@@ -926,7 +986,7 @@ app.get(
 // ==========================================
 // SAVE STORE MONITORING
 // ==========================================
- 
+
 app.post(
     '/api/store/monitoring',
     authenticate,
@@ -938,13 +998,13 @@ app.post(
                 'Only STORE accounts can encode monitoring'
             );
         }
- 
+
         const user = req.user;
- 
+
         const productId = Number(
             req.body.product_id
         );
- 
+
         if (
             !Number.isSafeInteger(productId) ||
             productId <= 0
@@ -955,18 +1015,18 @@ app.post(
                 'Invalid product'
             );
         }
- 
+
         const rawEntries = Array.isArray(req.body.expirations)
             ? req.body.expirations
             : [1, 2, 3].map(i => ({
                 expiration_date: req.body[`exp${i}`],
                 quantity: req.body[`qty${i}`]
             }));
- 
+
         if (rawEntries.length > 100) {
             return sendError(res, 400, 'Maximum 100 expiration entries per product');
         }
- 
+
         const entries = [];
         for (let i = 0; i < rawEntries.length; i++) {
             const entry = rawEntries[i] || {};
@@ -990,14 +1050,14 @@ app.post(
         const dates = [0, 1, 2].map(i => entries[i]?.expiration_date ?? null);
         const quantities = [0, 1, 2].map(i => entries[i]?.quantity ?? null);
         const extraExpirations = JSON.stringify(entries.slice(3));
- 
+
         const srp = (
             req.body.srp == null ||
             req.body.srp === ''
         )
             ? null
             : Number(req.body.srp);
- 
+
         if (
             srp !== null &&
             (
@@ -1011,11 +1071,11 @@ app.post(
                 'Invalid retail price'
             );
         }
- 
+
         const barcode = String(
             req.body.store_barcode || ''
         ).trim().slice(0, 150);
- 
+
         let client;
         try {
             client = await pool.connect();
@@ -1033,7 +1093,7 @@ app.post(
                     user.store_name
                 ]
             );
- 
+
             if (!storeResult.rows.length) {
                 return sendError(
                     res,
@@ -1041,7 +1101,7 @@ app.post(
                     'Store profile does not match registered store'
                 );
             }
- 
+
             const productResult = await client.query(
                 `
                 SELECT
@@ -1057,7 +1117,7 @@ app.post(
                 `,
                 [productId]
             );
- 
+
             if (!productResult.rows.length) {
                 return sendError(
                     res,
@@ -1065,9 +1125,9 @@ app.post(
                     'Product not found'
                 );
             }
- 
+
             const product = productResult.rows[0];
- 
+
             // Lock matching task assignments before writing monitoring.
             // This protects submitted and expired tasks even through the
             // existing Store Monitoring screen, not only the task screen.
@@ -1089,7 +1149,7 @@ app.post(
                 `,
                 [user.email, user.store_name, product.supplier_name]
             );
- 
+
             for (const task of taskLocks.rows) {
                 if (task.status !== 'ACTIVE' || task.submitted ||
                     (task.due_at && new Date(task.due_at).getTime() <= Date.now())) {
@@ -1098,7 +1158,7 @@ app.post(
                         'This supplier task is submitted, expired, or inactive. Only ADMIN can reopen it.');
                 }
             }
- 
+
             const { rows } = await client.query(
                 `
                 INSERT INTO public.monitoring
@@ -1164,13 +1224,13 @@ app.post(
                     extraExpirations
                 ]
             );
- 
+
             await client.query('COMMIT');
             res.json({
                 message: 'Monitoring saved',
                 monitoring_id: rows[0].monitoring_id
             });
- 
+
         } catch (error) {
             if (client) {
                 try { await client.query('ROLLBACK'); } catch (_) {}
@@ -1185,7 +1245,7 @@ app.post(
         }
     }
 );
- 
+
 // ADMIN ONLY: dispose one expired expiration-date entry, preserving all other dates.
 app.post('/api/admin/monitoring/dispose-expired', authenticate, adminOnly, async (req, res) => {
     const monitoringId = Number(req.body?.monitoring_id);
@@ -1270,7 +1330,7 @@ app.post('/api/admin/monitoring/dispose-expired', authenticate, adminOnly, async
         if (client) client.release();
     }
 });
- 
+
 // ADMIN ONLY: dispose an expired My Tasks date without touching other dates.
 app.post('/api/admin/monitoring/dispose-task-expired', authenticate, adminOnly, async (req, res) => {
     const storeEmail = cleanEmail(req.body?.store_email);
@@ -1376,11 +1436,11 @@ app.post('/api/admin/monitoring/dispose-task-expired', authenticate, adminOnly, 
         if (client) client.release();
     }
 });
- 
+
 // ==========================================
 // EXPORT MONITORING TO EXCEL
 // ==========================================
- 
+
 app.get(
     '/api/export/monitoring',
     authenticate,
@@ -1403,7 +1463,7 @@ app.get(
             const supplierCondition = suppliers.length ?
                 ` AND m.supplier = ANY($${scope.args.length + 1}::text[])` : '';
             const queryArgs = suppliers.length ? [...scope.args, suppliers] : scope.args;
- 
+
             const { rows } = await pool.query(
                 `
                 SELECT *
@@ -1416,7 +1476,7 @@ app.get(
                 `,
                 queryArgs
             );
- 
+
             const filteredRows = categories.length ? rows.filter(record => categories.includes(expiryCategory(record.expiration_date))) : rows;
             const records = filteredRows.map(record => ({
                 Store: record.store_name,
@@ -1439,21 +1499,21 @@ app.get(
                 'Updated By': record.updated_by,
                 ...(req.user.role === 'ADMIN' ? {'ACTION / REMARKS': record.action_remarks || ''} : {})
             }));
- 
+
             const workbook = XLSX.utils.book_new();
- 
+
             const worksheet = XLSX.utils.json_to_sheet(
                 records.length
                     ? records
                     : [{ Message: 'No monitoring records' }]
             );
- 
+
             XLSX.utils.book_append_sheet(
                 workbook,
                 worksheet,
                 'Monitoring'
             );
- 
+
             const file = XLSX.write(
                 workbook,
                 {
@@ -1461,7 +1521,7 @@ app.get(
                     bookType: 'xlsx'
                 }
             );
- 
+
             res.set({
                 'Content-Type':
                     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -1469,9 +1529,9 @@ app.get(
                     'attachment; filename="NEMS_Monitoring.xlsx"',
                 'Cache-Control': 'no-store'
             });
- 
+
             res.send(file);
- 
+
         } catch (error) {
             databaseError(
                 res,
@@ -1481,11 +1541,11 @@ app.get(
         }
     }
 );
- 
+
 // ==========================================
 // DISABLE OUTDATED MASTERLIST IMPORT
 // ==========================================
- 
+
 app.post(
     '/api/admin/import-excel',
     authenticate,
@@ -1498,13 +1558,13 @@ app.post(
         );
     }
 );
- 
+
 // ==========================================
 // ADMIN SUPPLIER MANAGEMENT
 // ==========================================
- 
+
 // ADMIN: LIST ALL SUPPLIERS
- 
+
 app.get(
     '/api/admin/suppliers',
     authenticate,
@@ -1521,9 +1581,9 @@ app.get(
                     supplier_name,
                     supplier_id
             `);
- 
+
             res.json(rows);
- 
+
         } catch (error) {
             databaseError(
                 res,
@@ -1533,9 +1593,9 @@ app.get(
         }
     }
 );
- 
+
 // ADMIN: ADD SUPPLIER
- 
+
 app.post(
     '/api/admin/suppliers',
     authenticate,
@@ -1544,7 +1604,7 @@ app.post(
         const name = requiredText(
             req.body.supplier_name
         );
- 
+
         if (!name) {
             return sendError(
                 res,
@@ -1552,7 +1612,7 @@ app.post(
                 'Valid supplier name required'
             );
         }
- 
+
         try {
             const { rows } = await pool.query(
                 `
@@ -1574,7 +1634,7 @@ app.post(
                 `,
                 [name]
             );
- 
+
             if (!rows.length) {
                 return sendError(
                     res,
@@ -1582,9 +1642,9 @@ app.post(
                     'Supplier already exists'
                 );
             }
- 
+
             res.status(201).json(rows[0]);
- 
+
         } catch (error) {
             databaseError(
                 res,
@@ -1594,22 +1654,22 @@ app.post(
         }
     }
 );
- 
+
 // ADMIN: EDIT OR DEACTIVATE SUPPLIER
- 
+
 app.patch(
     '/api/admin/suppliers/:id',
     authenticate,
     adminOnly,
     async (req, res) => {
         const id = validId(req.params.id);
- 
+
         const name = requiredText(
             req.body.supplier_name
         );
- 
+
         const status = req.body.status;
- 
+
         if (
             !id ||
             !name ||
@@ -1621,7 +1681,7 @@ app.patch(
                 'Invalid supplier information'
             );
         }
- 
+
         try {
             const duplicate = await pool.query(
                 `
@@ -1634,7 +1694,7 @@ app.patch(
                 `,
                 [name, id]
             );
- 
+
             if (duplicate.rows.length) {
                 return sendError(
                     res,
@@ -1642,7 +1702,7 @@ app.patch(
                     'Supplier name already exists'
                 );
             }
- 
+
             const { rows } = await pool.query(
                 `
                 UPDATE public.suppliers
@@ -1657,7 +1717,7 @@ app.patch(
                 `,
                 [name, status, id]
             );
- 
+
             if (!rows.length) {
                 return sendError(
                     res,
@@ -1665,9 +1725,9 @@ app.patch(
                     'Supplier not found'
                 );
             }
- 
+
             res.json(rows[0]);
- 
+
         } catch (error) {
             databaseError(
                 res,
@@ -1677,13 +1737,13 @@ app.patch(
         }
     }
 );
- 
+
 // ==========================================
 // ADMIN PRODUCT MANAGEMENT
 // ==========================================
- 
+
 // ADMIN: LIST PRODUCTS INCLUDING LANDED COST
- 
+
 app.get(
     '/api/admin/products',
     authenticate,
@@ -1693,7 +1753,7 @@ app.get(
             const search = String(
                 req.query.search || ''
             ).trim().slice(0, 100);
- 
+
             const { rows } = await pool.query(
                 `
                 SELECT
@@ -1721,9 +1781,9 @@ app.get(
                 `,
                 [search]
             );
- 
+
             res.json(rows);
- 
+
         } catch (error) {
             databaseError(
                 res,
@@ -1733,54 +1793,54 @@ app.get(
         }
     }
 );
- 
+
 // ==========================================
 // PRODUCT VALIDATION
 // ==========================================
- 
+
 function productInput(body) {
     const sku = requiredText(body.sku);
- 
+
     const productName = requiredText(
         body.product_name
     );
- 
+
     const supplierName = requiredText(
         body.supplier_name
     );
- 
+
     const barcode = optionalText(
         body.master_barcode
     );
- 
+
     const condition = optionalText(
         body.condition
     );
- 
+
     const remarks = optionalText(
         body.remarks,
         10000
     );
- 
+
     const category = optionalText(
         body.category
     );
- 
+
     const shelfLife = optionalText(
         body.shelf_life,
         1000
     );
- 
+
     const srp = optionalPrice(
         body.master_srp
     );
- 
+
     const landedCost = optionalPrice(
         body.landed_cost
     );
- 
+
     const status = body.status || 'ACTIVE';
- 
+
     if (
         !sku ||
         !productName ||
@@ -1796,7 +1856,7 @@ function productInput(body) {
     ) {
         return null;
     }
- 
+
     return {
         sku,
         productName,
@@ -1811,7 +1871,7 @@ function productInput(body) {
         status
     };
 }
- 
+
 function productValues(p) {
     return [
         p.sku,
@@ -1827,16 +1887,16 @@ function productValues(p) {
         p.landedCost
     ];
 }
- 
+
 // ADMIN: ADD PRODUCT
- 
+
 app.post(
     '/api/admin/products',
     authenticate,
     adminOnly,
     async (req, res) => {
         const p = productInput(req.body);
- 
+
         if (!p) {
             return sendError(
                 res,
@@ -1844,7 +1904,7 @@ app.post(
                 'Invalid product information'
             );
         }
- 
+
         try {
             const { rows } = await pool.query(
                 `
@@ -1872,9 +1932,9 @@ app.post(
                 `,
                 productValues(p)
             );
- 
+
             res.status(201).json(rows[0]);
- 
+
         } catch (error) {
             databaseError(
                 res,
@@ -1884,18 +1944,18 @@ app.post(
         }
     }
 );
- 
+
 // ADMIN: EDIT PRODUCT BY PRODUCT ID
- 
+
 app.patch(
     '/api/admin/products/:id',
     authenticate,
     adminOnly,
     async (req, res) => {
         const id = validId(req.params.id);
- 
+
         const p = productInput(req.body);
- 
+
         if (!id || !p) {
             return sendError(
                 res,
@@ -1903,7 +1963,7 @@ app.patch(
                 'Invalid product information'
             );
         }
- 
+
         try {
             const { rows } = await pool.query(
                 `
@@ -1932,7 +1992,7 @@ app.patch(
                     id
                 ]
             );
- 
+
             if (!rows.length) {
                 return sendError(
                     res,
@@ -1940,9 +2000,9 @@ app.patch(
                     'Product not found'
                 );
             }
- 
+
             res.json(rows[0]);
- 
+
         } catch (error) {
             databaseError(
                 res,
@@ -1952,11 +2012,11 @@ app.patch(
         }
     }
 );
- 
+
 // ==========================================
 // ACTIVITY HISTORY ACCESS CONTROL
 // ==========================================
- 
+
 function historyScope(user) {
     if (user.role === 'ADMIN') {
         return {
@@ -1964,7 +2024,7 @@ function historyScope(user) {
             args: []
         };
     }
- 
+
     if (user.role === 'STORE') {
         return {
             sql: `
@@ -1977,61 +2037,61 @@ function historyScope(user) {
             ]
         };
     }
- 
+
     // Other roles are not granted activity-history
     // access until their permissions are defined.
- 
+
     return null;
 }
- 
+
 function historyQueryParameters(req, scope) {
     const clauses = [scope.sql];
     const args = [...scope.args];
- 
+
     function addCondition(value, sqlBuilder) {
         if (!value) return;
- 
+
         args.push(value);
- 
+
         clauses.push(
             sqlBuilder(`$${args.length}`)
         );
     }
- 
+
     const store = String(
         req.query.store || ''
     ).trim().slice(0, 255);
- 
+
     const supplier = String(
         req.query.supplier || ''
     ).trim().slice(0, 255);
- 
+
     const search = String(
         req.query.search || ''
     ).trim().slice(0, 100);
- 
+
     const action = String(
         req.query.action || ''
     ).trim().toUpperCase();
- 
+
     const from = String(
         req.query.from || ''
     ).trim();
- 
+
     const to = String(
         req.query.to || ''
     ).trim();
- 
+
     addCondition(
         store,
         p => `h.store_name = ${p}`
     );
- 
+
     addCondition(
         supplier,
         p => `h.supplier = ${p}`
     );
- 
+
     addCondition(
         search,
         p => `(
@@ -2039,7 +2099,7 @@ function historyQueryParameters(req, scope) {
             OR h.sku ILIKE '%' || ${p} || '%'
         )`
     );
- 
+
     if (
         ['INSERT', 'UPDATE', 'DELETE'].includes(action)
     ) {
@@ -2048,37 +2108,37 @@ function historyQueryParameters(req, scope) {
             p => `h.action = ${p}`
         );
     }
- 
+
     if (/^\d{4}-\d{2}-\d{2}$/.test(from)) {
         addCondition(
             from,
             p => `h.changed_at >= ${p}::date`
         );
     }
- 
+
     if (/^\d{4}-\d{2}-\d{2}$/.test(to)) {
         addCondition(
             to,
             p => `h.changed_at < (${p}::date + INTERVAL '1 day')`
         );
     }
- 
+
     return {
         where: clauses.join(' AND '),
         args
     };
 }
- 
+
 // ==========================================
 // FULL ACTIVITY HISTORY
 // ==========================================
- 
+
 app.get(
     '/api/history',
     authenticate,
     async (req, res) => {
         const scope = historyScope(req.user);
- 
+
         if (!scope) {
             return sendError(
                 res,
@@ -2086,12 +2146,12 @@ app.get(
                 'History access not available for this role'
             );
         }
- 
+
         const filters = historyQueryParameters(
             req,
             scope
         );
- 
+
         const limit = Math.min(
             Math.max(
                 parseInt(req.query.limit, 10) || 100,
@@ -2099,7 +2159,7 @@ app.get(
             ),
             500
         );
- 
+
         const page = Math.min(
             Math.max(
                 parseInt(req.query.page, 10) || 1,
@@ -2107,9 +2167,9 @@ app.get(
             ),
             100000
         );
- 
+
         const offset = (page - 1) * limit;
- 
+
         try {
             const countResult = await pool.query(
                 `
@@ -2119,16 +2179,16 @@ app.get(
                 `,
                 filters.args
             );
- 
+
             const dataArgs = [
                 ...filters.args,
                 limit,
                 offset
             ];
- 
+
             const limitIndex = dataArgs.length - 1;
             const offsetIndex = dataArgs.length;
- 
+
             const { rows } = await pool.query(
                 `
                 SELECT
@@ -2156,14 +2216,14 @@ app.get(
                 `,
                 dataArgs
             );
- 
+
             res.json({
                 records: rows,
                 total: countResult.rows[0].total,
                 page,
                 limit
             });
- 
+
         } catch (error) {
             databaseError(
                 res,
@@ -2173,17 +2233,17 @@ app.get(
         }
     }
 );
- 
+
 // ==========================================
 // RECENT DASHBOARD ACTIVITIES
 // ==========================================
- 
+
 app.get(
     '/api/history/recent',
     authenticate,
     async (req, res) => {
         const scope = historyScope(req.user);
- 
+
         if (!scope) {
             return sendError(
                 res,
@@ -2191,7 +2251,7 @@ app.get(
                 'History access not available for this role'
             );
         }
- 
+
         try {
             const { rows } = await pool.query(
                 `
@@ -2216,9 +2276,9 @@ app.get(
                 `,
                 scope.args
             );
- 
+
             res.json(rows);
- 
+
         } catch (error) {
             databaseError(
                 res,
@@ -2228,7 +2288,7 @@ app.get(
         }
     }
 );
- 
+
 // ==========================================
 // TASK ASSIGNMENT ROUTES
 // ==========================================
@@ -2239,21 +2299,21 @@ require('./nems-tasks')({
     authenticate,
     adminOnly
 });
- 
+
 // ADMIN USER MANAGEMENT ROUTES
 require('./nems-users')({ app, pool, authenticate, adminOnly });
- 
+
 // ADMIN STORE MANAGEMENT ROUTES
 require('./nems-stores')({ app, pool, authenticate, adminOnly });
- 
+
 // ==========================================
 // START SERVER
 // ==========================================
- 
+
 const PORT = Number(
     process.env.PORT || 3000
 );
- 
+
 app.listen(
     PORT,
     '0.0.0.0',
