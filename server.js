@@ -983,6 +983,20 @@ app.get(
     }
 );
 
+
+// Store remarks are shared only with users authorized for the store.
+app.get('/api/store/remarks', authenticate, async (req,res) => {
+    const productId = validId(req.query.product_id);
+    if (!productId) return sendError(res,400,'Valid product ID required');
+    try {
+        const scope=storeScope(req.user,'r');
+        const {rows}=await pool.query(`SELECT r.store_name,r.employee_name,r.remarks,r.source,r.created_at
+            FROM public.nems_store_remarks r WHERE r.product_id=$${scope.args.length+1}
+            AND ${scope.sql} ORDER BY r.created_at DESC,r.remark_id DESC LIMIT 100`,[...scope.args,productId]);
+        return res.json(rows);
+    } catch(e){return databaseError(res,e,'Could not load Store Remarks');}
+});
+
 // ==========================================
 // SAVE STORE MONITORING
 // ==========================================
@@ -1000,6 +1014,10 @@ app.post(
         }
 
         const user = req.user;
+        const employeeName = typeof req.body.employee_name === 'string' ? req.body.employee_name.trim() : '';
+        const storeRemarks = typeof req.body.store_remarks === 'string' ? req.body.store_remarks.trim() : '';
+        if (!employeeName || employeeName.length > 120 || !storeRemarks || storeRemarks.length > 2000)
+            return sendError(res, 400, 'Employee full name and Store Remarks are required');
 
         const productId = Number(
             req.body.product_id
@@ -1225,6 +1243,11 @@ app.post(
                 ]
             );
 
+            await client.query(`INSERT INTO public.nems_store_remarks
+                (store_name, store_email, product_id, employee_name, remarks, source, account_email, details)
+                VALUES ($1,$2,$3,$4,$5,'STORE_ENCODING',$6,$7::jsonb)`,
+                [user.store_name,user.email,productId,employeeName,storeRemarks,user.email,
+                 JSON.stringify({expirations:entries,store_barcode:barcode,srp})]);
             await client.query('COMMIT');
             res.json({
                 message: 'Monitoring saved',
