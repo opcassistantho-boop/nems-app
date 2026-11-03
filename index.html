@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>CARD INDOGROSIR · NEMS</title>
-
+ 
 <style>
 :root {
     --navy:#123464;
@@ -32,7 +32,7 @@ header {
 }
 header h1 { font-size:20px; margin:0; }
 header small { font-size:13px; }
-
+ 
 button {
     border:0;
     background:var(--blue);
@@ -48,7 +48,7 @@ button.secondary { background:#66778e; }
 button.danger { background:#b52e3c; }
 button.green { background:#138258; }
 button.small { padding:7px 11px; font-size:12px; }
-
+ 
 input,select,textarea {
     width:100%;
     border:1px solid #c9d5e2;
@@ -59,7 +59,7 @@ input,select,textarea {
     color:var(--text);
 }
 textarea { min-height:76px; }
-
+ 
 label {
     display:block;
     font-weight:bold;
@@ -79,7 +79,7 @@ main {
     box-shadow:0 3px 12px #16345810;
 }
 .panel h2 { margin:0 0 18px; font-size:21px; }
-
+ 
 .row {
     display:flex;
     gap:10px;
@@ -88,7 +88,7 @@ main {
 }
 .row > * { flex:1; }
 .row button { flex:0 0 auto; }
-
+ 
 .tabs {
     display:flex;
     gap:8px;
@@ -103,7 +103,7 @@ main {
     background:var(--navy);
     color:white;
 }
-
+ 
 .grid {
     display:grid;
     grid-template-columns:repeat(4,1fr);
@@ -122,12 +122,12 @@ main {
 .metric small { font-weight:bold; }
 .metric[role="button"] { cursor:pointer; }
 .metric[role="button"]:focus-visible { outline:3px solid #142b47; outline-offset:3px; }
-
+ 
 .red { background:#b72c39; }
 .blue { background:#2760b5; }
 .greenbg { background:#158353; }
 .gray { background:#424e64; }
-
+ 
 .tablewrap {
     overflow:auto;
     width:100%;
@@ -148,20 +148,20 @@ th {
     white-space:nowrap;
 }
 td button { margin:2px; }
-
+ 
 .muted {
     color:#62738a;
     font-size:12px;
 }
 .hidden { display:none!important; }
-
+ 
 .formgrid {
     display:grid;
     grid-template-columns:repeat(3,1fr);
     gap:14px;
 }
 .formgrid .wide { grid-column:1/-1; }
-
+ 
 .formactions {
     display:flex;
     gap:10px;
@@ -179,7 +179,7 @@ td button { margin:2px; }
     background:#ffe8e8;
     color:#a1192c;
 }
-
+ 
 #loginPanel {
     max-width:420px;
     margin:75px auto;
@@ -187,9 +187,9 @@ td button { margin:2px; }
 #loginPanel input { margin-bottom:13px; }
 #loginPanel button { width:100%; }
 #loginPanel h2 { text-align:center; }
-
+ 
 .countline { margin-top:12px; }
-
+ 
 .historyfilters {
     display:grid;
     grid-template-columns:repeat(3,minmax(0,1fr));
@@ -197,7 +197,7 @@ td button { margin:2px; }
     margin-bottom:16px;
 }
 .historyfilters .filteritem { min-width:0; }
-
+ 
 .history-action {
     display:inline-block;
     padding:5px 9px;
@@ -217,7 +217,7 @@ td button { margin:2px; }
     background:#ffe2e2;
     color:#a42132;
 }
-
+ 
 .activityitem {
     padding:13px 0;
     border-bottom:1px solid #e1e8f0;
@@ -232,7 +232,7 @@ td button { margin:2px; }
     color:#62738a;
     line-height:1.7;
 }
-
+ 
 .detailsbox {
     background:#f5f8fc;
     border:1px solid #dce5f0;
@@ -256,7 +256,7 @@ td button { margin:2px; }
     white-space:pre-wrap;
     overflow-wrap:anywhere;
 }
-
+ 
 .pager {
     display:flex;
     justify-content:space-between;
@@ -271,7 +271,7 @@ td button { margin:2px; }
     align-items:center;
 }
 .pager button { padding:8px 12px; }
-
+ 
 @media(max-width:800px) {
     .grid { grid-template-columns:repeat(2,1fr); }
     .formgrid { grid-template-columns:repeat(2,1fr); }
@@ -284,7 +284,7 @@ td button { margin:2px; }
     header h1 { font-size:17px; }
     .panel { padding:14px; }
 }
-
+ 
 /* NEMS task assignment UI */
 .nems-task-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:14px; margin:14px 0; }
 .nems-task-grid > div { min-width:0; }
@@ -295,8 +295,8 @@ td button { margin:2px; }
 .nems-task-actions { display:flex; flex-wrap:wrap; gap:8px; margin:12px 0; }
 #page-tasks .panel { margin-bottom:18px; }
 #page-tasks input, #page-tasks select { padding:9px; }
-
-
+ 
+ 
 /* Monitoring Records: expiration-based text colors only. */
 #monitorBody td.nems-exp-expired { color:#737d8c; }
 #monitorBody td.nems-exp-red { color:#c62828; }
@@ -304,7 +304,7 @@ td button { margin:2px; }
 #monitorBody td.nems-exp-green { color:#188038; }
 #monitorBody td.nems-exp-orange { color:#c05b00; }
 #monitorBody td.nems-exp-black { color:#111111; }
-
+ 
 /* STORE task flexible expiration rows */
 .nems-exp-entries {display:flex;flex-direction:column;gap:8px;margin-bottom:8px;min-width:310px}
 .nems-exp-entry {display:flex;gap:7px;align-items:center}
@@ -313,9 +313,9 @@ td button { margin:2px; }
 .nems-exp-entry button {white-space:nowrap}
 </style>
 </head>
-
+ 
 <body>
-
+ 
 <header>
     <h1>CARD INDOGROSIR · NEMS</h1>
     <div class="row" style="flex:0 1 auto">
@@ -328,9 +328,9 @@ td button { margin:2px; }
         >Log out</button>
     </div>
 </header>
-
+ 
 <main>
-
+ 
 <section id="nemsPasswordSetup" class="panel hidden" style="max-width:480px;margin:65px auto">
     <h2>Create Your NEMS Password</h2>
     <p>Choose a password with at least 12 characters. Your account still requires ADMIN approval before login.</p>
@@ -341,11 +341,11 @@ td button { margin:2px; }
         <div class="formactions"><button type="submit" id="nemsSetPasswordButton">Save Password</button></div>
     </form>
 </section>
-
+ 
 <section id="loginPanel" class="panel">
     <h2>NEMS Login</h2>
     <div id="loginMessage" class="message hidden"></div>
-
+ 
     <form id="loginForm">
         <label>Email Address</label>
         <input
@@ -354,7 +354,7 @@ td button { margin:2px; }
             autocomplete="username"
             required
         >
-
+ 
         <label>Password</label>
         <input
             id="loginPassword"
@@ -362,14 +362,14 @@ td button { margin:2px; }
             autocomplete="current-password"
             required
         >
-
+ 
         <button type="submit" id="loginBtn">
             Log in
         </button>
     </form>
     <button type="button" class="secondary" style="width:100%;margin-top:12px" onclick="nemsForgotPassword()">Forgot Password?</button>
 </section>
-
+ 
 <section id="nemsChangePasswordPanel" class="panel hidden" style="max-width:500px;margin:20px auto">
     <h2>Change Password</h2>
     <form id="nemsChangePasswordForm">
@@ -380,38 +380,38 @@ td button { margin:2px; }
     </form>
     <div id="nemsChangePasswordMessage" class="message hidden"></div>
 </section>
-
+ 
 <div id="application" class="hidden">
-
+ 
 <nav id="navigation" class="tabs">
     <button
         data-page="dashboard"
         onclick="showPage('dashboard')"
     >Dashboard</button>
-
+ 
     <button
         data-page="monitoring"
         onclick="showPage('monitoring')"
     >Monitoring</button>
-
+ 
     <button
         data-page="products"
         class="adminOnly hidden"
         onclick="showPage('products')"
     >Products</button>
-
+ 
     <button
         data-page="suppliers"
         class="adminOnly hidden"
         onclick="showPage('suppliers')"
     >Suppliers</button>
-
+ 
     <button
         data-page="storeentry"
         class="storeOnly hidden"
         onclick="showPage('storeentry')"
     >Store Encoding</button>
-
+ 
     <button
         data-page="history"
         class="historyOnly hidden"
@@ -419,50 +419,50 @@ td button { margin:2px; }
         id="historyNavButton"
     >Activity History</button>
 </nav>
-
+ 
 <div id="notice" class="message hidden"></div>
-
+ 
 <!-- ===================================== -->
 <!-- DASHBOARD -->
 <!-- ===================================== -->
-
+ 
 <section id="page-dashboard" class="page">
-
+ 
     <div class="grid">
         <div class="metric red" role="button" tabindex="0" aria-label="Show RED monitoring records" onclick="openMonitoringCategory('RED')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openMonitoringCategory('RED');}">
             <strong id="countRed">0</strong>
             <small>RED · Within 30 Days</small>
         </div>
-
+ 
         <div class="metric blue" role="button" tabindex="0" aria-label="Show BLUE monitoring records" onclick="openMonitoringCategory('BLUE')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openMonitoringCategory('BLUE');}">
             <strong id="countBlue">0</strong>
             <small>BLUE · 31–60 Days</small>
         </div>
-
+ 
         <div class="metric greenbg" role="button" tabindex="0" aria-label="Show GREEN monitoring records" onclick="openMonitoringCategory('GREEN')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openMonitoringCategory('GREEN');}">
             <strong id="countGreen">0</strong>
             <small>GREEN · 61–90 Days</small>
         </div>
-
+ 
         <div class="metric gray" role="button" tabindex="0" aria-label="Show EXPIRED monitoring records" onclick="openMonitoringCategory('EXPIRED')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openMonitoringCategory('EXPIRED');}">
             <strong id="countExpired">0</strong>
             <small>EXPIRED PRODUCTS</small>
         </div>
     </div>
-
+ 
     <div class="panel">
         <h2>Near Expiry Dashboard</h2>
-
+ 
         <p>
             Monitoring records are categorized by expiration date.
             Products beyond 90 days are tracked separately.
         </p>
-
+ 
         <div class="row">
             <button onclick="refreshDashboard()">
                 Refresh Dashboard
             </button>
-
+ 
             <button
                 class="secondary"
                 onclick="showPage('monitoring')"
@@ -471,7 +471,7 @@ td button { margin:2px; }
             </button>
         </div>
     </div>
-
+ 
     <div class="panel historyOnly hidden">
         <div class="row">
             <h2 id="recentTitle">Recent Store Activities</h2>
@@ -485,67 +485,67 @@ td button { margin:2px; }
                 View Full History
             </button>
         </div>
-
+ 
         <p class="muted">
             Latest monitoring additions, edits and deletions.
             Only changes recorded after the history trigger
             was installed will appear.
         </p>
-
+ 
         <div id="recentActivityList">
             <p class="muted">Loading recent activities...</p>
         </div>
     </div>
-
+ 
     <div class="panel adminOnly hidden">
         <h2>ADMIN Management</h2>
-
+ 
         <p>
             Manage the existing product and supplier masterlists
             without deleting or reimporting them.
         </p>
-
+ 
         <div class="row">
             <button onclick="showPage('products')">
                 Manage Products
             </button>
-
+ 
             <button onclick="showPage('suppliers')">
                 Manage Suppliers
             </button>
-
+ 
             <button onclick="showPage('history')">
                 Activity Log
             </button>
         </div>
-
+ 
         <p class="muted">
             User Management, Store Management, Excel Import,
             Task Assignment and Chat are not yet implemented.
         </p>
     </div>
-
+ 
 </section>
-
+ 
 <!-- ===================================== -->
 <!-- MONITORING -->
 <!-- ===================================== -->
-
+ 
 <section id="page-monitoring" class="page hidden">
     <div class="panel">
-
+ 
         <div class="row">
             <h2>Monitoring Records</h2>
-
+ 
             <button onclick="loadMonitoring()">
                 Refresh
             </button>
-
+ 
             <button onclick="downloadMonitoring()">
                 Download Excel
             </button>
         </div>
-
+ 
         <div class="row" style="margin-bottom:14px">
             <select
                 id="monitorCategory"
@@ -558,14 +558,14 @@ td button { margin:2px; }
                 <option>GREEN</option>
                 <option>LATER</option>
             </select>
-
+ 
             <input
                 id="monitorSearch"
                 placeholder="Search store, SKU, product or supplier"
                 oninput="renderMonitoring()"
             >
         </div>
-
+ 
         <details id="monitorExportOptions" style="margin:0 0 14px;padding:12px;border:1px solid #d7e0eb;border-radius:7px">
             <summary style="cursor:pointer;font-weight:bold">Excel Download Options — suppliers and expiration category</summary>
             <p class="muted">Choose suppliers and expiration categories for Excel. If none are selected in either group, all accessible records in that group are included.</p>
@@ -589,7 +589,7 @@ td button { margin:2px; }
             </div>
             <p class="muted">Download Excel exports selected suppliers and selected expiration categories. The Monitoring search/filter does not affect the export.</p>
         </details>
-
+ 
         <div class="tablewrap">
             <table>
                 <thead>
@@ -608,24 +608,24 @@ td button { margin:2px; }
                 <tbody id="monitorBody"></tbody>
             </table>
         </div>
-
+ 
         <p id="monitorCount" class="muted countline"></p>
     </div>
 </section>
-
+ 
 <!-- ===================================== -->
 <!-- SUPPLIER MANAGEMENT -->
 <!-- ===================================== -->
-
+ 
 <section
     id="page-suppliers"
     class="page hidden adminOnly"
 >
     <div class="panel">
-
+ 
         <div class="row">
             <h2>Supplier Management</h2>
-
+ 
             <button
                 class="green"
                 onclick="newSupplier()"
@@ -633,14 +633,14 @@ td button { margin:2px; }
                 + Add Supplier
             </button>
         </div>
-
+ 
         <div class="row">
             <input
                 id="supplierSearch"
                 placeholder="Search suppliers"
                 oninput="renderSuppliers()"
             >
-
+ 
             <select
                 id="supplierFilter"
                 onchange="renderSuppliers()"
@@ -649,14 +649,14 @@ td button { margin:2px; }
                 <option>ACTIVE</option>
                 <option>INACTIVE</option>
             </select>
-
+ 
             <button onclick="loadAdminSuppliers()">
                 Refresh
             </button>
         </div>
-
+ 
         <p id="supplierCount" class="muted"></p>
-
+ 
         <div class="tablewrap">
             <table>
                 <thead>
@@ -671,15 +671,15 @@ td button { margin:2px; }
             </table>
         </div>
     </div>
-
+ 
     <div id="supplierEditor" class="panel hidden">
         <h2 id="supplierEditorTitle">
             Add Supplier
         </h2>
-
+ 
         <form id="supplierForm">
             <input type="hidden" id="supplierId">
-
+ 
             <div class="formgrid">
                 <div>
                     <label>Supplier Name *</label>
@@ -689,7 +689,7 @@ td button { margin:2px; }
                         required
                     >
                 </div>
-
+ 
                 <div>
                     <label>Status</label>
                     <select id="supplierStatus">
@@ -698,7 +698,7 @@ td button { margin:2px; }
                     </select>
                 </div>
             </div>
-
+ 
             <div class="formactions">
                 <button
                     type="submit"
@@ -706,7 +706,7 @@ td button { margin:2px; }
                 >
                     Save Supplier
                 </button>
-
+ 
                 <button
                     type="button"
                     class="secondary"
@@ -718,20 +718,20 @@ td button { margin:2px; }
         </form>
     </div>
 </section>
-
+ 
 <!-- ===================================== -->
 <!-- PRODUCT MANAGEMENT -->
 <!-- ===================================== -->
-
+ 
 <section
     id="page-products"
     class="page hidden adminOnly"
 >
     <div class="panel">
-
+ 
         <div class="row">
             <h2>Product Management</h2>
-
+ 
             <button
                 class="green"
                 onclick="newProduct()"
@@ -739,14 +739,14 @@ td button { margin:2px; }
                 + Add Product
             </button>
         </div>
-
+ 
         <div class="row">
             <input
                 id="productSearch"
                 placeholder="Search SKU, product, supplier or barcode"
                 oninput="renderProducts()"
             >
-
+ 
             <select
                 id="productFilter"
                 onchange="renderProducts()"
@@ -755,20 +755,20 @@ td button { margin:2px; }
                 <option>ACTIVE</option>
                 <option>INACTIVE</option>
             </select>
-
+ 
             <button onclick="loadAdminProducts()">
                 Refresh
             </button>
         </div>
-
+ 
         <p class="muted">
             Products are identified by Product ID.
             Duplicate SKUs are preserved.
             Landed cost is ADMIN-only.
         </p>
-
+ 
         <p id="productCount" class="muted"></p>
-
+ 
         <div class="tablewrap">
             <table>
                 <thead>
@@ -787,37 +787,37 @@ td button { margin:2px; }
             </table>
         </div>
     </div>
-
+ 
     <div id="productEditor" class="panel hidden">
         <h2 id="productEditorTitle">
             Add Product
         </h2>
-
+ 
         <form id="productForm">
             <input type="hidden" id="productId">
-
+ 
             <div class="formgrid">
-
+ 
                 <div>
                     <label>SKU *</label>
                     <input id="pSku" required maxlength="255">
                 </div>
-
+ 
                 <div>
                     <label>Product Name *</label>
                     <input id="pName" required maxlength="255">
                 </div>
-
+ 
                 <div>
                     <label>Supplier *</label>
                     <select id="pSupplier" required></select>
                 </div>
-
+ 
                 <div>
                     <label>Master Barcode</label>
                     <input id="pBarcode" maxlength="255">
                 </div>
-
+ 
                 <div>
                     <label>Master SRP (₱)</label>
                     <input
@@ -827,7 +827,7 @@ td button { margin:2px; }
                         step="0.01"
                     >
                 </div>
-
+ 
                 <div>
                     <label>Landed Cost (₱) · ADMIN ONLY</label>
                     <input
@@ -837,22 +837,22 @@ td button { margin:2px; }
                         step="0.01"
                     >
                 </div>
-
+ 
                 <div>
                     <label>Category</label>
                     <input id="pCategory" maxlength="255">
                 </div>
-
+ 
                 <div>
                     <label>Condition</label>
                     <input id="pCondition" maxlength="255">
                 </div>
-
+ 
                 <div>
                     <label>Shelf Life</label>
                     <input id="pShelfLife" maxlength="1000">
                 </div>
-
+ 
                 <div>
                     <label>Status</label>
                     <select id="pStatus">
@@ -860,7 +860,7 @@ td button { margin:2px; }
                         <option>INACTIVE</option>
                     </select>
                 </div>
-
+ 
                 <div class="wide">
                     <label>Remarks</label>
                     <textarea
@@ -868,9 +868,9 @@ td button { margin:2px; }
                         maxlength="10000"
                     ></textarea>
                 </div>
-
+ 
             </div>
-
+ 
             <div class="formactions">
                 <button
                     type="submit"
@@ -878,7 +878,7 @@ td button { margin:2px; }
                 >
                     Save Product
                 </button>
-
+ 
                 <button
                     type="button"
                     class="secondary"
@@ -890,27 +890,27 @@ td button { margin:2px; }
         </form>
     </div>
 </section>
-
+ 
 <!-- ===================================== -->
 <!-- STORE ENCODING -->
 <!-- ===================================== -->
-
+ 
 <section
     id="page-storeentry"
     class="page hidden storeOnly"
 >
     <div class="panel">
         <h2>Store Monitoring Encoding</h2>
-
+ 
         <p class="muted">
             Select a product, then enter up to three
             expiration dates and quantities in pieces (nonnegative whole numbers).
         </p>
-
+ 
         <form id="storeForm">
             <div class="formgrid"><div><label>Employee Full Name *</label><input id="nemsStoreEmployee" maxlength="120" required autocomplete="name" placeholder="Type your full name"></div><div class="wide"><label>Store Remarks *</label><textarea id="nemsStoreRemark" maxlength="2000" required placeholder="Describe what was encoded or changed"></textarea></div></div>
             <div class="formgrid">
-
+ 
                 <div>
                     <label>Supplier</label>
                     <select
@@ -918,7 +918,7 @@ td button { margin:2px; }
                         onchange="searchEntryProducts()"
                     ></select>
                 </div>
-
+ 
                 <div>
                     <label>Search SKU, Product or Barcode</label>
                     <input
@@ -926,14 +926,14 @@ td button { margin:2px; }
                         placeholder="Type SKU, product name or barcode"
                     >
                 </div>
-
+ 
                 <div>
                     <label>Scan / Enter Master Barcode</label>
                     <input id="nemsEntryScanBarcode" type="text" inputmode="none" autocomplete="off" placeholder="Scan barcode here or type barcode" aria-label="Scan or enter master barcode">
                     <div class="formactions" style="margin-top:6px"><button type="button" class="secondary small" onclick="nemsLookupEntryBarcode()">Find Barcode</button><button type="button" class="secondary small" onclick="nemsStartEntryCamera()">Use Camera</button><button type="button" class="secondary small hidden" id="nemsStopCameraBtn" onclick="nemsStopEntryCamera()">Stop Camera</button></div>
                     <video id="nemsEntryCamera" class="hidden" playsinline muted style="width:100%;max-width:340px;margin-top:8px"></video>
                 </div>
-
+ 
                 <div>
                     <label>Product *</label>
                     <select
@@ -941,12 +941,12 @@ td button { margin:2px; }
                         required
                     ></select>
                 </div>
-
+ 
                 <div>
                     <label>Store Barcode</label>
                     <input id="entryBarcode">
                 </div>
-
+ 
                 <div>
                     <label>Store SRP (₱)</label>
                     <input
@@ -957,12 +957,12 @@ td button { margin:2px; }
                     >
                 </div>
             </div>
-
+ 
             <h3>Expiration Dates and Quantities</h3>
             <p class="muted">Enter one expiration date and quantity, or add more as needed (nonnegative whole numbers per row).</p>
             <div id="storeExpiryRows"></div>
             <button type="button" class="secondary small" onclick="addStoreExpiryRow()">+ Add Expiration Date</button>
-
+ 
             <div class="formactions">
                 <button type="submit" id="storeSaveBtn">
                     Save Monitoring
@@ -971,26 +971,26 @@ td button { margin:2px; }
         </form>
     </div>
 </section>
-
+ 
 <!-- ===================================== -->
 <!-- ACTIVITY HISTORY -->
 <!-- ===================================== -->
-
+ 
 <section
     id="page-history"
     class="page hidden historyOnly"
 >
     <div class="panel">
-
+ 
         <div class="row">
             <h2 id="historyPageTitle">
                 Activity History
             </h2>
-
+ 
             <button onclick="loadHistory(1)">
                 Refresh History
             </button>
-
+ 
             <button
                 class="secondary"
                 onclick="resetHistoryFilters()"
@@ -998,13 +998,13 @@ td button { margin:2px; }
                 Clear Filters
             </button>
         </div>
-
+ 
         <p class="muted" id="historyDescription">
             Monitoring additions, edits and deletions.
         </p>
-
+ 
         <div class="historyfilters">
-
+ 
             <div
                 class="filteritem adminOnly hidden"
                 id="historyStoreFilterBox"
@@ -1014,14 +1014,14 @@ td button { margin:2px; }
                     <option value="">All Stores</option>
                 </select>
             </div>
-
+ 
             <div class="filteritem">
                 <label>Supplier</label>
                 <select id="historySupplier">
                     <option value="">All Suppliers</option>
                 </select>
             </div>
-
+ 
             <div class="filteritem">
                 <label>Action</label>
                 <select id="historyAction">
@@ -1031,7 +1031,7 @@ td button { margin:2px; }
                     <option value="DELETE">Deleted</option>
                 </select>
             </div>
-
+ 
             <div class="filteritem">
                 <label>Product / SKU Search</label>
                 <input
@@ -1039,29 +1039,29 @@ td button { margin:2px; }
                     placeholder="Search product or SKU"
                 >
             </div>
-
+ 
             <div class="filteritem">
                 <label>From Date</label>
                 <input id="historyFrom" type="date">
             </div>
-
+ 
             <div class="filteritem">
                 <label>To Date</label>
                 <input id="historyTo" type="date">
             </div>
-
+ 
         </div>
-
+ 
         <div class="formactions" style="margin-bottom:16px">
             <button onclick="loadHistory(1)">
                 Apply Filters
             </button>
         </div>
-
+ 
         <p id="historyCount" class="muted">
             Loading...
         </p>
-
+ 
         <div class="tablewrap">
             <table>
                 <thead>
@@ -1072,23 +1072,24 @@ td button { margin:2px; }
                         <th>Product / SKU</th>
                         <th>Action</th>
                         <th>Changed By</th>
+                        <th>Store Remarks</th>
                         <th>Details</th>
                     </tr>
                 </thead>
-
+ 
                 <tbody id="historyBody">
                     <tr>
-                        <td colspan="7">
+                        <td colspan="8">
                             Loading activity history...
                         </td>
                     </tr>
                 </tbody>
             </table>
         </div>
-
+ 
         <div class="pager">
             <span id="historyPageInfo" class="muted"></span>
-
+ 
             <div class="controls">
                 <button
                     class="secondary"
@@ -1097,7 +1098,7 @@ td button { margin:2px; }
                 >
                     Previous
                 </button>
-
+ 
                 <button
                     id="historyNext"
                     onclick="changeHistoryPage(1)"
@@ -1106,42 +1107,42 @@ td button { margin:2px; }
                 </button>
             </div>
         </div>
-
+ 
     </div>
 </section>
-
+ 
 </div>
 </main>
-
+ 
 <script>
 'use strict';
-
+ 
 // ==========================================
 // APPLICATION STATE
 // ==========================================
-
+ 
 let token = '';
 let currentUser = null;
-
+ 
 let monitoring = [];
 let adminSuppliers = [];
 let adminProducts = [];
 let entryProducts = [];
-
+ 
 let entrySearchTimer = null;
-
+ 
 let historyRecords = [];
 let historyPage = 1;
 let historyTotal = 0;
 let historyLimit = 50;
 let historyRequestNumber = 0;
-
+ 
 const el = id => document.getElementById(id);
-
+ 
 // ==========================================
 // GENERAL HELPERS
 // ==========================================
-
+ 
 function escapeHtml(value) {
     return String(value ?? '').replace(
         /[&<>"']/g,
@@ -1154,40 +1155,40 @@ function escapeHtml(value) {
         })[ch]
     );
 }
-
+ 
 function showMessage(message, error = false) {
     const box = el('notice');
-
+ 
     box.textContent = message;
     box.className = 'message' + (
         error ? ' error' : ''
     );
-
+ 
     box.scrollIntoView({
         behavior:'smooth',
         block:'nearest'
     });
 }
-
+ 
 function clearMessage() {
     el('notice').classList.add('hidden');
 }
-
+ 
 function dateText(value) {
     if (!value) return '';
-
+ 
     return String(value).slice(0,10);
 }
-
+ 
 function dateTimeText(value) {
     if (!value) return '';
-
+ 
     const date = new Date(value);
-
+ 
     if (Number.isNaN(date.getTime())) {
         return String(value);
     }
-
+ 
     return date.toLocaleString('en-PH', {
         timeZone:'Asia/Manila',
         year:'numeric',
@@ -1198,23 +1199,23 @@ function dateTimeText(value) {
         hour12:true
     });
 }
-
+ 
 function readableAction(action) {
     if (action === 'INSERT') return 'Added';
     if (action === 'UPDATE') return 'Edited';
     if (action === 'DELETE') return 'Deleted';
-
+ 
     return action || 'Unknown';
 }
-
+ 
 function actionClass(action) {
     if (action === 'INSERT') return 'action-insert';
     if (action === 'UPDATE') return 'action-update';
     if (action === 'DELETE') return 'action-delete';
-
+ 
     return '';
 }
-
+ 
 function actionBadge(action) {
     return `
         <span class="history-action ${actionClass(action)}">
@@ -1222,21 +1223,21 @@ function actionBadge(action) {
         </span>
     `;
 }
-
+ 
 function displayValue(value) {
     if (value === null || value === undefined) {
         return '—';
     }
-
+ 
     if (typeof value === 'object') {
         return JSON.stringify(value);
     }
-
+ 
     if (value === '') return '(empty)';
-
+ 
     return String(value);
 }
-
+ 
 function fieldLabel(field) {
     const labels = {
         store_email:'Store Email',
@@ -1256,33 +1257,33 @@ function fieldLabel(field) {
         updated_by:'Updated By',
         updated_at:'Updated At'
     };
-
+ 
     return labels[field] ||
         field.replace(/_/g,' ');
 }
-
+ 
 // ==========================================
 // API REQUESTS
 // ==========================================
-
+ 
 async function api(url, options = {}) {
     const headers = {
         ...(options.headers || {})
     };
-
+ 
     if (token) {
         headers.Authorization = 'Bearer ' + token;
     }
-
+ 
     if (
         options.body &&
         !(options.body instanceof FormData)
     ) {
         headers['Content-Type'] = 'application/json';
     }
-
+ 
     let response;
-
+ 
     try {
         response = await fetch(
             url,
@@ -1296,24 +1297,24 @@ async function api(url, options = {}) {
             'Network unavailable. Please try again.'
         );
     }
-
+ 
     const type =
         response.headers.get('content-type') || '';
-
+ 
     let result;
-
+ 
     if (type.includes('application/json')) {
         result = await response.json();
-
+ 
     } else if (response.ok) {
         return response;
-
+ 
     } else {
         result = {
             error:'Server returned an unexpected response'
         };
     }
-
+ 
     if (!response.ok) {
         if (
             response.status === 401 &&
@@ -1321,30 +1322,30 @@ async function api(url, options = {}) {
         ) {
             logout();
         }
-
+ 
         throw new Error(
             result.error || 'Request failed'
         );
     }
-
+ 
     return result;
 }
-
+ 
 // ==========================================
 // LOGIN
 // ==========================================
-
+ 
 el('loginForm').addEventListener(
     'submit',
     async event => {
         event.preventDefault();
-
+ 
         const btn = el('loginBtn');
         const message = el('loginMessage');
-
+ 
         btn.disabled = true;
         message.classList.add('hidden');
-
+ 
         try {
             const result = await api(
                 '/api/login',
@@ -1356,30 +1357,30 @@ el('loginForm').addEventListener(
                     })
                 }
             );
-
+ 
             token = result.token;
             currentUser = result.user;
-
+ 
             el('loginPassword').value = '';
-
+ 
             el('loginPanel').classList.add('hidden');
             el('application').classList.remove('hidden');
             el('logoutBtn').classList.remove('hidden');
             el('nemsChangePasswordOpen').classList.remove('hidden');
-
+ 
             el('accountLabel').textContent =
                 currentUser.email +
                 ' (' + currentUser.role + ')';
-
+ 
             const isAdmin =
                 currentUser.role === 'ADMIN';
-
+ 
             const isStore =
                 currentUser.role === 'STORE';
-
+ 
             const canViewHistory =
                 isAdmin || isStore;
-
+ 
             document.querySelectorAll(
                 '.adminOnly'
             ).forEach(node => {
@@ -1388,7 +1389,7 @@ el('loginForm').addEventListener(
                     !isAdmin
                 );
             });
-
+ 
             document.querySelectorAll(
                 '.storeOnly'
             ).forEach(node => {
@@ -1397,7 +1398,7 @@ el('loginForm').addEventListener(
                     !isStore
                 );
             });
-
+ 
             document.querySelectorAll(
                 '.historyOnly'
             ).forEach(node => {
@@ -1406,92 +1407,92 @@ el('loginForm').addEventListener(
                     !canViewHistory
                 );
             });
-
+ 
             el('historyNavButton').textContent =
                 isStore
                     ? 'My History'
                     : 'Activity History';
-
+ 
             el('recentTitle').textContent =
                 isStore
                     ? 'My Recent Activities'
                     : 'Recent Store Activities';
-
+ 
             el('historyPageTitle').textContent =
                 isStore
                     ? 'My History'
                     : 'Activity History';
-
+ 
             el('historyDescription').textContent =
                 isStore
                     ? 'Your store monitoring additions, edits and deletions.'
                     : 'Monitoring changes across all stores. Filter by store, supplier, product, action or date.';
-
+ 
             showPage('dashboard');
-
+ 
         } catch (error) {
             message.textContent = error.message;
             message.className = 'message error';
-
+ 
         } finally {
             btn.disabled = false;
         }
     }
 );
-
+ 
 // ==========================================
 // LOGOUT
 // ==========================================
-
+ 
 function logout() {
     token = '';
     currentUser = null;
-
+ 
     monitoring = [];
     adminProducts = [];
     adminSuppliers = [];
     entryProducts = [];
     historyRecords = [];
-
+ 
     historyPage = 1;
     historyTotal = 0;
     historyRequestNumber++;
-
+ 
     el('accountLabel').textContent = '';
-
+ 
     el('application').classList.add('hidden');
     el('loginPanel').classList.remove('hidden');
     el('logoutBtn').classList.add('hidden');
     el('nemsChangePasswordOpen').classList.add('hidden');
     nemsCloseChangePassword();
-
+ 
     clearMessage();
 }
-
+ 
 // ==========================================
 // NAVIGATION
 // ==========================================
-
+ 
 function showPage(page) {
     const adminPages = [
         'products',
         'suppliers'
     ];
-
+ 
     if (
         adminPages.includes(page) &&
         currentUser?.role !== 'ADMIN'
     ) {
         return;
     }
-
+ 
     if (
         page === 'storeentry' &&
         currentUser?.role !== 'STORE'
     ) {
         return;
     }
-
+ 
     if (
         page === 'history' &&
         !['ADMIN','STORE'].includes(
@@ -1500,19 +1501,19 @@ function showPage(page) {
     ) {
         return;
     }
-
+ 
     const target = el('page-' + page);
-
+ 
     if (!target) return;
-
+ 
     document.querySelectorAll(
         '.page'
     ).forEach(node => {
         node.classList.add('hidden');
     });
-
+ 
     target.classList.remove('hidden');
-
+ 
     document.querySelectorAll(
         '[data-page]'
     ).forEach(btn => {
@@ -1521,58 +1522,58 @@ function showPage(page) {
             btn.dataset.page === page
         );
     });
-
+ 
     clearMessage();
-
+ 
     if (page === 'dashboard') {
         refreshDashboard();
     }
-
+ 
     if (page === 'monitoring') {
         loadMonitoring();
     }
-
+ 
     if (page === 'products') {
         loadAdminProducts();
     }
-
+ 
     if (page === 'suppliers') {
         loadAdminSuppliers();
     }
-
+ 
     if (page === 'storeentry') {
         loadEntrySuppliers();
     }
-
+ 
     if (page === 'history') {
         initializeHistory();
     }
 }
-
+ 
 // ==========================================
 // DASHBOARD
 // ==========================================
-
+ 
 async function refreshDashboard() {
     try {
         const data = await api('/api/dashboard');
-
+ 
         el('countRed').textContent =
             data.RED ?? 0;
-
+ 
         el('countBlue').textContent =
             data.BLUE ?? 0;
-
+ 
         el('countGreen').textContent =
             data.GREEN ?? 0;
-
+ 
         el('countExpired').textContent =
             data.EXPIRED ?? 0;
-
+ 
     } catch (error) {
         showMessage(error.message, true);
     }
-
+ 
     if (
         ['ADMIN','STORE'].includes(
             currentUser?.role
@@ -1581,28 +1582,28 @@ async function refreshDashboard() {
         loadRecentActivities();
     }
 }
-
+ 
 function openMonitoringCategory(category) {
     el('monitorCategory').value = category;
     el('monitorSearch').value = '';
     showPage('monitoring');
 }
-
+ 
 // ==========================================
 // MONITORING
 // ==========================================
-
+ 
 async function loadMonitoring() {
     try {
         monitoring = await api('/api/monitoring');
         renderMonitoring();
         renderMonitoringExportSuppliers();
-
+ 
     } catch (error) {
         showMessage(error.message, true);
     }
 }
-
+ 
 // Color only Monitoring Records product fields by remaining shelf life.
 function nemsMonitoringExpiryClass(value) {
     const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(value || ''));
@@ -1627,65 +1628,65 @@ function nemsMonitoringExpiryClass(value) {
     const sixMonthLimit = Date.UTC(sixMonthYear, sixMonthMonth, Math.min(now.getDate(), lastDay));
     return expiry <= sixMonthLimit ? 'nems-exp-orange' : 'nems-exp-black';
 }
-
+ 
 function renderMonitoring() {
     const category = el('monitorCategory').value;
-
+ 
     const search = el('monitorSearch')
         .value
         .trim()
         .toLowerCase();
-
+ 
     const rows = monitoring.filter(item => {
         const matchesCategory =
             !category ||
             item.category === category;
-
+ 
         const text = [
             item.store_name,
             item.sku,
             item.product_name,
             item.supplier
         ].join(' ').toLowerCase();
-
+ 
         return (
             matchesCategory &&
             text.includes(search)
         );
     });
-
+ 
     el('monitorBody').innerHTML = rows.length
         ? rows.map(item => `
             <tr>
                 <td>
                     ${escapeHtml(item.category)}
                 </td>
-
+ 
                 <td>
                     ${escapeHtml(item.store_name)}
                 </td>
-
+ 
                 <td>
                     ${escapeHtml(item.supplier)}
                 </td>
-
+ 
                 <td class="${nemsMonitoringExpiryClass(item.expiration_date)}">
                     <b>${escapeHtml(item.sku)}</b>
                     <div>
                         ${escapeHtml(item.product_name)}
                     </div>
                 </td>
-
+ 
                 <td class="${nemsMonitoringExpiryClass(item.expiration_date)}">
                     ${escapeHtml(
                         dateText(item.expiration_date)
                     )}
                 </td>
-
+ 
                 <td class="${nemsMonitoringExpiryClass(item.expiration_date)}">
                     ${escapeHtml(item.quantity)}
                 </td>
-
+ 
                 <td>
                     ${escapeHtml(
                         dateText(item.updated_at)
@@ -1712,11 +1713,11 @@ function renderMonitoring() {
                 </td>
             </tr>
         `;
-
+ 
     el('monitorCount').textContent =
         'Showing ' + rows.length + ' records';
 }
-
+ 
 async function saveMonitoringRemarks(id, date) {
     if (currentUser?.role !== 'ADMIN') return;
     const field = el('remarks-' + id + '-' + date);
@@ -1730,7 +1731,7 @@ async function saveMonitoringRemarks(id, date) {
         await loadMonitoring();
     } catch (error) { showMessage(error.message || 'Could not save remarks', true); }
 }
-
+ 
 async function saveTaskMonitoringRemarks(productId, encodedEmail, date) {
     if (currentUser?.role !== 'ADMIN') return;
     const field = el('remarks-task-' + productId + '-' + encodedEmail + '-' + date);
@@ -1745,7 +1746,7 @@ async function saveTaskMonitoringRemarks(productId, encodedEmail, date) {
         await loadMonitoring();
     } catch (error) { showMessage(error.message || 'Could not save remarks', true); }
 }
-
+ 
 async function disposeExpiredMonitoring(monitoringId, expirationDate) {
     if (currentUser?.role !== 'ADMIN') {
         showMessage('Only ADMIN can dispose expired stock.', true);
@@ -1770,7 +1771,7 @@ async function disposeExpiredMonitoring(monitoringId, expirationDate) {
         showMessage(error.message || 'Disposal failed.', true);
     }
 }
-
+ 
 async function disposeExpiredTaskMonitoring(productId, encodedEmail, expirationDate) {
     if (currentUser?.role !== 'ADMIN') {
         showMessage('Only ADMIN can dispose expired stock.', true);
@@ -1796,24 +1797,24 @@ async function disposeExpiredTaskMonitoring(productId, encodedEmail, expirationD
         showMessage(error.message || 'Disposal failed.', true);
     }
 }
-
+ 
 function renderMonitoringExportSuppliers() {
     const host = el('monitorExportSuppliers');
     const previouslyChecked = new Set(Array.from(host.querySelectorAll('input:checked')).map(input => input.value));
     const suppliers = [...new Set(monitoring.map(item => String(item.supplier || '').trim()).filter(Boolean))].sort((a,b) => a.localeCompare(b));
     host.innerHTML = suppliers.map(name => `<label style="display:flex;align-items:center;gap:7px;font-weight:normal;font-size:13px;margin:0"><input type="checkbox" class="monitor-export-supplier" value="${escapeHtml(name)}" style="width:auto" ${previouslyChecked.has(name) ? 'checked' : ''}>${escapeHtml(name)}</label>`).join('') || '<span class="muted">No suppliers available.</span>';
 }
-
+ 
 function setMonitoringExportSuppliers(checked) {
     el('monitorExportSuppliers').querySelectorAll('input.monitor-export-supplier').forEach(input => { input.checked = checked; });
 }
-
+ 
 function setMonitoringExportCategories(checked) {
     el('monitorExportCategories').querySelectorAll('input.monitor-export-category').forEach(input => {
         input.checked = checked;
     });
 }
-
+ 
 async function downloadMonitoring() {
     try {
         const params = new URLSearchParams();
@@ -1823,78 +1824,78 @@ async function downloadMonitoring() {
         const suppliers = Array.from(el('monitorExportSuppliers').querySelectorAll('input.monitor-export-supplier:checked'));
         suppliers.forEach(input => params.append('supplier', input.value));
         const response = await api('/api/export/monitoring' + (params.toString() ? '?' + params.toString() : ''));
-
+ 
         const blob = await response.blob();
         const url = URL.createObjectURL(blob);
-
+ 
         const link = document.createElement('a');
-
+ 
         link.href = url;
         link.download = 'NEMS_Monitoring.xlsx';
-
+ 
         document.body.appendChild(link);
         link.click();
         link.remove();
-
+ 
         setTimeout(
             () => URL.revokeObjectURL(url),
             1000
         );
-
+ 
     } catch (error) {
         showMessage(error.message, true);
     }
 }
-
+ 
 // ==========================================
 // ADMIN SUPPLIER MANAGEMENT
 // ==========================================
-
+ 
 async function loadAdminSuppliers() {
     try {
         adminSuppliers = await api(
             '/api/admin/suppliers'
         );
-
+ 
         renderSuppliers();
-
+ 
     } catch (error) {
         showMessage(error.message, true);
     }
 }
-
+ 
 function renderSuppliers() {
     const search = el('supplierSearch')
         .value
         .toLowerCase();
-
+ 
     const status = el('supplierFilter').value;
-
+ 
     const rows = adminSuppliers.filter(s =>
         s.supplier_name.toLowerCase().includes(search) &&
         (!status || s.status === status)
     );
-
+ 
     el('supplierCount').textContent =
         'Showing ' + rows.length +
         ' of ' + adminSuppliers.length +
         ' suppliers';
-
+ 
     el('supplierBody').innerHTML = rows.length
         ? rows.map(s => `
             <tr>
                 <td>
                     ${escapeHtml(s.supplier_id)}
                 </td>
-
+ 
                 <td>
                     ${escapeHtml(s.supplier_name)}
                 </td>
-
+ 
                 <td>
                     ${escapeHtml(s.status)}
                 </td>
-
+ 
                 <td>
                     <button
                         class="small"
@@ -1913,62 +1914,62 @@ function renderSuppliers() {
             </tr>
         `;
 }
-
+ 
 function newSupplier() {
     el('supplierForm').reset();
-
+ 
     el('supplierId').value = '';
     el('supplierStatus').value = 'ACTIVE';
-
+ 
     el('supplierEditorTitle').textContent =
         'Add Supplier';
-
+ 
     el('supplierEditor').classList.remove('hidden');
-
+ 
     el('supplierEditor').scrollIntoView({
         behavior:'smooth'
     });
 }
-
+ 
 function editSupplier(id) {
     const supplier = adminSuppliers.find(
         s => Number(s.supplier_id) === id
     );
-
+ 
     if (!supplier) return;
-
+ 
     el('supplierId').value =
         supplier.supplier_id;
-
+ 
     el('supplierName').value =
         supplier.supplier_name;
-
+ 
     el('supplierStatus').value =
         supplier.status;
-
+ 
     el('supplierEditorTitle').textContent =
         'Edit Supplier #' + id;
-
+ 
     el('supplierEditor').classList.remove('hidden');
-
+ 
     el('supplierEditor').scrollIntoView({
         behavior:'smooth'
     });
 }
-
+ 
 function closeSupplierEditor() {
     el('supplierEditor').classList.add('hidden');
 }
-
+ 
 el('supplierForm').addEventListener(
     'submit',
     async event => {
         event.preventDefault();
-
+ 
         const id = el('supplierId').value;
         const name = el('supplierName').value.trim();
         const status = el('supplierStatus').value;
-
+ 
         if (
             id &&
             status === 'INACTIVE' &&
@@ -1978,10 +1979,10 @@ el('supplierForm').addEventListener(
         ) {
             return;
         }
-
+ 
         const button = el('supplierSaveBtn');
         button.disabled = true;
-
+ 
         try {
             await api(
                 id
@@ -1995,48 +1996,48 @@ el('supplierForm').addEventListener(
                     })
                 }
             );
-
+ 
             closeSupplierEditor();
-
+ 
             await loadAdminSuppliers();
-
+ 
             showMessage(
                 'Supplier saved successfully.'
             );
-
+ 
         } catch (error) {
             showMessage(error.message, true);
-
+ 
         } finally {
             button.disabled = false;
         }
     }
 );
-
+ 
 // ==========================================
 // ADMIN PRODUCT MANAGEMENT
 // ==========================================
-
+ 
 async function loadAdminProducts() {
     try {
         adminProducts = await api(
             '/api/admin/products'
         );
-
+ 
         renderProducts();
-
+ 
     } catch (error) {
         showMessage(error.message, true);
     }
 }
-
+ 
 function renderProducts() {
     const search = el('productSearch')
         .value
         .toLowerCase();
-
+ 
     const status = el('productFilter').value;
-
+ 
     const rows = adminProducts.filter(p => {
         const text = [
             p.sku,
@@ -2044,49 +2045,49 @@ function renderProducts() {
             p.supplier_name,
             p.master_barcode
         ].join(' ').toLowerCase();
-
+ 
         return (
             text.includes(search) &&
             (!status || p.status === status)
         );
     });
-
+ 
     el('productCount').textContent =
         'Showing ' + rows.length +
         ' of ' + adminProducts.length +
         ' products';
-
+ 
     el('productBody').innerHTML = rows.length
         ? rows.map(p => `
             <tr>
                 <td>
                     ${escapeHtml(p.product_id)}
                 </td>
-
+ 
                 <td>
                     ${escapeHtml(p.sku)}
                 </td>
-
+ 
                 <td>
                     ${escapeHtml(p.product_name)}
                 </td>
-
+ 
                 <td>
                     ${escapeHtml(p.supplier_name)}
                 </td>
-
+ 
                 <td>
                     ${escapeHtml(p.master_srp ?? '')}
                 </td>
-
+ 
                 <td>
                     ${escapeHtml(p.landed_cost ?? '')}
                 </td>
-
+ 
                 <td>
                     ${escapeHtml(p.status)}
                 </td>
-
+ 
                 <td>
                     <button
                         class="small"
@@ -2105,19 +2106,19 @@ function renderProducts() {
             </tr>
         `;
 }
-
+ 
 async function fillSupplierOptions(selected = '') {
     if (!adminSuppliers.length) {
         adminSuppliers = await api(
             '/api/admin/suppliers'
         );
     }
-
+ 
     const names = adminSuppliers.filter(s =>
         s.status === 'ACTIVE' ||
         s.supplier_name === selected
     );
-
+ 
     el('pSupplier').innerHTML =
         '<option value="">Select supplier</option>' +
         names.map(s => `
@@ -2125,104 +2126,104 @@ async function fillSupplierOptions(selected = '') {
                 ${escapeHtml(s.supplier_name)}
             </option>
         `).join('');
-
+ 
     el('pSupplier').value = selected;
 }
-
+ 
 async function newProduct() {
     try {
         el('productForm').reset();
-
+ 
         el('productId').value = '';
         el('pStatus').value = 'ACTIVE';
-
+ 
         el('productEditorTitle').textContent =
             'Add Product';
-
+ 
         await fillSupplierOptions();
-
+ 
         el('productEditor').classList.remove('hidden');
-
+ 
         el('productEditor').scrollIntoView({
             behavior:'smooth'
         });
-
+ 
     } catch (error) {
         showMessage(error.message, true);
     }
 }
-
+ 
 async function editProduct(id) {
     const p = adminProducts.find(
         item => Number(item.product_id) === id
     );
-
+ 
     if (!p) return;
-
+ 
     try {
         await fillSupplierOptions(
             p.supplier_name
         );
-
+ 
         el('productId').value =
             p.product_id;
-
+ 
         el('pSku').value =
             p.sku ?? '';
-
+ 
         el('pName').value =
             p.product_name ?? '';
-
+ 
         el('pBarcode').value =
             p.master_barcode ?? '';
-
+ 
         el('pSrp').value =
             p.master_srp ?? '';
-
+ 
         el('pCost').value =
             p.landed_cost ?? '';
-
+ 
         el('pCategory').value =
             p.category ?? '';
-
+ 
         el('pCondition').value =
             p.condition ?? '';
-
+ 
         el('pShelfLife').value =
             p.shelf_life ?? '';
-
+ 
         el('pRemarks').value =
             p.remarks ?? '';
-
+ 
         el('pStatus').value =
             p.status;
-
+ 
         el('productEditorTitle').textContent =
             'Edit Product #' + id;
-
+ 
         el('productEditor').classList.remove('hidden');
-
+ 
         el('productEditor').scrollIntoView({
             behavior:'smooth'
         });
-
+ 
     } catch (error) {
         showMessage(error.message, true);
     }
 }
-
+ 
 function closeProductEditor() {
     el('productEditor').classList.add('hidden');
 }
-
+ 
 el('productForm').addEventListener(
     'submit',
     async event => {
         event.preventDefault();
-
+ 
         const id = el('productId').value;
         const status = el('pStatus').value;
-
+ 
         if (
             id &&
             status === 'INACTIVE' &&
@@ -2232,7 +2233,7 @@ el('productForm').addEventListener(
         ) {
             return;
         }
-
+ 
         const payload = {
             sku:el('pSku').value.trim(),
             product_name:el('pName').value.trim(),
@@ -2246,10 +2247,10 @@ el('productForm').addEventListener(
             remarks:el('pRemarks').value.trim(),
             status
         };
-
+ 
         const button = el('productSaveBtn');
         button.disabled = true;
-
+ 
         try {
             await api(
                 id
@@ -2260,34 +2261,34 @@ el('productForm').addEventListener(
                     body:JSON.stringify(payload)
                 }
             );
-
+ 
             closeProductEditor();
-
+ 
             await loadAdminProducts();
-
+ 
             showMessage(
                 'Product saved successfully.'
             );
-
+ 
         } catch (error) {
             showMessage(error.message, true);
-
+ 
         } finally {
             button.disabled = false;
         }
     }
 );
-
+ 
 // ==========================================
 // STORE ENCODING
 // ==========================================
-
+ 
 async function loadEntrySuppliers() {
     try {
         const suppliers = await api(
             '/api/suppliers'
         );
-
+ 
         el('entrySupplier').innerHTML =
             '<option value="">All Suppliers</option>' +
             suppliers.map(s => `
@@ -2295,31 +2296,31 @@ async function loadEntrySuppliers() {
                     ${escapeHtml(s.supplier_name)}
                 </option>
             `).join('');
-
+ 
         await searchEntryProducts();
-
+ 
     } catch (error) {
         showMessage(error.message, true);
     }
 }
-
+ 
 async function searchEntryProducts() {
     try {
         const supplier = el('entrySupplier').value;
-
+ 
         const search = el('entrySearch')
             .value
             .trim();
-
+ 
         const query = new URLSearchParams({
             supplier,
             search
         });
-
+ 
         entryProducts = await api(
             '/api/products?' + query.toString()
         );
-
+ 
         el('entryProduct').innerHTML =
             '<option value="">Select product</option>' +
             entryProducts.map(p => `
@@ -2329,45 +2330,45 @@ async function searchEntryProducts() {
                     ${escapeHtml(p.product_name)}
                 </option>
             `).join('');
-
+ 
     } catch (error) {
         showMessage(error.message, true);
     }
 }
-
+ 
 el('entrySearch').addEventListener(
     'input',
     () => {
         clearTimeout(entrySearchTimer);
-
+ 
         entrySearchTimer = setTimeout(
             searchEntryProducts,
             350
         );
     }
 );
-
+ 
 el('entryProduct').addEventListener(
     'change',
     () => {
         const id = Number(
             el('entryProduct').value
         );
-
+ 
         const product = entryProducts.find(
             p => Number(p.product_id) === id
         );
-
+ 
         if (!product) return;
-
+ 
         el('entryBarcode').value =
             product.master_barcode ?? '';
-
+ 
         el('entrySrp').value =
             product.master_srp ?? '';
     }
 );
-
+ 
 function addStoreExpiryRow(date = '', qty = '') {
     const holder = el('storeExpiryRows');
     if (holder.children.length >= 100) { showMessage('Maximum 100 expiration entries per product.', true); return; }
@@ -2391,7 +2392,7 @@ function updateStoreExpiryRemoveButtons() {
     rows.forEach(row => row.querySelector('button').disabled = rows.length === 1);
 }
 addStoreExpiryRow();
-
+ 
 el('storeForm').addEventListener('submit', async event => {
     event.preventDefault();
     const entries = [...document.querySelectorAll('#storeExpiryRows .nems-store-expiry-row')]
@@ -2423,11 +2424,11 @@ el('storeForm').addEventListener('submit', async event => {
         button.disabled = false;
     }
 });
-
+ 
 // ==========================================
 // RECENT ACTIVITIES
 // ==========================================
-
+ 
 async function loadRecentActivities() {
     if (
         !['ADMIN','STORE'].includes(
@@ -2436,24 +2437,24 @@ async function loadRecentActivities() {
     ) {
         return;
     }
-
+ 
     const accountAtStart = currentUser.email;
-
+ 
     el('recentActivityList').innerHTML =
         '<p class="muted">Loading recent activities...</p>';
-
+ 
     try {
         const records = await api(
             '/api/history/recent'
         );
-
+ 
         if (
             !currentUser ||
             currentUser.email !== accountAtStart
         ) {
             return;
         }
-
+ 
         if (!records.length) {
             el('recentActivityList').innerHTML = `
                 <p class="muted">
@@ -2463,43 +2464,46 @@ async function loadRecentActivities() {
             `;
             return;
         }
-
+ 
         el('recentActivityList').innerHTML =
             records.map(record => `
                 <div class="activityitem">
-
+ 
                     <div class="activitytitle">
                         ${actionBadge(record.action)}
-
+ 
                         ${escapeHtml(
                             record.product_name || record.sku || 'Product'
                         )}
                     </div>
-
+ 
                     <div class="activitymeta">
                         <b>Store:</b>
                         ${escapeHtml(record.store_name || '—')}
-
+ 
                         &nbsp; · &nbsp;
-
+ 
                         <b>Supplier:</b>
                         ${escapeHtml(record.supplier || '—')}
                     </div>
-
+ 
                     <div class="activitymeta">
                         <b>Changed by:</b>
-                        ${escapeHtml(record.changed_by || '—')}
-
+                        ${escapeHtml(record.employee_name || record.changed_by || '—')}
                         &nbsp; · &nbsp;
-
+                        <b>Store Remarks:</b>
+                        ${escapeHtml(record.store_remarks ?? '—')}
+ 
+                        &nbsp; · &nbsp;
+ 
                         ${escapeHtml(
                             dateTimeText(record.changed_at)
                         )}
                     </div>
-
+ 
                 </div>
             `).join('');
-
+ 
     } catch (error) {
         if (
             currentUser &&
@@ -2513,30 +2517,30 @@ async function loadRecentActivities() {
         }
     }
 }
-
+ 
 // ==========================================
 // ACTIVITY HISTORY FILTERS
 // ==========================================
-
+ 
 async function initializeHistory() {
     try {
         await loadHistoryFilterOptions();
         await loadHistory(1);
-
+ 
     } catch (error) {
         showMessage(error.message, true);
     }
 }
-
+ 
 async function loadHistoryFilterOptions() {
     const isAdmin =
         currentUser?.role === 'ADMIN';
-
+ 
     if (isAdmin) {
         const stores = await api('/api/stores');
-
+ 
         const selected = el('historyStore').value;
-
+ 
         el('historyStore').innerHTML =
             '<option value="">All Stores</option>' +
             stores.map(s => `
@@ -2544,21 +2548,21 @@ async function loadHistoryFilterOptions() {
                     ${escapeHtml(s.store_name)}
                 </option>
             `).join('');
-
+ 
         el('historyStore').value = selected;
-
+ 
         if (
             el('historyStore').value !== selected
         ) {
             el('historyStore').value = '';
         }
     }
-
+ 
     const suppliers = await api('/api/suppliers');
-
+ 
     const selectedSupplier =
         el('historySupplier').value;
-
+ 
     el('historySupplier').innerHTML =
         '<option value="">All Suppliers</option>' +
         suppliers.map(s => `
@@ -2566,10 +2570,10 @@ async function loadHistoryFilterOptions() {
                 ${escapeHtml(s.supplier_name)}
             </option>
         `).join('');
-
+ 
     el('historySupplier').value =
         selectedSupplier;
-
+ 
     if (
         el('historySupplier').value !==
         selectedSupplier
@@ -2577,7 +2581,7 @@ async function loadHistoryFilterOptions() {
         el('historySupplier').value = '';
     }
 }
-
+ 
 function resetHistoryFilters() {
     el('historyStore').value = '';
     el('historySupplier').value = '';
@@ -2585,66 +2589,66 @@ function resetHistoryFilters() {
     el('historySearch').value = '';
     el('historyFrom').value = '';
     el('historyTo').value = '';
-
+ 
     loadHistory(1);
 }
-
+ 
 function buildHistoryQuery(page) {
     const params = new URLSearchParams();
-
+ 
     params.set('page', String(page));
     params.set('limit', String(historyLimit));
-
+ 
     if (currentUser?.role === 'ADMIN') {
         const store = el('historyStore').value;
-
+ 
         if (store) {
             params.set('store', store);
         }
     }
-
+ 
     const supplier =
         el('historySupplier').value;
-
+ 
     const action =
         el('historyAction').value;
-
+ 
     const search =
         el('historySearch').value.trim();
-
+ 
     const from =
         el('historyFrom').value;
-
+ 
     const to =
         el('historyTo').value;
-
+ 
     if (supplier) {
         params.set('supplier', supplier);
     }
-
+ 
     if (action) {
         params.set('action', action);
     }
-
+ 
     if (search) {
         params.set('search', search);
     }
-
+ 
     if (from) {
         params.set('from', from);
     }
-
+ 
     if (to) {
         params.set('to', to);
     }
-
+ 
     return params.toString();
 }
-
+ 
 // ==========================================
 // FULL ACTIVITY HISTORY
 // ==========================================
-
+ 
 async function loadHistory(page = 1) {
     if (
         !['ADMIN','STORE'].includes(
@@ -2653,25 +2657,25 @@ async function loadHistory(page = 1) {
     ) {
         return;
     }
-
+ 
     const requestNumber = ++historyRequestNumber;
     const accountAtStart = currentUser.email;
-
+ 
     el('historyBody').innerHTML = `
         <tr>
-            <td colspan="7">
+            <td colspan="8">
                 Loading activity history...
             </td>
         </tr>
     `;
-
+ 
     try {
         const query = buildHistoryQuery(page);
-
+ 
         const data = await api(
             '/api/history?' + query
         );
-
+ 
         if (
             requestNumber !== historyRequestNumber ||
             !currentUser ||
@@ -2679,40 +2683,40 @@ async function loadHistory(page = 1) {
         ) {
             return;
         }
-
+ 
         historyRecords = data.records || [];
         historyTotal = Number(data.total) || 0;
         historyPage = Number(data.page) || page;
-
+ 
         renderHistory();
-
+ 
     } catch (error) {
         if (
             requestNumber !== historyRequestNumber
         ) {
             return;
         }
-
+ 
         el('historyBody').innerHTML = `
             <tr>
-                <td colspan="7">
+                <td colspan="8">
                     ${escapeHtml(error.message)}
                 </td>
             </tr>
         `;
-
+ 
         el('historyCount').textContent =
             'Unable to load history.';
-
+ 
         el('historyPageInfo').textContent = '';
     }
 }
-
+ 
 function renderHistory() {
     el('historyCount').textContent =
         historyTotal +
         ' monitoring history record(s) found.';
-
+ 
     el('historyBody').innerHTML =
         historyRecords.length
             ? historyRecords.map((record,index) => `
@@ -2722,30 +2726,34 @@ function renderHistory() {
                             dateTimeText(record.changed_at)
                         )}
                     </td>
-
+ 
                     <td>
                         ${escapeHtml(record.store_name || '—')}
                     </td>
-
+ 
                     <td>
                         ${escapeHtml(record.supplier || '—')}
                     </td>
-
+ 
                     <td>
                         <b>${escapeHtml(record.sku || '')}</b>
                         <div>
                             ${escapeHtml(record.product_name || '')}
                         </div>
                     </td>
-
+ 
                     <td>
                         ${actionBadge(record.action)}
                     </td>
-
+ 
                     <td>
-                        ${escapeHtml(record.changed_by || '—')}
+                        ${escapeHtml(record.employee_name || record.changed_by || '—')}
                     </td>
-
+ 
+                    <td>
+                        ${escapeHtml(record.store_remarks ?? '—')}
+                    </td>
+ 
                     <td>
                         <button
                             class="small"
@@ -2755,7 +2763,7 @@ function renderHistory() {
                         </button>
                     </td>
                 </tr>
-
+ 
                 <tr
                     id="historyDetail-${index}"
                     class="hidden"
@@ -2772,45 +2780,45 @@ function renderHistory() {
                     </td>
                 </tr>
             `;
-
+ 
     const totalPages = Math.max(
         1,
         Math.ceil(historyTotal / historyLimit)
     );
-
+ 
     el('historyPageInfo').textContent =
         'Page ' + historyPage +
         ' of ' + totalPages;
-
+ 
     el('historyPrevious').disabled =
         historyPage <= 1;
-
+ 
     el('historyNext').disabled =
         historyPage >= totalPages;
 }
-
+ 
 function toggleHistoryDetails(index) {
     const row = el('historyDetail-' + index);
-
+ 
     if (!row) return;
-
+ 
     row.classList.toggle('hidden');
 }
-
+ 
 // ==========================================
 // OLD AND NEW VALUES
 // ==========================================
-
+ 
 function historyDetailsHtml(record) {
     const oldValues = record.old_values || {};
     const newValues = record.new_values || {};
     const changedFields = record.changed_fields || {};
-
+ 
     let fields = [];
-
+ 
     if (record.action === 'UPDATE') {
         fields = Object.keys(changedFields);
-
+ 
     } else if (record.action === 'INSERT') {
         fields = Object.keys(newValues).filter(
             field => ![
@@ -2819,7 +2827,7 @@ function historyDetailsHtml(record) {
                 'updated_by'
             ].includes(field)
         );
-
+ 
     } else if (record.action === 'DELETE') {
         fields = Object.keys(oldValues).filter(
             field => ![
@@ -2829,11 +2837,11 @@ function historyDetailsHtml(record) {
             ].includes(field)
         );
     }
-
+ 
     const rows = fields.map(field => {
         let before = oldValues[field];
         let after = newValues[field];
-
+ 
         if (
             record.action === 'UPDATE' &&
             changedFields[field]
@@ -2841,58 +2849,66 @@ function historyDetailsHtml(record) {
             before = changedFields[field].before;
             after = changedFields[field].after;
         }
-
+ 
         return `
             <tr>
                 <td>
                     <b>${escapeHtml(fieldLabel(field))}</b>
                 </td>
-
+ 
                 <td class="changevalue">
                     ${escapeHtml(displayValue(before))}
                 </td>
-
+ 
                 <td class="changevalue">
                     ${escapeHtml(displayValue(after))}
                 </td>
             </tr>
         `;
     }).join('');
-
+ 
     return `
         <div class="detailsbox">
-
+ 
             <h3>
                 Monitoring Change Details
             </h3>
-
+ 
             <p class="muted">
                 <b>History ID:</b>
                 ${escapeHtml(record.history_id)}
-
+ 
                 &nbsp; · &nbsp;
-
+ 
                 <b>Monitoring ID:</b>
                 ${escapeHtml(record.monitoring_id || '—')}
             </p>
-
+ 
             <p class="muted">
                 <b>Action:</b>
                 ${escapeHtml(readableAction(record.action))}
-
+ 
                 &nbsp; · &nbsp;
-
-                <b>Changed by:</b>
-                ${escapeHtml(record.changed_by || '—')}
+ 
+                <b>Employee name:</b>
+                ${escapeHtml(record.employee_name || 'Not recorded')}
+                &nbsp; · &nbsp;
+                <b>STORE account:</b>
+                ${escapeHtml(record.store_account_email || record.changed_by || '—')}
             </p>
-
+ 
+            <p class="muted">
+                <b>Store Remarks:</b>
+                ${escapeHtml(record.store_remarks ?? 'Not recorded')}
+            </p>
+ 
             <p class="muted">
                 <b>Date:</b>
                 ${escapeHtml(
                     dateTimeText(record.changed_at)
                 )}
             </p>
-
+ 
             <div class="tablewrap">
                 <table class="changetable">
                     <thead>
@@ -2902,7 +2918,7 @@ function historyDetailsHtml(record) {
                             <th>New Value</th>
                         </tr>
                     </thead>
-
+ 
                     <tbody>
                         ${rows || `
                             <tr>
@@ -2914,33 +2930,33 @@ function historyDetailsHtml(record) {
                     </tbody>
                 </table>
             </div>
-
+ 
         </div>
     `;
 }
-
+ 
 // ==========================================
 // HISTORY PAGINATION
 // ==========================================
-
+ 
 function changeHistoryPage(direction) {
     const totalPages = Math.max(
         1,
         Math.ceil(historyTotal / historyLimit)
     );
-
+ 
     const nextPage = historyPage + direction;
-
+ 
     if (
         nextPage < 1 ||
         nextPage > totalPages
     ) {
         return;
     }
-
+ 
     loadHistory(nextPage);
 }
-
+ 
 el('historySearch').addEventListener(
     'keydown',
     event => {
@@ -2950,16 +2966,16 @@ el('historySearch').addEventListener(
         }
     }
 );
-
+ 
 // ==========================================
 // ADMIN TASK ASSIGNMENT - NEMS
 // ==========================================
-
+ 
 let nemsTaskStores = [];
 let nemsTaskSuppliers = [];
 let nemsTaskRows = [];
 const nemsSelectedStoreIds = new Set();
-
+ 
 function nemsTaskDeadline() {
     const choice = el('nemsTaskDeadline').value;
     if (choice === 'none') return null;
@@ -2976,7 +2992,7 @@ function nemsTaskDeadline() {
     d.setHours(23, 59, 59, 999);
     return d.toISOString();
 }
-
+ 
 function nemsTaskStoresRender() {
     const search = el('nemsTaskStoreSearch').value.trim().toLowerCase();
     const visible = nemsTaskStores.filter(s => String(s.store_name || '').toLowerCase().includes(search));
@@ -2986,7 +3002,7 @@ function nemsTaskStoresRender() {
     }).join('') || '<p class="muted">No matching stores.</p>';
     el('nemsTaskStoreCount').textContent = `${nemsSelectedStoreIds.size} selected · ${visible.length} matching · ${nemsTaskStores.length} total`;
 }
-
+ 
 function nemsTaskSuppliersRender() {
     const search = el('nemsTaskSupplierSearch').value.trim().toLowerCase();
     const select = el('nemsTaskSupplier');
@@ -2996,7 +3012,7 @@ function nemsTaskSuppliersRender() {
         .map(s => `<option value="${Number(s.supplier_id)}">${escapeHtml(s.supplier_name)}</option>`).join('');
     if ([...select.options].some(o => o.value === previous)) select.value = previous;
 }
-
+ 
 function nemsTaskRowsRender() {
     const search = el('nemsTaskListSearch').value.trim().toLowerCase();
     const status = el('nemsTaskStatus').value;
@@ -3019,14 +3035,14 @@ function nemsTaskRowsRender() {
             : ''}</td>
     </tr>`).join('') || '<tr><td colspan="8">No assignments found.</td></tr>';
 }
-
+ 
 async function nemsTaskEdit(assignmentId) {
     if (currentUser?.role !== 'ADMIN') return;
     const task = nemsTaskRows.find(t => Number(t.assignment_id) === Number(assignmentId));
     if (!task || task.display_status !== 'PENDING') {
         return showMessage('Only pending assignments can be edited. Use Reopen for overdue or submitted tasks.', true);
     }
-
+ 
     // Show scope and deadline in ONE form; browser prompts previously showed them one at a time.
     const overlay = document.createElement('div');
     overlay.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.58);display:flex;align-items:center;justify-content:center;padding:18px';
@@ -3078,7 +3094,7 @@ async function nemsTaskEdit(assignmentId) {
     panel.append(heading,description,scopeLabel,dueLabel,hint,actions);
     overlay.appendChild(panel);
     document.body.appendChild(overlay);
-
+ 
     const values = await new Promise(resolve => {
         let finished = false;
         const finish = value => {
@@ -3118,7 +3134,7 @@ async function nemsTaskEdit(assignmentId) {
         showMessage(error.message || 'Could not update task.', true);
     }
 }
-
+ 
 async function nemsTaskReopen(assignmentId) {
     if (currentUser?.role !== 'ADMIN') return;
     const task = nemsTaskRows.find(t => Number(t.assignment_id) === Number(assignmentId));
@@ -3148,7 +3164,7 @@ async function nemsTaskReopen(assignmentId) {
         showMessage(error.message, true);
     }
 }
-
+ 
 async function nemsTaskLoad() {
     if (currentUser?.role !== 'ADMIN') return;
     try {
@@ -3167,7 +3183,7 @@ async function nemsTaskLoad() {
         showMessage(error.message, true);
     }
 }
-
+ 
 async function nemsTaskCreate(event) {
     event.preventDefault();
     const supplierId = Number(el('nemsTaskSupplier').value);
@@ -3198,7 +3214,7 @@ async function nemsTaskCreate(event) {
         btn.disabled = false;
     }
 }
-
+ 
 function nemsTaskSetup() {
     const nav = el('navigation');
     if (!nav || el('page-tasks')) return;
@@ -3209,7 +3225,7 @@ function nemsTaskSetup() {
     button.textContent = 'Task Assignment';
     button.addEventListener('click', () => showPage('tasks'));
     nav.appendChild(button);
-
+ 
     const page = document.createElement('section');
     page.id = 'page-tasks';
     page.className = 'page hidden adminOnly';
@@ -3271,7 +3287,7 @@ function nemsTaskSetup() {
     el('nemsTaskRefresh').addEventListener('click', nemsTaskLoad);
     el('nemsTaskForm').addEventListener('submit', nemsTaskCreate);
 }
-
+ 
 const nemsOriginalShowPage = showPage;
 showPage = function(page) {
     if (page === 'tasks') {
@@ -3282,19 +3298,19 @@ showPage = function(page) {
     }
     nemsOriginalShowPage(page);
 };
-
+ 
 nemsTaskSetup();
-
+ 
 // ==========================================
 // STORE TASKS - NEMS
 // ==========================================
-
+ 
 let nemsStoreTasks = [];
 let nemsStoreTasksBusy = false;
 let nemsActiveTaskId = null;
 let nemsTaskProducts = [];
 let nemsTaskLocked = false;
-
+ 
 function nemsStoreTaskRender() {
     const tbody = el('nemsStoreTaskRows');
     if (!tbody) return;
@@ -3315,7 +3331,7 @@ function nemsStoreTaskRender() {
           <td><button type="button" data-nems-open-task="${id}">View products</button></td></tr>`;
     }).join('') : '<tr><td colspan="7">No tasks found for your store.</td></tr>';
 }
-
+ 
 async function nemsStoreTaskLoad() {
     if (currentUser?.role !== 'STORE') return;
     const account = currentUser.email;
@@ -3331,7 +3347,7 @@ async function nemsStoreTaskLoad() {
         showMessage(error.message, true);
     }
 }
-
+ 
 function nemsTaskProductCounts() {
     const encoded = nemsTaskProducts.filter(p => p.encoded &&
         (p.no_stock || p.expiration_1 || p.expiration_2 || p.expiration_3 || (Array.isArray(p.extra_expirations) && p.extra_expirations.length))).length;
@@ -3341,7 +3357,7 @@ function nemsTaskProductCounts() {
     submit.disabled = nemsTaskLocked || nemsStoreTasksBusy ||
         !nemsTaskProducts.length || encoded !== nemsTaskProducts.length;
 }
-
+ 
 function nemsProductExpirationRows(p) {
     if (Array.isArray(p._draftRows)) return p._draftRows;
     const rows = [];
@@ -3357,7 +3373,7 @@ function nemsProductExpirationRows(p) {
     p._draftRows = rows;
     return rows;
 }
-
+ 
 function nemsTaskProductRender() {
     const body = el('nemsTaskProductRows');
     const term = el('nemsTaskProductSearch').value.trim().toLowerCase();
@@ -3380,7 +3396,7 @@ function nemsTaskProductRender() {
     }).join('') : '<tr><td colspan="5">No matching products.</td></tr>';
     nemsTaskProductCounts();
 }
-
+ 
 async function nemsOpenTaskProducts(id) {
     if (currentUser?.role !== 'STORE' || nemsStoreTasksBusy) return;
     nemsActiveTaskId = id;
@@ -3405,7 +3421,7 @@ async function nemsOpenTaskProducts(id) {
         showMessage(error.message, true);
     }
 }
-
+ 
 async function nemsSaveTaskProduct(productId) {
     if (nemsTaskLocked || nemsStoreTasksBusy || !nemsActiveTaskId) return;
     const row = [...el('nemsTaskProductRows').querySelectorAll('[data-nems-product]')]
@@ -3455,7 +3471,7 @@ async function nemsSaveTaskProduct(productId) {
         nemsTaskProductCounts();
     }
 }
-
+ 
 async function nemsStoreTaskSubmit(id) {
     if (currentUser?.role !== 'STORE' || nemsTaskLocked || nemsStoreTasksBusy) return;
     if (nemsTaskProducts.some(p => !p.encoded ||
@@ -3481,7 +3497,7 @@ async function nemsStoreTaskSubmit(id) {
         nemsStoreTasksBusy = false;
     }
 }
-
+ 
 function nemsStoreTaskSetup() {
     const nav = el('navigation');
     const appRoot = el('application');
@@ -3570,7 +3586,7 @@ function nemsStoreTaskSetup() {
         if (nemsActiveTaskId) nemsStoreTaskSubmit(nemsActiveTaskId);
     });
 }
-
+ 
 const nemsStoreOriginalShowPage = showPage;
 showPage = function(page) {
     if (page === 'storetasks') {
@@ -3581,17 +3597,17 @@ showPage = function(page) {
     }
     nemsStoreOriginalShowPage(page);
 };
-
+ 
 nemsStoreTaskSetup();
-
-
+ 
+ 
 // ==========================================
 // ADMIN USER MANAGEMENT - NEMS
 // ==========================================
 let nemsUsers = [];
 let nemsUserStores = [];
 let nemsEditingEmail = null;
-
+ 
 function nemsUserStorePicker() {
     const role = el('nemsUserRole').value;
     el('nemsUserStoreBox').classList.toggle('hidden', role !== 'STORE');
@@ -3610,14 +3626,14 @@ function nemsUserStorePicker() {
         nemsFilterASStores();
     }
 }
-
+ 
 function nemsFilterASStores() {
     const q = (el('nemsUserASSearch')?.value || '').trim().toLowerCase();
     el('nemsUserASStores')?.querySelectorAll('label.nems-task-store').forEach(label => {
         label.style.display = label.textContent.toLowerCase().includes(q) ? '' : 'none';
     });
 }
-
+ 
 function nemsUserRender() {
     const query = el('nemsUserSearch').value.trim().toLowerCase();
     const filtered = nemsUsers.filter(u => [u.email,u.full_name,u.role,u.status,u.store_name].join(' ').toLowerCase().includes(query));
@@ -3628,7 +3644,7 @@ function nemsUserRender() {
         <td>${escapeHtml(u.status)}</td><td><button type="button" class="small" data-nems-user-edit="${escapeHtml(u.email)}">Edit / Approve</button> <button type="button" class="small secondary" data-nems-password-link="${escapeHtml(u.email)}">Send Invitation</button></td></tr>
     `).join('') : '<tr><td colspan="6">No matching accounts.</td></tr>';
 }
-
+ 
 async function nemsUserLoad() {
     if (currentUser?.role !== 'ADMIN') return;
     try {
@@ -3641,7 +3657,7 @@ async function nemsUserLoad() {
         nemsUserRender();
     } catch (err) { showMessage(err.message, true); }
 }
-
+ 
 function nemsUserOpen(email = null) {
     if (currentUser?.role !== 'ADMIN') return;
     const user = email ? nemsUsers.find(u => u.email === email) : null;
@@ -3671,7 +3687,7 @@ function nemsUserOpen(email = null) {
     }
     el('nemsUserEditor').scrollIntoView({ behavior:'smooth', block:'start' });
 }
-
+ 
 async function nemsUserSave(event) {
     event.preventDefault();
     if (currentUser?.role !== 'ADMIN') return;
@@ -3705,7 +3721,7 @@ async function nemsUserSave(event) {
     } catch (err) { showMessage(err.message, true); }
     finally { button.disabled = false; }
 }
-
+ 
 function nemsUserSetup() {
     if (el('page-users')) return;
     const nav = el('navigation');
@@ -3764,7 +3780,7 @@ function nemsUserSetup() {
         if (target) nemsUserOpen(target.dataset.nemsUserEdit);
     });
 }
-
+ 
 const nemsUserOriginalShowPage = showPage;
 showPage = function(page) {
     if (page === 'users') {
@@ -3776,14 +3792,14 @@ showPage = function(page) {
     nemsUserOriginalShowPage(page);
 };
 nemsUserSetup();
-
-
+ 
+ 
 // ==========================================
 // ADMIN STORE MANAGEMENT - NEMS
 // ==========================================
 let nemsManagedStores = [];
 let nemsEditingStoreId = null;
-
+ 
 async function nemsStoresLoad() {
     try {
         nemsManagedStores = await api('/api/admin/stores');
@@ -3792,7 +3808,7 @@ async function nemsStoresLoad() {
         showMessage(err.message, true);
     }
 }
-
+ 
 function nemsStoresRender() {
     const query = el('nemsStoreSearch').value.trim().toLowerCase();
     const filtered = nemsManagedStores.filter(s =>
@@ -3808,7 +3824,7 @@ function nemsStoresRender() {
             <td><button type="button" data-nems-store-edit="${Number(s.store_id)}">Edit status</button></td>
         </tr>`).join('');
 }
-
+ 
 function nemsStoresOpen(id = null) {
     nemsEditingStoreId = id === null ? null : Number(id);
     const store = nemsEditingStoreId === null ? null :
@@ -3828,7 +3844,7 @@ function nemsStoresOpen(id = null) {
     el('nemsStoreEditor').classList.remove('hidden');
     el('nemsStoreEditor').scrollIntoView({behavior:'smooth', block:'start'});
 }
-
+ 
 async function nemsStoresSave(event) {
     event.preventDefault();
     const editing = nemsEditingStoreId !== null;
@@ -3858,7 +3874,7 @@ async function nemsStoresSave(event) {
         button.disabled = false;
     }
 }
-
+ 
 function nemsStoresSetup() {
     if (el('page-storemanagement')) return;
     const button = document.createElement('button');
@@ -3868,7 +3884,7 @@ function nemsStoresSetup() {
     button.textContent = 'Store Management';
     button.addEventListener('click', () => showPage('storemanagement'));
     el('navigation').appendChild(button);
-
+ 
     const page = document.createElement('section');
     page.id = 'page-storemanagement';
     page.className = 'page adminOnly hidden';
@@ -3916,7 +3932,7 @@ function nemsStoresSetup() {
         if (target) nemsStoresOpen(target.dataset.nemsStoreEdit);
     });
 }
-
+ 
 const nemsStoresOriginalShowPage = showPage;
 showPage = function(page) {
     if (page === 'storemanagement') {
@@ -3928,7 +3944,7 @@ showPage = function(page) {
     nemsStoresOriginalShowPage(page);
 };
 nemsStoresSetup();
-
+ 
 // Supabase recovery redirects to this page with an access token in the URL fragment.
 // Remove the fragment immediately to avoid exposing it in browser history.
 let nemsRecoveryAccessToken = '';
@@ -3940,7 +3956,7 @@ let nemsRecoveryAccessToken = '';
     el('loginPanel').classList.add('hidden');
     el('nemsPasswordSetup').classList.remove('hidden');
 })();
-
+ 
 el('nemsPasswordSetupForm').addEventListener('submit', async event => {
     event.preventDefault();
     const message = el('nemsPasswordSetupMessage');
@@ -3966,13 +3982,13 @@ el('nemsPasswordSetupForm').addEventListener('submit', async event => {
         message.className = 'message error';
     } finally { button.disabled = false; }
 });
-
-
+ 
+ 
 // ADMIN supplier product visibility. All product categories are treated equally.
 let nemsVisibilitySupplierId = null;
 let nemsVisibilityProducts = [];
 let nemsVisibilityOnly = 'all';
-
+ 
 async function nemsOpenProductVisibility(supplierId) {
     if (currentUser?.role !== 'ADMIN' || !supplierId) return;
     nemsVisibilitySupplierId = supplierId;
@@ -4013,7 +4029,7 @@ async function nemsOpenProductVisibility(supplierId) {
         panel.scrollIntoView({behavior:'smooth', block:'start'});
     } catch (error) { showMessage(error.message, true); }
 }
-
+ 
 function nemsRenderVisibility() {
     const panel = document.getElementById('nemsVisibilityPanel');
     if (!panel) return;
@@ -4038,7 +4054,7 @@ function nemsRenderVisibility() {
       '<tr><td colspan="5">No matching products.</td></tr>';
     document.getElementById('nemsVisibilitySelectAll').checked = false;
 }
-
+ 
 async function nemsSetVisibility(visible) {
     if (currentUser?.role !== 'ADMIN') return;
     const ids = [...document.querySelectorAll('#nemsVisibilityPanel [data-nems-visible-product]:checked')]
@@ -4053,8 +4069,8 @@ async function nemsSetVisibility(visible) {
         await nemsOpenProductVisibility(nemsVisibilitySupplierId);
     } catch (error) { showMessage(error.message, true); }
 }
-
-
+ 
+ 
 // Store Encoding barcode search; does not change My Tasks.
 let nemsEntryCameraStream = null;
 let nemsEntryCameraTimer = null;
@@ -4188,8 +4204,8 @@ el('nemsChangePasswordForm').addEventListener('submit', async event => {
     } catch(error) { message.textContent = error.message; message.className = 'message error'; }
     finally { button.disabled = false; }
 });
-
-
+ 
+ 
 let nemsTaskCameraStream = null;
 let nemsTaskCameraTimer = null;
 function nemsFindTaskBarcode() {
@@ -4235,6 +4251,6 @@ async function nemsLoadStoreRemarks(productId) {
     } catch(e){showMessage(e.message,true);}
 }
 </script>
-
+ 
 </body>
 </html>
