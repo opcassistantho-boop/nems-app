@@ -629,7 +629,7 @@ module.exports = function registerTaskRoutes({
             const locked = a.status !== 'ACTIVE' || a.submitted ||
                 (a.due_at && new Date(a.due_at).getTime() <= Date.now());
             const products = await pool.query(`
-                SELECT p.product_id, p.sku, p.product_name, p.supplier_name,
+                SELECT p.product_id, p.sku, p.product_name, p.master_barcode, p.supplier_name,
                        pr.expiration_1, pr.qty_1, pr.expiration_2, pr.qty_2,
                        pr.expiration_3, pr.qty_3, COALESCE(pr.extra_expirations, '[]'::jsonb) AS extra_expirations, COALESCE(pr.no_stock, FALSE) AS no_stock, pr.saved_at,
                        (pr.product_id IS NOT NULL) AS encoded
@@ -697,6 +697,10 @@ module.exports = function registerTaskRoutes({
         const productId = positiveId(req.params.productId);
         if (!id || !productId) return fail(res, 400, 'Invalid task or product ID');
         const b = req.body || {};
+        const employeeName = typeof b.employee_name === 'string' ? b.employee_name.trim() : '';
+        const storeRemarks = typeof b.store_remarks === 'string' ? b.store_remarks.trim() : '';
+        if (!employeeName || employeeName.length > 120 || !storeRemarks || storeRemarks.length > 2000)
+            return fail(res, 400, 'Employee full name and Store Remarks are required');
         if (b.no_stock !== undefined && typeof b.no_stock !== 'boolean')
             return fail(res, 400, 'Invalid NO STOCK value');
         const noStock = b.no_stock === true;
@@ -784,6 +788,11 @@ module.exports = function registerTaskRoutes({
                 RETURNING *
             `, [id, productId, dates[0], quantities[0], dates[1], quantities[1],
                 dates[2], quantities[2], getEmail(req), JSON.stringify(extras)]);
+            await client.query(`INSERT INTO public.nems_store_remarks
+                (store_name, store_email, product_id, assignment_id, employee_name, remarks, source, account_email, details)
+                VALUES ($1,$2,$3,$4,$5,$6,'MY_TASKS',$7,$8::jsonb)`,
+                [getStoreName(req),getEmail(req),productId,id,employeeName,storeRemarks,getEmail(req),
+                 JSON.stringify({no_stock:noStock,expiration_1:dates[0],qty_1:quantities[0],expiration_2:dates[1],qty_2:quantities[1],expiration_3:dates[2],qty_3:quantities[2],extra_expirations:extras})]);
             await client.query('COMMIT');
             return res.json(saved.rows[0]);
         } catch (error) {
