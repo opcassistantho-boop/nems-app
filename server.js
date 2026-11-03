@@ -830,8 +830,73 @@ app.get(
  
             const { rows } = await pool.query(
                 `
+                WITH saved_task_rows AS (
+                    SELECT DISTINCT ON (
+                        LOWER(TRIM(s.store_email)),
+                        p.product_id,
+                        v.expiration_date
+                    )
+                        s.store_name,
+                        s.store_email,
+                        p.product_id,
+                        v.expiration_date
+                    FROM public.nems_task_product_progress pr
+                    JOIN public.nems_task_assignments a
+                      ON a.assignment_id = pr.assignment_id
+                    JOIN public.stores s
+                      ON s.store_id = a.store_id
+                    JOIN public.products p
+                      ON p.product_id = pr.product_id
+                    CROSS JOIN LATERAL (
+                        SELECT x.expiration_date, x.quantity
+                        FROM (VALUES
+                            (pr.expiration_1, pr.qty_1),
+                            (pr.expiration_2, pr.qty_2),
+                            (pr.expiration_3, pr.qty_3)
+                        ) x(expiration_date, quantity)
+                        UNION ALL
+                        SELECT
+                            COALESCE(e.item->>'date',
+                                     e.item->>'expiration_date')::date,
+                            COALESCE(e.item->>'qty',
+                                     e.item->>'quantity')::integer
+                        FROM jsonb_array_elements(
+                            COALESCE(pr.extra_expirations, '[]'::jsonb)
+                        ) e(item)
+                    ) v
+                    WHERE COALESCE(pr.no_stock, FALSE) = FALSE
+                      AND v.expiration_date IS NOT NULL
+                      AND v.quantity > 0
+                      AND s.store_email IS NOT NULL
+                    ORDER BY
+                        LOWER(TRIM(s.store_email)),
+                        p.product_id,
+                        v.expiration_date,
+                        pr.saved_at DESC NULLS LAST,
+                        pr.assignment_id DESC
+                ),
+                combined AS (
+                    SELECT
+                        store_name, store_email,
+                        product_id, expiration_date
+                    FROM (${monitoringEntries})
+                    UNION ALL
+                    SELECT
+                        t.store_name, t.store_email,
+                        t.product_id, t.expiration_date
+                    FROM saved_task_rows t
+                    WHERE NOT EXISTS (
+                        SELECT 1
+                        FROM (${monitoringEntries}) existing
+                        WHERE LOWER(TRIM(existing.store_email)) =
+                              LOWER(TRIM(t.store_email))
+                          AND existing.product_id = t.product_id
+                          AND existing.expiration_date =
+                              t.expiration_date
+                    )
+                )
                 SELECT expiration_date
-                FROM (${monitoringEntries}) m
+                FROM combined m
                 WHERE ${scope.sql}
                 `,
                 scope.args
@@ -842,29 +907,22 @@ app.get(
                 BLUE: 0,
                 GREEN: 0,
                 EXPIRED: 0,
-                LATER: 0
+                LATER: 0,
+                ORANGE: 0
             };
  
             for (const record of rows) {
-                const category = expiryCategory(
-                    record.expiration_date
-                );
- 
+                const category = expiryCategory(record.expiration_date);
                 counts[category]++;
             }
  
             res.json(counts);
- 
         } catch (error) {
-            databaseError(
-                res,
-                error,
-                'Could not load dashboard'
-            );
+            databaseError(res, error, 'Could not load dashboard');
         }
     }
 );
- 
+
 // ==========================================
 // SAVE STORE MONITORING
 // ==========================================
