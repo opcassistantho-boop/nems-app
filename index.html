@@ -908,6 +908,7 @@ td button { margin:2px; }
         </p>
 
         <form id="storeForm">
+            <div class="formgrid"><div><label>Employee Full Name *</label><input id="nemsStoreEmployee" maxlength="120" required autocomplete="name" placeholder="Type your full name"></div><div class="wide"><label>Store Remarks *</label><textarea id="nemsStoreRemark" maxlength="2000" required placeholder="Describe what was encoded or changed"></textarea></div></div>
             <div class="formgrid">
 
                 <div>
@@ -2406,13 +2407,16 @@ el('storeForm').addEventListener('submit', async event => {
         product_id: Number(el('entryProduct').value),
         store_barcode: el('entryBarcode').value,
         srp: el('entrySrp').value,
-        expirations: entries
+        expirations: entries,
+        employee_name: el('nemsStoreEmployee').value.trim(),
+        store_remarks: el('nemsStoreRemark').value.trim()
     };
     const button = el('storeSaveBtn');
     button.disabled = true;
     try {
         await api('/api/store/monitoring', {method:'POST', body:JSON.stringify(payload)});
         showMessage('Store monitoring saved successfully.');
+        nemsLoadStoreRemarks(payload.product_id);
     } catch (error) {
         showMessage(error.message, true);
     } finally {
@@ -3372,7 +3376,7 @@ function nemsTaskProductRender() {
           <td>${escapeHtml(p.product_name)}</td><td>${nemsTaskLocked ? (noStock ? '<b>NO STOCK</b>' : '') : `<label style="display:flex;align-items:center;gap:7px;margin-bottom:10px"><input type="checkbox" data-nems-no-stock style="width:auto" ${noStock ? 'checked' : ''}> NO STOCK — item not available</label>`}<div class="nems-exp-entries" style="${noStock ? 'display:none' : ''}">${entries}</div>
           ${nemsTaskLocked || noStock ? '' : `<button type="button" class="small secondary" data-nems-add-row="${id}">+ Add Expiration Date</button>`}</td>
           <td>${p.encoded ? (p.no_stock ? 'NO STOCK · Saved' : 'Saved') : 'Not encoded'}</td>
-          <td>${nemsTaskLocked ? 'Locked' : `<button type="button" data-nems-save-product="${id}">Save</button>`}</td></tr>`;
+          <td>${nemsTaskLocked ? 'Locked' : `<button type="button" data-nems-save-product="${id}">Save</button>`}<button type="button" class="secondary small" data-nems-view-remarks="${id}">Remarks</button></td></tr>`;
     }).join('') : '<tr><td colspan="5">No matching products.</td></tr>';
     nemsTaskProductCounts();
 }
@@ -3393,6 +3397,7 @@ async function nemsOpenTaskProducts(id) {
             ? 'READ ONLY: Task submitted, overdue, or closed. Only ADMIN can reopen it.'
             : 'Save each product before submitting. All active supplier products must be encoded.';
         el('nemsTaskProductSearch').value = '';
+        nemsStopTaskCamera();
         nemsTaskProductRender();
         el('nemsTaskProductPanel').scrollIntoView({behavior:'smooth', block:'start'});
     } catch (error) {
@@ -3416,7 +3421,10 @@ async function nemsSaveTaskProduct(productId) {
             Number(item.qty) < 0)
             return showMessage('Each expiration date needs a nonnegative whole-number quantity.', true);
     }
-    const payload = {no_stock: noStock};
+    const employeeName = el('nemsTaskEmployee').value.trim();
+    const storeRemark = el('nemsTaskRemark').value.trim();
+    if (!employeeName || !storeRemark) return showMessage('Employee name and Store Remarks are required.', true);
+    const payload = {no_stock: noStock, employee_name:employeeName, store_remarks:storeRemark};
     for (let n = 1; n <= 3; n++) {
         payload[`expiration_${n}`] = rows[n-1]?.date || null;
         payload[`qty_${n}`] = rows[n-1]?.qty ?? null;
@@ -3439,6 +3447,7 @@ async function nemsSaveTaskProduct(productId) {
         }
         nemsTaskProductRender();
         showMessage('Product progress saved.');
+        nemsLoadStoreRemarks(productId);
     } catch (error) {
         showMessage(error.message, true);
     } finally {
@@ -3502,6 +3511,8 @@ function nemsStoreTaskSetup() {
       <div class="panel hidden" id="nemsTaskProductPanel">
         <h2 id="nemsTaskProductHeading">Supplier products</h2>
         <p id="nemsTaskLockNote" class="muted"></p>
+        <div class="nems-task-grid"><div><label>Employee Full Name *</label><input id="nemsTaskEmployee" maxlength="120" autocomplete="name" placeholder="Type your full name"></div><div><label>Store Remarks *</label><textarea id="nemsTaskRemark" maxlength="2000" placeholder="Describe the encoding or correction"></textarea></div></div>
+        <div class="nems-task-grid"><div><label>Scan / Enter Master Barcode</label><input id="nemsTaskBarcode" autocomplete="off" inputmode="none" placeholder="Scan or type barcode"><div class="nems-task-actions"><button type="button" id="nemsTaskFindBarcode">Find Barcode</button><button type="button" id="nemsTaskStartCamera">Use Camera</button><button type="button" id="nemsTaskStopCamera" class="secondary hidden">Stop Camera</button></div><video id="nemsTaskCamera" class="hidden" playsinline muted style="width:100%;max-width:360px"></video></div></div>
         <input id="nemsTaskProductSearch" placeholder="Search SKU or product name">
         <p id="nemsTaskProductCount" class="muted"></p>
         <div class="tablewrap"><table><thead><tr>
@@ -3519,6 +3530,10 @@ function nemsStoreTaskSetup() {
         if (btn) nemsOpenTaskProducts(Number(btn.dataset.nemsOpenTask));
     });
     el('nemsTaskProductSearch').addEventListener('input', nemsTaskProductRender);
+    el('nemsTaskFindBarcode').addEventListener('click', nemsFindTaskBarcode);
+    el('nemsTaskBarcode').addEventListener('keydown', e => {if(e.key === 'Enter'){e.preventDefault();nemsFindTaskBarcode();}});
+    el('nemsTaskStartCamera').addEventListener('click', nemsStartTaskCamera);
+    el('nemsTaskStopCamera').addEventListener('click', nemsStopTaskCamera);
     el('nemsTaskProductRows').addEventListener('input', e => {
         const stockToggle = e.target.closest('[data-nems-no-stock]');
         if (stockToggle) {
@@ -3536,6 +3551,8 @@ function nemsStoreTaskSetup() {
     el('nemsTaskProductRows').addEventListener('click', e => {
         const btn = e.target.closest('[data-nems-save-product]');
         if (btn) return nemsSaveTaskProduct(Number(btn.dataset.nemsSaveProduct));
+        const remarksBtn = e.target.closest('[data-nems-view-remarks]');
+        if (remarksBtn) return nemsLoadStoreRemarks(Number(remarksBtn.dataset.nemsViewRemarks));
         const add = e.target.closest('[data-nems-add-row]');
         const remove = e.target.closest('[data-nems-remove-row]');
         if (!add && !remove) return;
@@ -4172,6 +4189,51 @@ el('nemsChangePasswordForm').addEventListener('submit', async event => {
     finally { button.disabled = false; }
 });
 
+
+let nemsTaskCameraStream = null;
+let nemsTaskCameraTimer = null;
+function nemsFindTaskBarcode() {
+    const code = el('nemsTaskBarcode')?.value.trim();
+    if (!code) return showMessage('Enter or scan a barcode.', true);
+    const matches = nemsTaskProducts.filter(p => String(p.master_barcode || '').trim() === code);
+    if (matches.length !== 1) return showMessage(matches.length ? 'Multiple products share this barcode.' : 'Barcode not found in this assigned task.', true);
+    el('nemsTaskProductSearch').value = String(matches[0].sku || matches[0].product_name);
+    nemsTaskProductRender();
+    el('nemsTaskProductRows').querySelector(`[data-nems-product="${Number(matches[0].product_id)}"]`)?.scrollIntoView({behavior:'smooth',block:'center'});
+}
+function nemsStopTaskCamera() {
+    if (nemsTaskCameraTimer) clearInterval(nemsTaskCameraTimer);
+    nemsTaskCameraTimer = null;
+    if (nemsTaskCameraStream) nemsTaskCameraStream.getTracks().forEach(t => t.stop());
+    nemsTaskCameraStream = null;
+    const v = el('nemsTaskCamera'); if(v){v.pause();v.srcObject=null;v.classList.add('hidden');}
+    el('nemsTaskStopCamera')?.classList.add('hidden');
+}
+async function nemsStartTaskCamera() {
+    if (!('BarcodeDetector' in window) || !navigator.mediaDevices?.getUserMedia) return showMessage('Camera barcode detection unavailable. Use handheld scanner or type the barcode.', true);
+    nemsStopTaskCamera();
+    try {
+        const detector = new BarcodeDetector({formats:['ean_13','ean_8','upc_a','upc_e','code_128','code_39','itf','qr_code']});
+        const stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}},audio:false});
+        nemsTaskCameraStream=stream;
+        const video=el('nemsTaskCamera'); video.srcObject=stream; video.classList.remove('hidden');
+        el('nemsTaskStopCamera').classList.remove('hidden'); await video.play();
+        let busy=false;
+        nemsTaskCameraTimer=setInterval(async()=>{
+            if(busy || !nemsTaskCameraStream || video.readyState<2) return;
+            busy=true;
+            try {const codes=await detector.detect(video); if(codes.length){el('nemsTaskBarcode').value=codes[0].rawValue;nemsStopTaskCamera();nemsFindTaskBarcode();}} catch(e){console.warn('Task camera detection:',e);} finally{busy=false;}
+        },350);
+    } catch(e){nemsStopTaskCamera();showMessage('Camera unavailable: '+e.message,true);}
+}
+async function nemsLoadStoreRemarks(productId) {
+    try {
+        const data=await api('/api/store/remarks?product_id='+encodeURIComponent(productId));
+        const entries=Array.isArray(data)?data:[];
+        const lines=entries.map(r=>`${new Date(r.created_at).toLocaleString()} | ${r.store_name} | ${r.employee_name} | ${r.source}\n${r.remarks}`);
+        alert(lines.length ? lines.join('\n\n') : 'No Store Remarks yet.');
+    } catch(e){showMessage(e.message,true);}
+}
 </script>
 
 </body>
