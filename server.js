@@ -1485,12 +1485,12 @@ app.post(
                     supplier_name,
                     status
                 )
-                SELECT $1, 'ACTIVE'
+                SELECT $1::text, 'ACTIVE'
                 WHERE NOT EXISTS (
                     SELECT 1
                     FROM public.suppliers
                     WHERE LOWER(TRIM(supplier_name)) =
-                          LOWER(TRIM($1))
+                          LOWER(TRIM($1::text))
                 )
                 RETURNING
                     supplier_id,
