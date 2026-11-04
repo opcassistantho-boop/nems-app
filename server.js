@@ -2643,7 +2643,9 @@ app.post('/api/admin/import/preview',authenticate,adminOnly,secureRoute(async(re
     const supplierRows=(await pool.query('SELECT * FROM public.suppliers ORDER BY supplier_id')).rows;
     const barcodes=(await pool.query('SELECT product_id,barcode FROM public.nems_product_barcodes ORDER BY barcode_id')).rows;
     const getKey=r=>type==='PRODUCTS'?`${String(r.sku).trim().toLowerCase()}\u0000${String(r.supplier_name).trim().toLowerCase()}`:String(r.supplier_name).trim().toLowerCase();
-    const changes=[],seen=new Set(),seenIds=new Set();
+    const changes=[],seen=new Set(),seenIds=new Set(),conflicts=[];
+    const resolutions=req.body.resolutions||{};
+    if(typeof resolutions!=='object'||Array.isArray(resolutions))throw appError(400,'Invalid row selections');
     for(let i=1;i<cells.length;i++){
         const supplied=Object.fromEntries(headers.map((h,j)=>[h,cells[i][j]]));
         for(const f of ['sku','master_barcode'])if(supplied[f]!==null&&supplied[f]!==undefined&&typeof supplied[f]!=='string')
@@ -2665,32 +2667,59 @@ app.post('/api/admin/import/preview',authenticate,adminOnly,secureRoute(async(re
         if(supplied[idField]!==null&&supplied[idField]!==undefined&&supplied[idField]!==''){
             const id=validId(supplied[idField]);if(!id)throw appError(400,`Row ${i+1}: Invalid ${idField}`);
             current=source.rows.find(r=>Number(r[idField])===id);if(!current)throw appError(400,`Row ${i+1}: ${idField} does not exist. Leave ID blank for a new record.`);
+        }else if(type==='PRODUCTS'){
+            if(!values.sku)throw appError(400,`Row ${i+1}: SKU is required`);
+            const norm=v=>String(v||'').trim().toLowerCase();
+            const skuMatches=source.rows.filter(r=>norm(r.sku)===norm(values.sku));
+            const barcode=scientificBarcode?'':String(values.master_barcode||'').trim();
+            const exact=barcode?skuMatches.filter(r=>String(r.master_barcode||'').trim()===barcode||barcodes.some(b=>Number(b.product_id)===Number(r.product_id)&&String(b.barcode).trim()===barcode)):[];
+            const named=skuMatches.filter(r=>norm(r.product_name)===norm(values.product_name)&&(!values.supplier_name||norm(r.supplier_name)===norm(values.supplier_name)));
+            let candidates=exact.length?exact:named.length?named:skuMatches;
+            const selection=resolutions[String(i+1)];
+            if(selection!==undefined){
+                if(selection==='NEW'){
+                    if(!barcode||exact.length)throw appError(409,`Row ${i+1}: A new pack needs a unique exact barcode`);
+                    warnings.push('New product/pack explicitly selected in preview.');
+                }else{
+                    const id=validId(selection);current=candidates.find(r=>Number(r.product_id)===id);
+                    if(!current)throw appError(409,`Row ${i+1}: Invalid or stale product selection. Generate a fresh preview.`);
+                    warnings.push(`Existing product #${current.product_id} explicitly selected in preview.`);
+                }
+            }else if(exact.length===1)current=exact[0];
+            else if(!barcode&&!exact.length&&named.length===1)current=named[0];
+            else if(candidates.length){
+                conflicts.push({row:i+1,sku:values.sku,product_name:values.product_name,barcode:supplied.master_barcode,
+                    allow_new:!!barcode&&!exact.length,
+                    candidates:candidates.map(r=>({product_id:r.product_id,product_name:r.product_name,supplier_name:r.supplier_name,master_barcode:r.master_barcode,landed_cost:r.landed_cost}))});
+                continue;
+            }
         }else{
-            if(!values.supplier_name||(type==='PRODUCTS'&&!values.sku))throw appError(400,`Row ${i+1}: Provide ID or the complete exact matching key`);
+            if(!values.supplier_name)throw appError(400,`Row ${i+1}: Supplier name is required`);
             const matches=source.rows.filter(r=>getKey(r)===getKey(values));
-            if(type==='PRODUCTS'&&matches.length){
-                // Shared SKUs can represent distinct piece/case packs. Never choose the first SKU match.
-                const named=values.product_name?matches.filter(r=>importProductIdentity(r)===importProductIdentity(values)):[];
-                if(named.length===1)current=named[0];
-                else if(!values.product_name&&matches.length===1)current=matches[0];
-                else throw appError(409,`Row ${i+1}: Cannot uniquely identify this product/pack. Supply its existing product_id. No records were changed.`);
-            }else{
-                if(matches.length>1)throw appError(409,`Row ${i+1}: Multiple suppliers match. Supply the stable Supplier ID.`);
-                current=matches[0]||null;
+            if(matches.length>1)throw appError(409,`Row ${i+1}: Multiple suppliers match. Supply the stable Supplier ID.`);
+            current=matches[0]||null;
+        }
+        if(type==='PRODUCTS'&&current){
+            if(Object.hasOwn(values,'supplier_name')&&values.supplier_name!==current.supplier_name)warnings.push(`Supplier preserved: ${current.supplier_name}. Uploaded supplier was ${values.supplier_name||'blank'}.`);
+            values.supplier_name=current.supplier_name;
+            // A registered alternative barcode identifies the product but must not replace its master barcode.
+            if(values.master_barcode&&values.master_barcode!==current.master_barcode&&barcodes.some(b=>Number(b.product_id)===Number(current.product_id)&&b.barcode===values.master_barcode)){
+                warnings.push('Registered alternative barcode matched; existing master barcode preserved.');
+                delete values.master_barcode;
             }
         }
         if(current&&seenIds.has(String(current[idField])))throw appError(400,`Row ${i+1}: The same record appears twice`);
         if(current)seenIds.add(String(current[idField]));
         const final={...(current||{status:'ACTIVE',master_srp:'0.00',store_task_visible:true}),...values};
         if(!final.supplier_name||(type==='PRODUCTS'&&(!final.sku||!final.product_name)))throw appError(400,`Row ${i+1}: Required fields are missing`);
-        const key=type==='PRODUCTS'?importProductIdentity(final):getKey(final);
+        const key=type==='PRODUCTS'?importProductIdentity(final)+'\u0000'+String(final.master_barcode||'').trim():getKey(final);
         if(seen.has(key)){
-            const existingIdentityRetained=type==='PRODUCTS'&&current&&importProductIdentity(current)===key
-                &&changes.filter(ch=>importProductIdentity(ch.after)===key).every(ch=>ch.before&&importProductIdentity(ch.before)===key);
+            const existingIdentityRetained=type==='PRODUCTS'&&current&&importProductIdentity(current)+'\u0000'+String(current.master_barcode||'').trim()===key
+                &&changes.filter(ch=>importProductIdentity(ch.after)+'\u0000'+String(ch.after.master_barcode||'').trim()===key).every(ch=>ch.before&&importProductIdentity(ch.before)+'\u0000'+String(ch.before.master_barcode||'').trim()===key);
             if(!existingIdentityRetained)throw appError(409,`Row ${i+1}: Duplicate product/pack identity in this import`);
         }
         seen.add(key);
-        const identityOf=r=>type==='PRODUCTS'?importProductIdentity(r):getKey(r);
+        const identityOf=r=>type==='PRODUCTS'?importProductIdentity(r)+'\u0000'+String(r.master_barcode||'').trim():getKey(r);
         const collision=source.rows.find(r=>identityOf(r)===key&&(!current||String(r[idField])!==String(current[idField])));
         // Existing duplicate identities may be maintained only through an explicit, stable ID.
         // Creating or moving another record into an already-used identity is blocked.
@@ -2711,6 +2740,7 @@ app.post('/api/admin/import/preview',authenticate,adminOnly,secureRoute(async(re
         const action=!current?'NEW':changed.length?'CHANGED':'UNCHANGED';
         changes.push({row:i+1,id:current?.[idField]||null,action,fields:current?changed:Object.keys(values),warnings,before:current,after:final});
     }
+    if(conflicts.length)return res.json({requires_resolution:true,conflicts});
     for(const [key,p] of importPreviews)if(p.expires<Date.now())importPreviews.delete(key);
     if(importPreviews.size>=20)throw appError(429,'Too many pending previews. Confirm an existing preview or wait 15 minutes.');
     const token=require('crypto').randomBytes(32).toString('hex');
