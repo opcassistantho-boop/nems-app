@@ -124,15 +124,17 @@ module.exports = function registerUserRoutes({ app, pool, authenticate, adminOnl
  
  
  
-    async function setASStores(client, email, ids) {
+    async function setASStores(client, email, ids, role = 'AS') {
  
-        await client.query('DELETE FROM public.as_store_assignments WHERE LOWER(as_email) = $1', [email]);
+        const table = role === 'AOM' ? 'aom_store_assignments' : 'as_store_assignments';
+        const field = role === 'AOM' ? 'aom_email' : 'as_email';
+        await client.query(`DELETE FROM public.${table} WHERE LOWER(${field}) = $1`, [email]);
  
         for (const id of ids) {
  
             await client.query(
  
-                'INSERT INTO public.as_store_assignments (as_email, store_id) VALUES ($1, $2)',
+                `INSERT INTO public.${table} (${field}, store_id) VALUES ($1, $2)`,
  
                 [email, id]
  
@@ -238,7 +240,7 @@ module.exports = function registerUserRoutes({ app, pool, authenticate, adminOnl
  
             res.set('Cache-Control', 'no-store');
  
-            return res.json({ message: 'Password invitation emailed to ' + email, sent: true });
+            return res.json({ message: 'Brevo accepted the password invitation for ' + email + '; delivery is unconfirmed.', sent: false, provider_accepted: true });
  
         } catch (err) {
  
@@ -356,11 +358,11 @@ module.exports = function registerUserRoutes({ app, pool, authenticate, adminOnl
  
                 SELECT u.email, u.full_name, u.role, u.status, u.store_name, u.created_at,
  
-                    COALESCE((SELECT array_agg(DISTINCT a.store_id ORDER BY a.store_id)
+                    CASE WHEN u.role='AOM' THEN COALESCE((SELECT array_agg(DISTINCT aa.store_id ORDER BY aa.store_id) FROM public.aom_store_assignments aa WHERE LOWER(aa.aom_email)=LOWER(u.email)), ARRAY[]::bigint[]) ELSE COALESCE((SELECT array_agg(DISTINCT a.store_id ORDER BY a.store_id)
  
                               FROM public.as_store_assignments a
  
-                              WHERE LOWER(a.as_email) = LOWER(u.email)), ARRAY[]::bigint[]) AS assigned_store_ids
+                              WHERE LOWER(a.as_email) = LOWER(u.email)), ARRAY[]::bigint[]) END AS assigned_store_ids
  
                 FROM public.users u
  
@@ -454,7 +456,7 @@ module.exports = function registerUserRoutes({ app, pool, authenticate, adminOnl
  
                 storeName = store.rows[0].store_name;
  
-            } else if (role === 'AS') {
+            } else if (['AS','AOM'].includes(role)) {
  
                 storeIds = await validateStoreIds(client, body.store_ids);
  
@@ -462,7 +464,7 @@ module.exports = function registerUserRoutes({ app, pool, authenticate, adminOnl
  
                     await client.query('ROLLBACK');
  
-                    return fail(res, 400, 'Assign at least one active store to AS');
+                    return fail(res, 400, 'Assign at least one active store to AS or AOM');
  
                 }
  
@@ -490,7 +492,7 @@ module.exports = function registerUserRoutes({ app, pool, authenticate, adminOnl
  
             );
  
-            if (role === 'AS') await setASStores(client, email, storeIds);
+            if (['AS','AOM'].includes(role)) await setASStores(client, email, storeIds, role);
  
             await client.query('COMMIT');
  
@@ -512,11 +514,11 @@ module.exports = function registerUserRoutes({ app, pool, authenticate, adminOnl
  
             return res.status(201).json({ email, role, status: 'INACTIVE',
  
-                invitation_sent: invitationSent,
+                invitation_sent: false, invitation_provider_accepted: invitationSent,
  
                 message: invitationSent ?
  
-                    'User created and invitation emailed. ADMIN activation required.' :
+                    'User created. Brevo accepted the invitation request; delivery is unconfirmed. ADMIN activation required.' :
  
                     'User created, but invitation email failed. Use Send Invitation to retry. ADMIN activation required.' });
  
@@ -624,7 +626,7 @@ module.exports = function registerUserRoutes({ app, pool, authenticate, adminOnl
  
                 storeName = store.rows[0].store_name;
  
-            } else if (role === 'AS') {
+            } else if (['AS','AOM'].includes(role)) {
  
                 storeIds = await validateStoreIds(client, body.store_ids);
  
@@ -632,7 +634,7 @@ module.exports = function registerUserRoutes({ app, pool, authenticate, adminOnl
  
                     await client.query('ROLLBACK');
  
-                    return fail(res, 400, 'Assign at least one active store to AS');
+                    return fail(res, 400, 'Assign at least one active store to AS or AOM');
  
                 }
  
@@ -646,7 +648,8 @@ module.exports = function registerUserRoutes({ app, pool, authenticate, adminOnl
  
             );
  
-            await setASStores(client, email, role === 'AS' ? storeIds : []);
+            await setASStores(client, email, role === 'AS' ? storeIds : [], 'AS');
+            await setASStores(client, email, role === 'AOM' ? storeIds : [], 'AOM');
  
             await client.query('COMMIT');
  
@@ -665,3 +668,4 @@ module.exports = function registerUserRoutes({ app, pool, authenticate, adminOnl
     });
  
 };
+
