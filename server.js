@@ -2610,6 +2610,20 @@ function canonicalImportValue(field,value) {
     if(field==='status'&&!['ACTIVE','INACTIVE'].includes(s.toUpperCase()))throw appError(400,'Status must be ACTIVE or INACTIVE');
     return field==='status'?s.toUpperCase():s||null;
 }
+function importProductIdentity(row) {
+    return [row.sku,row.supplier_name,row.product_name].map(v=>String(v??'').trim().toLowerCase()).join('\u0000');
+}
+function importScientificBarcode(value) {
+    return typeof value==='string' && /^[+-]?\d+(?:\.\d+)?[eE][+-]?\d+$/.test(value.trim());
+}
+function importRoundAmount(value) {
+    const text=String(value).trim();
+    if(!/^\d+\.\d{3,}$/.test(text))return value;
+    const [whole,fraction]=text.split('.');
+    let cents=BigInt(whole)*100n+BigInt(fraction.slice(0,2));
+    if(Number(fraction[2])>=5)cents++;
+    return (cents/100n).toString()+'.'+(cents%100n).toString().padStart(2,'0');
+}
 function importFingerprint(rows) {return require('crypto').createHash('sha256').update(JSON.stringify(rows)).digest('hex');}
 app.post('/api/admin/import/preview',authenticate,adminOnly,secureRoute(async(req,res)=>{
     const type=req.body.import_type,fields=IMPORT_FIELDS[type];
@@ -2634,7 +2648,19 @@ app.post('/api/admin/import/preview',authenticate,adminOnly,secureRoute(async(re
         const supplied=Object.fromEntries(headers.map((h,j)=>[h,cells[i][j]]));
         for(const f of ['sku','master_barcode'])if(supplied[f]!==null&&supplied[f]!==undefined&&typeof supplied[f]!=='string')
             throw appError(400,`Row ${i+1}: ${f} must be stored as text in Excel to preserve leading zeroes`);
-        const values={};for(const f of fields)if(Object.hasOwn(supplied,f))values[f]=canonicalImportValue(f,supplied[f]);
+        const warnings=[];
+        const scientificBarcode=type==='PRODUCTS'&&importScientificBarcode(supplied.master_barcode);
+        const values={};
+        for(const f of fields)if(Object.hasOwn(supplied,f)){
+            if(f==='master_barcode'&&scientificBarcode)continue;
+            let value=supplied[f];
+            if(['master_srp','landed_cost'].includes(f)&&value!==null&&value!==''){
+                const rounded=importRoundAmount(value);
+                if(String(rounded)!==String(value))warnings.push(`${f}: ${value} rounded to ${rounded} for the database's two-decimal amount field`);
+                value=rounded;
+            }
+            values[f]=canonicalImportValue(f,value);
+        }
         let current=null;
         if(supplied[idField]!==null&&supplied[idField]!==undefined&&supplied[idField]!==''){
             const id=validId(supplied[idField]);if(!id)throw appError(400,`Row ${i+1}: Invalid ${idField}`);
@@ -2642,26 +2668,48 @@ app.post('/api/admin/import/preview',authenticate,adminOnly,secureRoute(async(re
         }else{
             if(!values.supplier_name||(type==='PRODUCTS'&&!values.sku))throw appError(400,`Row ${i+1}: Provide ID or the complete exact matching key`);
             const matches=source.rows.filter(r=>getKey(r)===getKey(values));
-            if(matches.length>1)throw appError(409,`Row ${i+1}: Multiple existing records match. Supply the stable Product ID.`);
-            current=matches[0]||null;
+            if(type==='PRODUCTS'&&matches.length){
+                // Shared SKUs can represent distinct piece/case packs. Never choose the first SKU match.
+                const named=values.product_name?matches.filter(r=>importProductIdentity(r)===importProductIdentity(values)):[];
+                if(named.length===1)current=named[0];
+                else if(!values.product_name&&matches.length===1)current=matches[0];
+                else throw appError(409,`Row ${i+1}: Cannot uniquely identify this product/pack. Supply its existing product_id. No records were changed.`);
+            }else{
+                if(matches.length>1)throw appError(409,`Row ${i+1}: Multiple suppliers match. Supply the stable Supplier ID.`);
+                current=matches[0]||null;
+            }
         }
         if(current&&seenIds.has(String(current[idField])))throw appError(400,`Row ${i+1}: The same record appears twice`);
         if(current)seenIds.add(String(current[idField]));
         const final={...(current||{status:'ACTIVE',master_srp:'0.00',store_task_visible:true}),...values};
         if(!final.supplier_name||(type==='PRODUCTS'&&(!final.sku||!final.product_name)))throw appError(400,`Row ${i+1}: Required fields are missing`);
-        const key=getKey(final);if(seen.has(key))throw appError(409,`Row ${i+1}: Duplicate import matching key`);seen.add(key);
-        const collision=source.rows.find(r=>getKey(r)===key&&(!current||String(r[idField])!==String(current[idField])));
-        if(collision)throw appError(409,`Row ${i+1}: Matching key belongs to another record. Resolve duplicates before import.`);
+        const key=type==='PRODUCTS'?importProductIdentity(final):getKey(final);
+        if(seen.has(key)){
+            const existingIdentityRetained=type==='PRODUCTS'&&current&&importProductIdentity(current)===key
+                &&changes.filter(ch=>importProductIdentity(ch.after)===key).every(ch=>ch.before&&importProductIdentity(ch.before)===key);
+            if(!existingIdentityRetained)throw appError(409,`Row ${i+1}: Duplicate product/pack identity in this import`);
+        }
+        seen.add(key);
+        const identityOf=r=>type==='PRODUCTS'?importProductIdentity(r):getKey(r);
+        const collision=source.rows.find(r=>identityOf(r)===key&&(!current||String(r[idField])!==String(current[idField])));
+        // Existing duplicate identities may be maintained only through an explicit, stable ID.
+        // Creating or moving another record into an already-used identity is blocked.
+        if(collision&&(!current||identityOf(current)!==key))throw appError(409,`Row ${i+1}: This exact product/pack identity already belongs to another record.`);
+        if(scientificBarcode){
+            if(!current)throw appError(400,`Row ${i+1}: New product has a scientific-notation barcode. Supply all original barcode digits as text.`);
+            warnings.push(`Barcode ${supplied.master_barcode} skipped: scientific notation cannot establish the original digits. Existing master_barcode preserved (${current.master_barcode||'blank'}).`);
+        }
         if(type==='PRODUCTS'){
             if(!supplierRows.some(s=>s.supplier_name===final.supplier_name))throw appError(400,`Row ${i+1}: Import the supplier first using its exact registered name`);
-            if(final.master_barcode){
+            if(!current&&!final.master_barcode)throw appError(400,`Row ${i+1}: An exact barcode is required for a new product`);
+            if(final.master_barcode&&(!current||canonicalImportValue('master_barcode',current.master_barcode)!==final.master_barcode)){
                 const barcode=String(final.master_barcode).trim();
                 if(source.rows.some(r=>String(r.master_barcode||'').trim()===barcode&&(!current||r.product_id!==current.product_id))||barcodes.some(b=>b.barcode===barcode&&(!current||b.product_id!==current.product_id))||changes.some(ch=>ch.after.master_barcode===barcode&&(!current||ch.id!==current.product_id)))throw appError(409,`Row ${i+1}: Barcode belongs to another product`);
             }
         }
         const changed=current?fields.filter(f=>Object.hasOwn(values,f)&&canonicalImportValue(f,current[f])!==values[f]):Object.keys(values);
         const action=!current?'NEW':changed.length?'CHANGED':'UNCHANGED';
-        changes.push({row:i+1,id:current?.[idField]||null,action,fields:current?changed:Object.keys(values),before:current,after:final});
+        changes.push({row:i+1,id:current?.[idField]||null,action,fields:current?changed:Object.keys(values),warnings,before:current,after:final});
     }
     for(const [key,p] of importPreviews)if(p.expires<Date.now())importPreviews.delete(key);
     if(importPreviews.size>=20)throw appError(429,'Too many pending previews. Confirm an existing preview or wait 15 minutes.');
