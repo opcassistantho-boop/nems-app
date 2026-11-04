@@ -1444,6 +1444,8 @@ el('loginForm').addEventListener(
 // ==========================================
  
 function logout() {
+    nemsUnreadGeneration++;
+    if(el('nemsFeaturesNav'))el('nemsFeaturesNav').textContent='Messages and Follow-up';
     token = '';
     currentUser = null;
  
@@ -4299,11 +4301,30 @@ async function nemsEmployeeHistory(){
         el('nfEmployeeHistory').innerHTML=rows.map(r=>`<details><summary>${escapeHtml(r.created_at)} · ${escapeHtml(r.store_name)} · ${escapeHtml(r.employee_name)} · ${escapeHtml(r.source)} · Product ${escapeHtml(r.product_id)}</summary><p>${escapeHtml(r.remarks)}</p><p>Account: ${escapeHtml(r.account_email)} · Task: ${escapeHtml(r.assignment_id||'—')}</p><h3>View Changes</h3><pre style="white-space:pre-wrap;overflow-wrap:anywhere">${escapeHtml(JSON.stringify(r.details,null,2))}</pre></details>`).join('')||'<p>No employee submissions recorded.</p>';
     }catch(e){showMessage(e.message,true);}
 }
+// Keep the badge synchronized with the same read state shown in Notifications.
+// Invalidating before and after a read prevents older background responses restoring a stale count.
+let nemsUnreadGeneration=0;
+function nemsApplyUnreadBadge(rows){
+    nemsUnreadGeneration++;
+    const unread=rows.filter(r=>!r.read_at).length;
+    const button=el('nemsFeaturesNav');
+    if(button)button.textContent='Messages and Follow-up'+(unread?' ('+unread+' unread)':'');
+}
+async function nemsRefreshUnreadBadge(){
+    if(!currentUser)return null;
+    const email=currentUser.email,generation=nemsUnreadGeneration;
+    const rows=await api('/api/notifications',{cache:'no-store'});
+    if(currentUser?.email!==email)return null;
+    if(!Array.isArray(rows))throw new Error('Unexpected notifications response');
+    if(generation===nemsUnreadGeneration)nemsApplyUnreadBadge(rows);
+    return rows;
+}
 let nemsFeatureTab='notifications';
 const nemsFeatureShowPage=showPage;
 showPage=function(page){
     el('nemsFeaturesNav')?.classList.toggle('hidden',!currentUser);
     nemsFeatureShowPage(page);
+    if(currentUser)void nemsRefreshUnreadBadge().catch(()=>{});
     if(page==='followup'&&currentUser)nemsFeatureLoad();
     if(page==='history'&&currentUser)nemsEmployeeHistory();
 };
@@ -4326,9 +4347,10 @@ async function nemsFeatureRender(){
     const body=el('nfBody');body.onclick=null;body.innerHTML='Loading…';
     try{
         if(nemsFeatureTab==='notifications'){
-            const rows=await api('/api/notifications');
+            const rows=await nemsRefreshUnreadBadge();
+            if(!rows)return;
             body.innerHTML=nfTable(['Date','Title','Message','Status'],rows.map(r=>'<tr>'+nfCell(dateTimeText(r.created_at))+nfCell(r.title)+nfCell(r.message)+`<td>${r.read_at?'Read':`<button type="button" data-nf-read="${Number(r.notification_id)}">Mark read</button>`}</td></tr>`));
-            body.onclick=async e=>{const b=e.target.closest('[data-nf-read]');if(b)try{await api('/api/notifications/'+b.dataset.nfRead+'/read',{method:'POST',body:'{}'});await nemsFeatureRender();}catch(err){showMessage(err.message,true);}};
+            body.onclick=async e=>{const b=e.target.closest('[data-nf-read]');if(b)try{b.disabled=true;nemsUnreadGeneration++;await api('/api/notifications/'+b.dataset.nfRead+'/read',{method:'POST',body:'{}'});nemsUnreadGeneration++;await nemsFeatureRender();}catch(err){showMessage(err.message,true);}};
         }else if(nemsFeatureTab==='messages'){
             body.innerHTML=`<h3>Send message</h3><p>Select one or more authorized stores. Email delivery is shown separately and is not guaranteed by an in-app send.</p>
               <label>Stores</label><select id="nfMessageStores" multiple size="6">${nemsFeatures.stores.map(s=>`<option value="${Number(s.store_id)}">${escapeHtml(s.store_name)}</option>`).join('')}</select>
@@ -4343,7 +4365,10 @@ async function nemsFeatureRender(){
             };
             el('nfConversation').onchange=async()=>{const id=el('nfConversation').value;if(!id)return;
                 try{const rows=await api('/api/messages/'+id);el('nfMessages').innerHTML=nfTable(['Date','Sender','Role','Message','Store read'],rows.map(r=>'<tr>'+nfCell(dateTimeText(r.created_at))+nfCell(r.sender_email)+nfCell(r.sender_role)+nfCell(r.message_text)+nfCell(r.read_at?dateTimeText(r.read_at):'Unread')+'</tr>'));
+                    nemsUnreadGeneration++;
                     await api('/api/messages/'+id+'/read',{method:'POST',body:'{}'});
+                    nemsUnreadGeneration++;
+                    await nemsRefreshUnreadBadge();
                 }catch(e){showMessage(e.message,true);}
             };
         }else if(nemsFeatureTab==='expired'){
@@ -4380,14 +4405,14 @@ async function nemsFeatureRender(){
                 b.disabled=true;try{await api('/api/store/tasks/'+b.dataset.nfExplain+'/explanation',{method:'POST',body:JSON.stringify({employee_name:name,explanation})});await nemsFeatureLoad();}catch(err){showMessage(err.message,true);}finally{b.disabled=false;}
             };
         }else if(nemsFeatureTab==='imports'&&currentUser.role==='ADMIN'){
-            body.innerHTML=`<h3>Preview Excel Import</h3><p>Use one worksheet per file, up to 5000 rows. Separate Products and Suppliers. Existing records should include Product ID or Supplier ID. Barcodes must be text to preserve leading zeroes. A blank optional cell clears that field; omit a column to preserve it.</p><label>Import type</label><select id="nfImportType"><option>PRODUCTS</option><option>SUPPLIERS</option></select><label>XLSX or CSV file (up to 4 MB)</label><input id="nfImportFile" type="file" accept=".xlsx,.csv"><button type="button" id="nfPreview">Generate preview</button><div id="nfPreviewBody"></div>`;
+            body.innerHTML=`<h3>Preview Excel Import</h3><p>Use one worksheet per file, up to 5000 rows. Separate Products and Suppliers. Existing records should include Product ID or Supplier ID. Piece/case products sharing a SKU stay separate. Exact product names distinguish existing packs when IDs are absent. Barcodes must be text to preserve leading zeroes. Scientific-notation barcodes are skipped only for uniquely matched existing products, with a warning; their stored barcodes are preserved. A blank optional cell clears that field; omit a column to preserve it.</p><label>Import type</label><select id="nfImportType"><option>PRODUCTS</option><option>SUPPLIERS</option></select><label>XLSX or CSV file (up to 4 MB)</label><input id="nfImportFile" type="file" accept=".xlsx,.csv"><button type="button" id="nfPreview">Generate preview</button><div id="nfPreviewBody"></div>`;
             el('nfPreview').onclick=async()=>{
                 const file=el('nfImportFile').files[0];if(!file)return showMessage('Choose a file.',true);if(file.size>4*1024*1024)return showMessage('Maximum file size is 4 MB.',true);
                 const b=el('nfPreview');b.disabled=true;
                 try{const base64=await new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(String(r.result).split(',')[1]);r.onerror=reject;r.readAsDataURL(file);});
                     const preview=await api('/api/admin/import/preview',{method:'POST',body:JSON.stringify({import_type:el('nfImportType').value,filename:file.name,file_base64:base64})});nemsFeatures.preview=preview;
-                    el('nfPreviewBody').innerHTML=`<h3>Review before committing</h3><p>New: ${preview.counts.new} · Changed: ${preview.counts.changed} · Unchanged: ${preview.counts.unchanged}</p><p>Preview expires in 15 minutes. No database changes have been made.</p>`+nfTable(['Row','Action','ID','Changed fields','Before / After'],preview.changes.map(ch=>'<tr>'+nfCell(ch.row)+nfCell(ch.action)+nfCell(ch.id||'New')+nfCell(ch.fields.join(', '))+`<td><details><summary>View values</summary><pre style="white-space:pre-wrap;overflow-wrap:anywhere">${escapeHtml(JSON.stringify({before:ch.before,after:ch.after},null,2))}</pre></details></td></tr>`))+'<button type="button" id="nfConfirmImport">Confirm and commit this preview</button>';
-                    el('nfConfirmImport').onclick=async()=>{if(!confirm('Commit exactly the NEW and CHANGED rows in this preview? Unchanged rows and monitoring/history are preserved.'))return;
+                    el('nfPreviewBody').innerHTML=`<h3>Review before committing</h3><p>New: ${preview.counts.new} · Changed: ${preview.counts.changed} · Unchanged: ${preview.counts.unchanged}</p><p>Preview expires in 15 minutes. No database changes have been made.</p><p>${preview.changes.filter(ch=>(ch.warnings||[]).length).length} row(s) have warnings. Review barcode preservation and amount rounding below before confirming.</p>`+nfTable(['Row','Action','Product / Supplier ID','Changed fields','Warnings / Before / After'],preview.changes.map(ch=>'<tr>'+nfCell(ch.row)+nfCell(ch.action)+nfCell(ch.id||'New')+nfCell(ch.fields.join(', '))+`<td>${(ch.warnings||[]).map(w=>'<p>'+escapeHtml(w)+'</p>').join('')}<details><summary>View values</summary><pre style="white-space:pre-wrap;overflow-wrap:anywhere">${escapeHtml(JSON.stringify({before:ch.before,after:ch.after},null,2))}</pre></details></td></tr>`))+'<button type="button" id="nfConfirmImport">Confirm and commit this preview</button>';
+                    el('nfConfirmImport').onclick=async()=>{if(!confirm('Commit exactly the NEW and CHANGED rows in this preview? Unchanged rows and monitoring/history are preserved.'+(preview.changes.some(ch=>(ch.warnings||[]).length)?' Review complete: I acknowledge the displayed barcode-preservation and amount-rounding warnings.':'')))return;
                         const cb=el('nfConfirmImport');cb.disabled=true;try{const result=await api('/api/admin/import/confirm',{method:'POST',body:JSON.stringify({preview_token:preview.preview_token,confirm:true})});showMessage(`Import #${result.import_id}: ${result.added} added, ${result.updated} updated, ${result.unchanged} unchanged.`);nemsFeatures.preview=null;await nemsFeatureRender();}catch(e){showMessage(e.message,true);cb.disabled=false;}
                     };
                 }catch(e){showMessage(e.message,true);}finally{b.disabled=false;}
@@ -4403,14 +4428,11 @@ async function nemsFeatureRender(){
     }catch(e){body.textContent=e.message;}
 }
 nemsFeatureSetup();
-setInterval(async()=>{
-    if(!currentUser)return;
-    const email=currentUser.email;
-    try{const rows=await api('/api/notifications');if(currentUser?.email!==email)return;
-        const unread=rows.filter(r=>!r.read_at).length;
-        el('nemsFeaturesNav').textContent='Messages and Follow-up'+(unread?' ('+unread+' unread)':'');
-    }catch(e){/* Existing login/session handling remains in api(). */}
-},60000);
+setInterval(()=>{void nemsRefreshUnreadBadge().catch(()=>{});},60000);
+window.addEventListener('focus',()=>{void nemsRefreshUnreadBadge().catch(()=>{});});
+document.addEventListener('visibilitychange',()=>{
+    if(!document.hidden)void nemsRefreshUnreadBadge().catch(()=>{});
+});
 
 
 </script>
