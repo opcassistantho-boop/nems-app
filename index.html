@@ -1378,8 +1378,7 @@ el('loginForm').addEventListener(
             const isStore =
                 currentUser.role === 'STORE';
  
-            const canViewHistory =
-                isAdmin || isStore;
+            const canViewHistory = true;
  
             document.querySelectorAll(
                 '.adminOnly'
@@ -1495,7 +1494,7 @@ function showPage(page) {
  
     if (
         page === 'history' &&
-        !['ADMIN','STORE'].includes(
+        !['ADMIN','HEAD','AS','AOM','STORE'].includes(
             currentUser?.role
         )
     ) {
@@ -1754,7 +1753,7 @@ async function disposeExpiredMonitoring(monitoringId, expirationDate) {
     }
     const confirmed = window.confirm(
         'Confirm physical disposal of expired stock dated ' + expirationDate +
-        '? This permanently removes the expired quantity from current Monitoring Records and records the disposal history.'
+        '? This permanently archives the expired entry and preserves its original stock and history. ADMIN can restore it.'
     );
     if (!confirmed) return;
     try {
@@ -1779,7 +1778,7 @@ async function disposeExpiredTaskMonitoring(productId, encodedEmail, expirationD
     }
     const confirmed = window.confirm(
         'Confirm physical disposal of expired task stock dated ' + expirationDate +
-        '? This removes the expired quantity from active task progress and records the disposal history.'
+        '? This archives the expired task entry and preserves its original stock and history. ADMIN can restore it.'
     );
     if (!confirmed) return;
     try {
@@ -2404,7 +2403,9 @@ el('storeForm').addEventListener('submit', async event => {
         showMessage('Complete both the expiration date and quantity for every row.', true);
         return;
     }
+    if(nemsEntryRevisionProduct!==Number(el('entryProduct').value))return showMessage('Select the product and wait for its saved stock to load.',true);
     const payload = {
+        expected_revision:nemsEntryRevision,
         product_id: Number(el('entryProduct').value),
         store_barcode: el('entryBarcode').value,
         srp: el('entrySrp').value,
@@ -2415,7 +2416,8 @@ el('storeForm').addEventListener('submit', async event => {
     const button = el('storeSaveBtn');
     button.disabled = true;
     try {
-        await api('/api/store/monitoring', {method:'POST', body:JSON.stringify(payload)});
+        const saved=await api('/api/store/monitoring', {method:'POST', body:JSON.stringify(payload)});
+        nemsEntryRevision=saved.revision;
         showMessage('Store monitoring saved successfully.');
         nemsLoadStoreRemarks(payload.product_id);
     } catch (error) {
@@ -2431,7 +2433,7 @@ el('storeForm').addEventListener('submit', async event => {
  
 async function loadRecentActivities() {
     if (
-        !['ADMIN','STORE'].includes(
+        !['ADMIN','HEAD','AS','AOM','STORE'].includes(
             currentUser?.role
         )
     ) {
@@ -2533,8 +2535,7 @@ async function initializeHistory() {
 }
  
 async function loadHistoryFilterOptions() {
-    const isAdmin =
-        currentUser?.role === 'ADMIN';
+    const isAdmin = currentUser?.role !== 'STORE';
  
     if (isAdmin) {
         const stores = await api('/api/stores');
@@ -2599,7 +2600,7 @@ function buildHistoryQuery(page) {
     params.set('page', String(page));
     params.set('limit', String(historyLimit));
  
-    if (currentUser?.role === 'ADMIN') {
+    if (currentUser?.role !== 'STORE') {
         const store = el('historyStore').value;
  
         if (store) {
@@ -2651,7 +2652,7 @@ function buildHistoryQuery(page) {
  
 async function loadHistory(page = 1) {
     if (
-        !['ADMIN','STORE'].includes(
+        !['ADMIN','HEAD','AS','AOM','STORE'].includes(
             currentUser?.role
         )
     ) {
@@ -3328,7 +3329,7 @@ function nemsStoreTaskRender() {
           <td>${task.due_at ? escapeHtml(dateTimeText(task.due_at)) : 'No deadline'}</td>
           <td>${escapeHtml(task.display_status || 'PENDING')}</td>
           <td>${Number(task.submission_count || 0)}</td>
-          <td><button type="button" data-nems-open-task="${id}">View products</button></td></tr>`;
+          <td><button type="button" data-nems-open-task="${id}">View products</button>${task.display_status==='OVERDUE'?`<button type="button" onclick="nemsExplainTask(${id})">Required explanation</button>`:''}</td></tr>`;
     }).join('') : '<tr><td colspan="7">No tasks found for your store.</td></tr>';
 }
  
@@ -3440,7 +3441,7 @@ async function nemsSaveTaskProduct(productId) {
     const employeeName = el('nemsTaskEmployee').value.trim();
     const storeRemark = el('nemsTaskRemark').value.trim();
     if (!employeeName || !storeRemark) return showMessage('Employee name and Store Remarks are required.', true);
-    const payload = {no_stock: noStock, employee_name:employeeName, store_remarks:storeRemark};
+    const payload = {expected_revision:p.revision??null,no_stock: noStock, employee_name:employeeName, store_remarks:storeRemark};
     for (let n = 1; n <= 3; n++) {
         payload[`expiration_${n}`] = rows[n-1]?.date || null;
         payload[`qty_${n}`] = rows[n-1]?.qty ?? null;
@@ -3448,10 +3449,11 @@ async function nemsSaveTaskProduct(productId) {
     payload.extra_expirations = rows.slice(3).map(item => ({date:item.date, qty:Number(item.qty)}));
     nemsStoreTasksBusy = true;
     try {
-        await api(`/api/store/tasks/${nemsActiveTaskId}/products/${productId}`, {
+        const saved=await api(`/api/store/tasks/${nemsActiveTaskId}/products/${productId}`, {
             method: 'PUT', body: JSON.stringify(payload)
         });
         if (p) {
+            p.revision=saved.revision;
             if (noStock) {
                 p.no_stock = true;
             } else {
@@ -3479,14 +3481,16 @@ async function nemsStoreTaskSubmit(id) {
         showMessage('Save all active supplier products before submitting.', true);
         return;
     }
-    const remarks = window.prompt('Completion remarks (optional, maximum 2000 characters):', '');
+    const employeeName=el('nemsTaskEmployee').value.trim();
+    if(!employeeName)return showMessage('Employee Full Name is required.',true);
+    const remarks = window.prompt('Completion remarks (required, maximum 2000 characters):', el('nemsTaskRemark').value.trim());
     if (remarks === null) return;
-    if (remarks.trim().length > 2000) return showMessage('Remarks too long.', true);
+    if (!remarks.trim() || remarks.trim().length > 2000) return showMessage('Remarks too long.', true);
     if (!window.confirm('Submit this task permanently? The submitted values cannot be changed.')) return;
     nemsStoreTasksBusy = true;
     try {
         await api(`/api/store/tasks/${id}/submit`, {
-            method:'POST', body: JSON.stringify({remarks:remarks.trim()})
+            method:'POST', body: JSON.stringify({employee_name:employeeName,remarks:remarks.trim()})
         });
         showMessage('Task submitted. Permanent snapshot saved.');
         await nemsStoreTaskLoad();
@@ -3611,14 +3615,14 @@ let nemsEditingEmail = null;
 function nemsUserStorePicker() {
     const role = el('nemsUserRole').value;
     el('nemsUserStoreBox').classList.toggle('hidden', role !== 'STORE');
-    el('nemsUserASBox').classList.toggle('hidden', role !== 'AS');
+    el('nemsUserASBox').classList.toggle('hidden', !['AS','AOM'].includes(role));
     if (role === 'STORE') {
         el('nemsUserStore').innerHTML = '<option value="">Select store</option>' +
             nemsUserStores.filter(s => s.status === 'ACTIVE').map(s =>
                 `<option value="${Number(s.store_id)}">${escapeHtml(s.store_name)} — ${escapeHtml(s.store_email || 'No email')}</option>`
             ).join('');
     }
-    if (role === 'AS') {
+    if (['AS','AOM'].includes(role)) {
         const checked = new Set([...el('nemsUserASStores').querySelectorAll('[data-nems-as-store]:checked')].map(c => Number(c.value)));
         el('nemsUserASStores').innerHTML = nemsUserStores.filter(s => s.status === 'ACTIVE').map(s =>
             `<label class="nems-task-store"><input type="checkbox" value="${Number(s.store_id)}" data-nems-as-store ${checked.has(Number(s.store_id)) ? 'checked' : ''}> ${escapeHtml(s.store_name)} — ${escapeHtml(s.store_email || '')}</label>`
@@ -3640,7 +3644,7 @@ function nemsUserRender() {
     el('nemsUserCount').textContent = `Showing ${filtered.length} of ${nemsUsers.length} accounts`;
     el('nemsUserRows').innerHTML = filtered.length ? filtered.map(u => `
         <tr><td>${escapeHtml(u.full_name || '—')}</td><td>${escapeHtml(u.email)}</td>
-        <td>${escapeHtml(u.role)}</td><td>${escapeHtml(u.store_name || (u.role === 'AS' ? (u.assigned_store_ids || []).length + ' assigned stores' : '—'))}</td>
+        <td>${escapeHtml(u.role)}</td><td>${escapeHtml(u.store_name || (['AS','AOM'].includes(u.role) ? (u.assigned_store_ids || []).length + ' assigned stores' : '—'))}</td>
         <td>${escapeHtml(u.status)}</td><td><button type="button" class="small" data-nems-user-edit="${escapeHtml(u.email)}">Edit / Approve</button> <button type="button" class="small secondary" data-nems-password-link="${escapeHtml(u.email)}">Send Invitation</button></td></tr>
     `).join('') : '<tr><td colspan="6">No matching accounts.</td></tr>';
 }
@@ -3681,7 +3685,7 @@ function nemsUserOpen(email = null) {
         const store = nemsUserStores.find(s => s.store_name === user.store_name && s.store_email?.toLowerCase() === user.email.toLowerCase());
         el('nemsUserStore').value = store?.store_id || '';
     }
-    if (user?.role === 'AS') {
+    if (['AS','AOM'].includes(user?.role)) {
         const assigned = new Set((user.assigned_store_ids || []).map(Number));
         el('nemsUserASStores').querySelectorAll('[data-nems-as-store]').forEach(c => { c.checked = assigned.has(Number(c.value)); });
     }
@@ -3695,7 +3699,7 @@ async function nemsUserSave(event) {
     const payload = {
         full_name: el('nemsUserName').value.trim(), role,
         store_id: role === 'STORE' ? Number(el('nemsUserStore').value) : null,
-        store_ids: role === 'AS' ? [...el('nemsUserASStores').querySelectorAll('[data-nems-as-store]:checked')].map(c => Number(c.value)) : []
+        store_ids: ['AS','AOM'].includes(role) ? [...el('nemsUserASStores').querySelectorAll('[data-nems-as-store]:checked')].map(c => Number(c.value)) : []
     };
     if (nemsEditingEmail) {
         payload.status = el('nemsUserStatus').value;
@@ -3717,7 +3721,7 @@ async function nemsUserSave(event) {
         await nemsUserLoad();
         showMessage(nemsEditingEmail ? 'User updated successfully.' :
             (result.message || 'User created as INACTIVE. ADMIN must approve activation.'),
-            !nemsEditingEmail && result.invitation_sent === false);
+            !nemsEditingEmail && !result.invitation_provider_accepted);
     } catch (err) { showMessage(err.message, true); }
     finally { button.disabled = false; }
 }
@@ -3751,7 +3755,7 @@ function nemsUserSetup() {
         <div id="nemsUserPasswordBox"><label>Temporary password (12+ characters) *</label><input type="password" id="nemsUserPassword" minlength="12" maxlength="128" autocomplete="new-password"></div>
         <div class="hidden" id="nemsUserStatusBox"><label>Approval status</label><select id="nemsUserStatus"><option value="INACTIVE">INACTIVE — not approved</option><option value="ACTIVE">ACTIVE — approved</option></select></div>
         <div class="hidden" id="nemsUserStoreBox"><label>STORE assignment *</label><select id="nemsUserStore"></select><p class="muted">STORE account email must match the registered store email.</p></div>
-        <div class="wide hidden" id="nemsUserASBox"><label>Assigned AS stores *</label><input type="search" id="nemsUserASSearch" placeholder="Search stores by name or email" oninput="nemsFilterASStores()" style="margin-bottom:8px"><div id="nemsUserASStores" class="nems-task-store-list"></div></div>
+        <div class="wide hidden" id="nemsUserASBox"><label>Assigned AS or AOM stores *</label><input type="search" id="nemsUserASSearch" placeholder="Search stores by name or email" oninput="nemsFilterASStores()" style="margin-bottom:8px"><div id="nemsUserASStores" class="nems-task-store-list"></div></div>
         </div><div class="formactions"><button id="nemsUserSave" type="submit">Save User</button><button type="button" class="secondary" id="nemsUserCancel">Cancel</button></div></form></div>`;
     el('application').appendChild(page);
     el('nemsUserAdd').addEventListener('click', () => nemsUserOpen());
@@ -4085,10 +4089,9 @@ async function nemsLookupEntryBarcode() {
     clearTimeout(entrySearchTimer);
     try {
         // Ignore supplier selection during exact barcode lookup.
-        const params = new URLSearchParams({search:barcode});
-        const matches = await api('/api/products?' + params);
-        const exact = matches.filter(p => String(p.master_barcode || '').trim() === barcode);
-        if (!exact.length) { showMessage('No active product has this exact master barcode.', true); return; }
+        const params = new URLSearchParams({barcode});
+        const exact = await api('/api/products/barcode?' + params);
+        if (!exact.length) { showMessage('No active product has this exact registered barcode.', true); return; }
         if (exact.length > 1) { showMessage('Multiple products share this barcode. Please choose the correct product manually.', true); }
         el('entrySupplier').value = '';
         el('entrySearch').value = barcode;
@@ -4208,15 +4211,20 @@ el('nemsChangePasswordForm').addEventListener('submit', async event => {
  
 let nemsTaskCameraStream = null;
 let nemsTaskCameraTimer = null;
-function nemsFindTaskBarcode() {
-    const code = el('nemsTaskBarcode')?.value.trim();
-    if (!code) return showMessage('Enter or scan a barcode.', true);
-    const matches = nemsTaskProducts.filter(p => String(p.master_barcode || '').trim() === code);
-    if (matches.length !== 1) return showMessage(matches.length ? 'Multiple products share this barcode.' : 'Barcode not found in this assigned task.', true);
-    el('nemsTaskProductSearch').value = String(matches[0].sku || matches[0].product_name);
-    nemsTaskProductRender();
-    el('nemsTaskProductRows').querySelector(`[data-nems-product="${Number(matches[0].product_id)}"]`)?.scrollIntoView({behavior:'smooth',block:'center'});
+async function nemsFindTaskBarcode() {
+    const code=el('nemsTaskBarcode')?.value.trim();
+    if(!code)return showMessage('Enter or scan a barcode.',true);
+    try {
+        const exact=await api('/api/products/barcode?'+new URLSearchParams({barcode:code}));
+        if(exact.length!==1)return showMessage(exact.length?'Multiple products share this exact barcode. Select the product manually.':'Exact barcode not registered.',true);
+        const product=nemsTaskProducts.find(p=>Number(p.product_id)===Number(exact[0].product_id));
+        if(!product)return showMessage('Barcode product is not in this assigned task.',true);
+        el('nemsTaskProductSearch').value=String(product.sku||product.product_name);
+        nemsTaskProductRender();
+        el('nemsTaskProductRows').querySelector(`[data-nems-product="${Number(product.product_id)}"]`)?.scrollIntoView({behavior:'smooth',block:'center'});
+    }catch(e){showMessage(e.message,true);}
 }
+
 function nemsStopTaskCamera() {
     if (nemsTaskCameraTimer) clearInterval(nemsTaskCameraTimer);
     nemsTaskCameraTimer = null;
@@ -4250,7 +4258,163 @@ async function nemsLoadStoreRemarks(productId) {
         alert(lines.length ? lines.join('\n\n') : 'No Store Remarks yet.');
     } catch(e){showMessage(e.message,true);}
 }
+async function nemsExplainTask(id){
+    const employee_name=prompt('Employee Full Name:');if(!employee_name?.trim())return;
+    const explanation=prompt('Required: Explain why the task was not submitted before its deadline:');if(!explanation?.trim())return;
+    try{await api(`/api/store/tasks/${id}/explanation`,{method:'POST',body:JSON.stringify({employee_name,explanation})});showMessage('Overdue explanation recorded.');}
+    catch(e){showMessage(e.message,true);}
+}
+// Employee-aware simultaneous sessions: no shared employee identity in localStorage.
+let nemsEntryRevision=null,nemsEntryRevisionProduct=null,nemsEntryRevisionRequest=0;
+el('entryProduct').addEventListener('change',async()=>{
+    const id=Number(el('entryProduct').value),request=++nemsEntryRevisionRequest;
+    nemsEntryRevisionProduct=null;
+    if(!id)return;
+    try{
+        const data=await api('/api/store/monitoring/'+id);
+        if(request!==nemsEntryRevisionRequest||Number(el('entryProduct').value)!==id)return;
+        nemsEntryRevision=data.revision??null;nemsEntryRevisionProduct=id;
+        el('storeExpiryRows').innerHTML='';
+        if(data.monitoring_id){
+            for(let i=1;i<=3;i++)if(data['expiration_'+i])addStoreExpiryRow(String(data['expiration_'+i]).slice(0,10),data['qty_'+i]);
+            for(const r of data.extra_expirations||[])addStoreExpiryRow(r.expiration_date,r.quantity);
+            el('entryBarcode').value=data.store_barcode||el('entryBarcode').value;
+            el('entrySrp').value=data.srp??el('entrySrp').value;
+        }
+        if(!el('storeExpiryRows').children.length)addStoreExpiryRow();
+    }catch(e){showMessage(e.message,true);}
+});
+const nemsFeatures={stores:[],messages:[],reports:[],archive:[],stock:[],tasks:[],preview:null};
+function nemsFeatureSetup(){
+    const nav=document.createElement('button');nav.id='nemsFeaturesNav';nav.type='button';nav.className='hidden';nav.textContent='Messages and Follow-up';nav.onclick=()=>showPage('followup');el('navigation').append(nav);
+    const section=document.createElement('section');section.id='page-followup';section.className='page hidden';
+    section.innerHTML=`<div class="panel"><h2>Messages and Follow-up</h2><button type="button" id="nfRefresh">Refresh</button><p id="nfState" role="status"></p>
+      <div class="tabs" id="nfTabs"></div><div id="nfBody"></div></div>`;el('application').append(section);
+    el('nfRefresh').onclick=()=>nemsFeatureLoad();
+    const historyPanel=document.createElement('div');historyPanel.className='panel';historyPanel.innerHTML='<h2>Employee Submission History</h2><p>Store Encoding and My Tasks employee names, remarks, before values and submitted values.</p><button type="button" id="nfHistoryRefresh">Refresh employee history</button><div id="nfEmployeeHistory"></div>';
+    el('page-history').append(historyPanel);el('nfHistoryRefresh').onclick=nemsEmployeeHistory;
+}
+async function nemsEmployeeHistory(){
+    try{const rows=await api('/api/history/employee-submissions');
+        el('nfEmployeeHistory').innerHTML=rows.map(r=>`<details><summary>${escapeHtml(r.created_at)} · ${escapeHtml(r.store_name)} · ${escapeHtml(r.employee_name)} · ${escapeHtml(r.source)} · Product ${escapeHtml(r.product_id)}</summary><p>${escapeHtml(r.remarks)}</p><p>Account: ${escapeHtml(r.account_email)} · Task: ${escapeHtml(r.assignment_id||'—')}</p><h3>View Changes</h3><pre style="white-space:pre-wrap;overflow-wrap:anywhere">${escapeHtml(JSON.stringify(r.details,null,2))}</pre></details>`).join('')||'<p>No employee submissions recorded.</p>';
+    }catch(e){showMessage(e.message,true);}
+}
+let nemsFeatureTab='notifications';
+const nemsFeatureShowPage=showPage;
+showPage=function(page){
+    el('nemsFeaturesNav')?.classList.toggle('hidden',!currentUser);
+    nemsFeatureShowPage(page);
+    if(page==='followup'&&currentUser)nemsFeatureLoad();
+    if(page==='history'&&currentUser)nemsEmployeeHistory();
+};
+async function nemsFeatureLoad(){
+    el('nfState').textContent='Loading…';
+    try{
+        const [stores,reports,archive,tasks]=await Promise.all([api('/api/messages/stores'),api('/api/expired/reports'),api('/api/archive'),api('/api/assigned/tasks')]);
+        if(!currentUser)return;
+        Object.assign(nemsFeatures,{stores,reports,archive,tasks});
+        const tabs=[['notifications','Notifications'],['messages','Messages'],['expired','Expired Reports'],['archive','Permanent Archive'],['tasks','Task Follow-up']];
+        if(currentUser.role==='ADMIN')tabs.push(['imports','Products / Suppliers Import'],['barcodes','Register Barcode'],['email','Email Status']);
+        el('nfTabs').innerHTML=tabs.map(([id,title])=>`<button type="button" data-nf-tab="${id}">${title}</button>`).join('');
+        el('nfTabs').onclick=e=>{const b=e.target.closest('[data-nf-tab]');if(b){nemsFeatureTab=b.dataset.nfTab;nemsFeatureRender();}};
+        el('nfState').textContent='';await nemsFeatureRender();
+    }catch(e){el('nfState').textContent=e.message;}
+}
+function nfTable(headers,rows){return '<div class="tablewrap"><table><thead><tr>'+headers.map(h=>'<th>'+escapeHtml(h)+'</th>').join('')+'</tr></thead><tbody>'+rows.join('')+'</tbody></table></div>';}
+const nfCell=v=>'<td>'+escapeHtml(v??'')+'</td>';
+async function nemsFeatureRender(){
+    const body=el('nfBody');body.onclick=null;body.innerHTML='Loading…';
+    try{
+        if(nemsFeatureTab==='notifications'){
+            const rows=await api('/api/notifications');
+            body.innerHTML=nfTable(['Date','Title','Message','Status'],rows.map(r=>'<tr>'+nfCell(dateTimeText(r.created_at))+nfCell(r.title)+nfCell(r.message)+`<td>${r.read_at?'Read':`<button type="button" data-nf-read="${Number(r.notification_id)}">Mark read</button>`}</td></tr>`));
+            body.onclick=async e=>{const b=e.target.closest('[data-nf-read]');if(b)try{await api('/api/notifications/'+b.dataset.nfRead+'/read',{method:'POST',body:'{}'});await nemsFeatureRender();}catch(err){showMessage(err.message,true);}};
+        }else if(nemsFeatureTab==='messages'){
+            body.innerHTML=`<h3>Send message</h3><p>Select one or more authorized stores. Email delivery is shown separately and is not guaranteed by an in-app send.</p>
+              <label>Stores</label><select id="nfMessageStores" multiple size="6">${nemsFeatures.stores.map(s=>`<option value="${Number(s.store_id)}">${escapeHtml(s.store_name)}</option>`).join('')}</select>
+              <label><input id="nfAllStores" type="checkbox" style="width:auto"> All stores I am authorized to access</label>
+              <label>Message</label><textarea id="nfMessageText" maxlength="5000"></textarea><button type="button" id="nfSendMessage">Send message</button>
+              <h3>Message History</h3><select id="nfConversation"><option value="">Choose store</option>${nemsFeatures.stores.map(s=>`<option value="${Number(s.store_id)}">${escapeHtml(s.store_name)}</option>`).join('')}</select><div id="nfMessages"></div>`;
+            el('nfSendMessage').onclick=async()=>{
+                const payload={store_ids:[...el('nfMessageStores').selectedOptions].map(o=>Number(o.value)),all:el('nfAllStores').checked,message:el('nfMessageText').value.trim()};
+                if(!payload.message)return showMessage('Enter a message.',true);
+                const b=el('nfSendMessage');b.disabled=true;
+                try{const r=await api('/api/messages',{method:'POST',body:JSON.stringify(payload)});el('nfMessageText').value='';showMessage(`Message saved for ${r.stores} store(s). ${r.email_delivery}`);}catch(e){showMessage(e.message,true);}finally{b.disabled=false;}
+            };
+            el('nfConversation').onchange=async()=>{const id=el('nfConversation').value;if(!id)return;
+                try{const rows=await api('/api/messages/'+id);el('nfMessages').innerHTML=nfTable(['Date','Sender','Role','Message','Store read'],rows.map(r=>'<tr>'+nfCell(dateTimeText(r.created_at))+nfCell(r.sender_email)+nfCell(r.sender_role)+nfCell(r.message_text)+nfCell(r.read_at?dateTimeText(r.read_at):'Unread')+'</tr>'));
+                    await api('/api/messages/'+id+'/read',{method:'POST',body:'{}'});
+                }catch(e){showMessage(e.message,true);}
+            };
+        }else if(nemsFeatureTab==='expired'){
+            let form='';
+            if(currentUser.role==='STORE'){
+                const stock=await api('/api/monitoring');
+                const map=new Map();for(const r of stock.filter(r=>r.category==='EXPIRED')){const key=r.product_id+'|'+String(r.expiration_date).slice(0,10);if(!map.has(key))map.set(key,{...r,quantity:0});map.get(key).quantity+=Number(r.quantity);}
+                nemsFeatures.stock=[...map.values()];
+                form=`<h3>Report expired stock</h3><p>Report the action first. Your assigned AS reviews afterward. ON STORE stock stays visible for follow-up.</p><label>Expired product and date</label><select id="nfExpiredProduct"><option value="">Choose expired entry</option>${nemsFeatures.stock.map((r,i)=>`<option value="${i}">${escapeHtml(r.product_name)} · ${escapeHtml(String(r.expiration_date).slice(0,10))} · ${Number(r.quantity)} pcs</option>`).join('')}</select>
+                <label>Action</label><select id="nfExpiredStatus"><option>ON STORE</option><option>DISPOSE</option><option>TRANSFER TO DC</option></select><label>Employee Full Name</label><input id="nfExpiredEmployee" maxlength="120"><label>Store Remarks / Why the expired product remains ON STORE</label><textarea id="nfExpiredRemarks" maxlength="2000"></textarea><label><input id="nfOnStoreConfirm" type="checkbox" style="width:auto"> For ON STORE, I confirm that my remarks explain why this expired product remains in the store.</label><button type="button" id="nfReport">Submit for AS review</button>`;
+            }
+            body.innerHTML=form+'<h3>Report and Validation History</h3>'+nfTable(['Store','Product / Expiry','Action / Quantity','Employee / Remarks','AS Decision','Review'],nemsFeatures.reports.map(r=>'<tr>'+nfCell(r.store_name)+nfCell(r.product_name+' · '+String(r.expiration_date).slice(0,10))+nfCell(r.product_status+' · '+r.quantity)+nfCell(r.employee_name+' · '+r.store_remarks)+nfCell(r.validation_status+' · '+(r.validated_by||'')+' · '+(r.validation_remarks||'')+' · '+(r.validated_at?dateTimeText(r.validated_at):''))+`<td>${currentUser.role==='AS'&&r.validation_status==='PENDING'?`<button type="button" data-nf-validate="${Number(r.report_id)}" data-decision="APPROVED">Approve</button><button type="button" class="danger" data-nf-validate="${Number(r.report_id)}" data-decision="REJECTED">Reject</button>`:''}</td></tr>`));
+            if(el('nfReport'))el('nfReport').onclick=async()=>{
+                const index=el('nfExpiredProduct').value;if(index==='')return showMessage('Select an expired product.',true);const entry=nemsFeatures.stock[Number(index)];
+                const payload={product_id:entry.product_id,expiration_date:String(entry.expiration_date).slice(0,10),quantity:entry.quantity,product_status:el('nfExpiredStatus').value,employee_name:el('nfExpiredEmployee').value.trim(),store_remarks:el('nfExpiredRemarks').value.trim(),on_store_explanation_confirmed:el('nfOnStoreConfirm').checked};
+                const b=el('nfReport');b.disabled=true;try{await api('/api/expired/reports',{method:'POST',body:JSON.stringify(payload)});showMessage('Report saved. Awaiting assigned AS review.');await nemsFeatureLoad();}catch(e){showMessage(e.message,true);}finally{b.disabled=false;}
+            };
+            body.onclick=async e=>{const b=e.target.closest('[data-nf-validate]');if(!b)return;const remarks=prompt('Validation remarks (required):');if(!remarks?.trim())return;
+                if(!confirm(b.dataset.decision+' this report? Approved DISPOSE / TRANSFER TO DC entries will be archived.'))return;
+                b.disabled=true;try{await api('/api/expired/reports/'+b.dataset.nfValidate+'/validate',{method:'POST',body:JSON.stringify({decision:b.dataset.decision,remarks})});await nemsFeatureLoad();}catch(err){showMessage(err.message,true);}finally{b.disabled=false;}
+            };
+        }else if(nemsFeatureTab==='archive'){
+            body.innerHTML='<p>Original stock, product details and employee history are retained permanently. Only ADMIN can restore an entry.</p>'+nfTable(['Store','Product','Reason / Date','Status','Snapshot / Restore'],nemsFeatures.archive.map(r=>'<tr>'+nfCell(r.store_name)+nfCell(r.product_snapshot.product_name)+nfCell(r.archive_reason+' · '+dateTimeText(r.archived_at))+nfCell(r.restored_at?'Restored by '+r.restored_by:'Archived')+`<td><details><summary>View preserved data</summary><pre style="white-space:pre-wrap;overflow-wrap:anywhere">${escapeHtml(JSON.stringify(r.monitoring_snapshot,null,2))}</pre></details>${currentUser.role==='ADMIN'&&!r.restored_at?`<button type="button" data-nf-restore="${Number(r.archive_id)}">Restore</button>`:''}</td></tr>`));
+            body.onclick=async e=>{const b=e.target.closest('[data-nf-restore]');if(!b)return;const remarks=prompt('Restoration remarks (required):');if(!remarks?.trim()||!confirm('Restore this archived expiration date to active monitoring?'))return;
+                b.disabled=true;try{await api('/api/archive/'+b.dataset.nfRestore+'/restore',{method:'POST',body:JSON.stringify({remarks})});await nemsFeatureLoad();}catch(err){showMessage(err.message,true);}finally{b.disabled=false;}
+            };
+        }else if(nemsFeatureTab==='tasks'){
+            body.innerHTML='<p>Overdue means the task is unsubmitted after its deadline. It does not automatically mean employee negligence.</p>'+nfTable(['Task','Store / Supplier','Deadline','Status','Explanations'],nemsFeatures.tasks.map(r=>{
+                const overdue=!r.submitted&&r.status==='ACTIVE'&&r.due_at&&new Date(r.due_at)<new Date();
+                const explained=(r.explanations||[]).some(e=>new Date(e.submitted_at)>=new Date(r.due_at));
+                return '<tr>'+nfCell(r.assignment_id)+nfCell(r.store_name+' · '+r.supplier_name)+nfCell(r.due_at?dateTimeText(r.due_at):'No deadline')+nfCell(r.submitted?'SUBMITTED':overdue?(explained?'OVERDUE · explanation recorded':'OVERDUE · explanation required'):r.status)+`<td>${(r.explanations||[]).map(e=>'<p>'+escapeHtml(e.employee_name)+' · '+escapeHtml(e.explanation)+' · '+escapeHtml(dateTimeText(e.submitted_at))+'</p>').join('')}${overdue&&currentUser.role==='STORE'?`<button type="button" data-nf-explain="${Number(r.assignment_id)}">Provide explanation</button>`:''}</td></tr>`;
+            }));
+            body.onclick=async e=>{const b=e.target.closest('[data-nf-explain]');if(!b)return;const name=prompt('Employee Full Name:');if(!name?.trim())return;const explanation=prompt('Explain why this task was not submitted before the deadline:');if(!explanation?.trim())return;
+                b.disabled=true;try{await api('/api/store/tasks/'+b.dataset.nfExplain+'/explanation',{method:'POST',body:JSON.stringify({employee_name:name,explanation})});await nemsFeatureLoad();}catch(err){showMessage(err.message,true);}finally{b.disabled=false;}
+            };
+        }else if(nemsFeatureTab==='imports'&&currentUser.role==='ADMIN'){
+            body.innerHTML=`<h3>Preview Excel Import</h3><p>Use one worksheet per file, up to 5000 rows. Separate Products and Suppliers. Existing records should include Product ID or Supplier ID. Barcodes must be text to preserve leading zeroes. A blank optional cell clears that field; omit a column to preserve it.</p><label>Import type</label><select id="nfImportType"><option>PRODUCTS</option><option>SUPPLIERS</option></select><label>XLSX or CSV file (up to 4 MB)</label><input id="nfImportFile" type="file" accept=".xlsx,.csv"><button type="button" id="nfPreview">Generate preview</button><div id="nfPreviewBody"></div>`;
+            el('nfPreview').onclick=async()=>{
+                const file=el('nfImportFile').files[0];if(!file)return showMessage('Choose a file.',true);if(file.size>4*1024*1024)return showMessage('Maximum file size is 4 MB.',true);
+                const b=el('nfPreview');b.disabled=true;
+                try{const base64=await new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(String(r.result).split(',')[1]);r.onerror=reject;r.readAsDataURL(file);});
+                    const preview=await api('/api/admin/import/preview',{method:'POST',body:JSON.stringify({import_type:el('nfImportType').value,filename:file.name,file_base64:base64})});nemsFeatures.preview=preview;
+                    el('nfPreviewBody').innerHTML=`<h3>Review before committing</h3><p>New: ${preview.counts.new} · Changed: ${preview.counts.changed} · Unchanged: ${preview.counts.unchanged}</p><p>Preview expires in 15 minutes. No database changes have been made.</p>`+nfTable(['Row','Action','ID','Changed fields','Before / After'],preview.changes.map(ch=>'<tr>'+nfCell(ch.row)+nfCell(ch.action)+nfCell(ch.id||'New')+nfCell(ch.fields.join(', '))+`<td><details><summary>View values</summary><pre style="white-space:pre-wrap;overflow-wrap:anywhere">${escapeHtml(JSON.stringify({before:ch.before,after:ch.after},null,2))}</pre></details></td></tr>`))+'<button type="button" id="nfConfirmImport">Confirm and commit this preview</button>';
+                    el('nfConfirmImport').onclick=async()=>{if(!confirm('Commit exactly the NEW and CHANGED rows in this preview? Unchanged rows and monitoring/history are preserved.'))return;
+                        const cb=el('nfConfirmImport');cb.disabled=true;try{const result=await api('/api/admin/import/confirm',{method:'POST',body:JSON.stringify({preview_token:preview.preview_token,confirm:true})});showMessage(`Import #${result.import_id}: ${result.added} added, ${result.updated} updated, ${result.unchanged} unchanged.`);nemsFeatures.preview=null;await nemsFeatureRender();}catch(e){showMessage(e.message,true);cb.disabled=false;}
+                    };
+                }catch(e){showMessage(e.message,true);}finally{b.disabled=false;}
+            };
+        }else if(nemsFeatureTab==='barcodes'&&currentUser.role==='ADMIN'){
+            body.innerHTML='<h3>Register Additional Product Barcode</h3><label>Product ID</label><input id="nfBarcodeProduct" type="number" min="1"><label>Exact barcode (leading zeroes preserved)</label><input id="nfBarcodeValue" maxlength="150"><button type="button" id="nfBarcodeSave">Register barcode</button>';
+            el('nfBarcodeSave').onclick=async()=>{const id=Number(el('nfBarcodeProduct').value),barcode=el('nfBarcodeValue').value.trim();if(!id||!barcode)return showMessage('Product ID and barcode required.',true);if(!confirm(`Register exact barcode ${barcode} to product ID ${id}?`))return;
+                try{await api('/api/admin/products/'+id+'/barcodes',{method:'POST',body:JSON.stringify({barcode})});showMessage('Additional barcode registered.');}catch(e){showMessage(e.message,true);}
+            };
+        }else if(nemsFeatureTab==='email'&&currentUser.role==='ADMIN'){
+            const rows=await api('/api/admin/email-status');body.innerHTML='<p>SENT means Brevo confirmed delivery through the authenticated webhook. PENDING may mean queued or accepted with delivery still unconfirmed.</p>'+nfTable(['Recipient','Subject','Status','Delivered At','Provider details'],rows.map(r=>'<tr>'+nfCell(r.recipient_email)+nfCell(r.subject)+nfCell(r.delivery_status)+nfCell(r.sent_at?dateTimeText(r.sent_at):'')+nfCell(r.error_message)+'</tr>'));
+        }else{nemsFeatureTab='notifications';await nemsFeatureRender();}
+    }catch(e){body.textContent=e.message;}
+}
+nemsFeatureSetup();
+setInterval(async()=>{
+    if(!currentUser)return;
+    const email=currentUser.email;
+    try{const rows=await api('/api/notifications');if(currentUser?.email!==email)return;
+        const unread=rows.filter(r=>!r.read_at).length;
+        el('nemsFeaturesNav').textContent='Messages and Follow-up'+(unread?' ('+unread+' unread)':'');
+    }catch(e){/* Existing login/session handling remains in api(). */}
+},60000);
+
+
 </script>
  
 </body>
 </html>
+
