@@ -2643,11 +2643,12 @@ app.post('/api/admin/import/preview',authenticate,adminOnly,secureRoute(async(re
     const supplierRows=(await pool.query('SELECT * FROM public.suppliers ORDER BY supplier_id')).rows;
     const barcodes=(await pool.query('SELECT product_id,barcode FROM public.nems_product_barcodes ORDER BY barcode_id')).rows;
     const getKey=r=>type==='PRODUCTS'?`${String(r.sku).trim().toLowerCase()}\u0000${String(r.supplier_name).trim().toLowerCase()}`:String(r.supplier_name).trim().toLowerCase();
-    const changes=[],seen=new Set(),seenIds=new Set(),conflicts=[];
+    const changes=[],seen=new Set(),seenIds=new Set(),conflicts=[],errors=[];
     const resolutions=req.body.resolutions||{};
     if(typeof resolutions!=='object'||Array.isArray(resolutions))throw appError(400,'Invalid row selections');
     for(let i=1;i<cells.length;i++){
         const supplied=Object.fromEntries(headers.map((h,j)=>[h,cells[i][j]]));
+        try{
         for(const f of ['sku','master_barcode'])if(supplied[f]!==null&&supplied[f]!==undefined&&typeof supplied[f]!=='string')
             throw appError(400,`Row ${i+1}: ${f} must be stored as text in Excel to preserve leading zeroes`);
         const warnings=[];
@@ -2656,6 +2657,8 @@ app.post('/api/admin/import/preview',authenticate,adminOnly,secureRoute(async(re
         for(const f of fields)if(Object.hasOwn(supplied,f)){
             if(f==='master_barcode'&&scientificBarcode)continue;
             let value=supplied[f];
+            // Existing products retain their registered supplier even if this cell is blank.
+            if(type==='PRODUCTS'&&f==='supplier_name'&&!String(value??'').trim())continue;
             if(['master_srp','landed_cost'].includes(f)&&value!==null&&value!==''){
                 const rounded=importRoundAmount(value);
                 if(String(rounded)!==String(value))warnings.push(`${f}: ${value} rounded to ${rounded} for the database's two-decimal amount field`);
@@ -2709,16 +2712,15 @@ app.post('/api/admin/import/preview',authenticate,adminOnly,secureRoute(async(re
             }
         }
         if(current&&seenIds.has(String(current[idField])))throw appError(400,`Row ${i+1}: The same record appears twice`);
-        if(current)seenIds.add(String(current[idField]));
         const final={...(current||{status:'ACTIVE',master_srp:'0.00',store_task_visible:true}),...values};
-        if(!final.supplier_name||(type==='PRODUCTS'&&(!final.sku||!final.product_name)))throw appError(400,`Row ${i+1}: Required fields are missing`);
+        if(!final.supplier_name)throw appError(400,`Row ${i+1}: Supplier is required for a new product. Enter its exact registered supplier name.`);
+        if(type==='PRODUCTS'&&(!final.sku||!final.product_name))throw appError(400,`Row ${i+1}: SKU and Product Name are required`);
         const key=type==='PRODUCTS'?importProductIdentity(final)+'\u0000'+String(final.master_barcode||'').trim():getKey(final);
         if(seen.has(key)){
             const existingIdentityRetained=type==='PRODUCTS'&&current&&importProductIdentity(current)+'\u0000'+String(current.master_barcode||'').trim()===key
                 &&changes.filter(ch=>importProductIdentity(ch.after)+'\u0000'+String(ch.after.master_barcode||'').trim()===key).every(ch=>ch.before&&importProductIdentity(ch.before)+'\u0000'+String(ch.before.master_barcode||'').trim()===key);
             if(!existingIdentityRetained)throw appError(409,`Row ${i+1}: Duplicate product/pack identity in this import`);
         }
-        seen.add(key);
         const identityOf=r=>type==='PRODUCTS'?importProductIdentity(r)+'\u0000'+String(r.master_barcode||'').trim():getKey(r);
         const collision=source.rows.find(r=>identityOf(r)===key&&(!current||String(r[idField])!==String(current[idField])));
         // Existing duplicate identities may be maintained only through an explicit, stable ID.
@@ -2729,7 +2731,7 @@ app.post('/api/admin/import/preview',authenticate,adminOnly,secureRoute(async(re
             warnings.push(`Barcode ${supplied.master_barcode} skipped: scientific notation cannot establish the original digits. Existing master_barcode preserved (${current.master_barcode||'blank'}).`);
         }
         if(type==='PRODUCTS'){
-            if(!supplierRows.some(s=>s.supplier_name===final.supplier_name))throw appError(400,`Row ${i+1}: Import the supplier first using its exact registered name`);
+            if(!current&&!supplierRows.some(s=>s.supplier_name===final.supplier_name))throw appError(400,`Row ${i+1}: Supplier "${final.supplier_name}" is not registered. Add it in Suppliers, or use its exact registered name.`);
             if(!current&&!final.master_barcode)throw appError(400,`Row ${i+1}: An exact barcode is required for a new product`);
             if(final.master_barcode&&(!current||canonicalImportValue('master_barcode',current.master_barcode)!==final.master_barcode)){
                 const barcode=String(final.master_barcode).trim();
@@ -2738,9 +2740,17 @@ app.post('/api/admin/import/preview',authenticate,adminOnly,secureRoute(async(re
         }
         const changed=current?fields.filter(f=>Object.hasOwn(values,f)&&canonicalImportValue(f,current[f])!==values[f]):Object.keys(values);
         const action=!current?'NEW':changed.length?'CHANGED':'UNCHANGED';
+        if(current)seenIds.add(String(current[idField]));
+        seen.add(key);
         changes.push({row:i+1,id:current?.[idField]||null,action,fields:current?changed:Object.keys(values),warnings,before:current,after:final});
+        }catch(error){
+            // Validation is read-only. Report every affected row; never issue a commit token for partial data.
+            if(![400,409].includes(error.status)&&![400,409].includes(error.statusCode))throw error;
+            errors.push({row:i+1,sku:String(supplied.sku??''),product_name:String(supplied.product_name??''),supplier_name:String(supplied.supplier_name??''),message:error.message});
+        }
     }
-    if(conflicts.length)return res.json({requires_resolution:true,conflicts});
+    if(conflicts.length||errors.length)return res.json({requires_resolution:true,conflicts,errors,total_rows:cells.length-1,valid_rows:changes.length,
+        counts:{new:changes.filter(x=>x.action==='NEW').length,changed:changes.filter(x=>x.action==='CHANGED').length,unchanged:changes.filter(x=>x.action==='UNCHANGED').length}});
     for(const [key,p] of importPreviews)if(p.expires<Date.now())importPreviews.delete(key);
     if(importPreviews.size>=20)throw appError(429,'Too many pending previews. Confirm an existing preview or wait 15 minutes.');
     const token=require('crypto').randomBytes(32).toString('hex');
