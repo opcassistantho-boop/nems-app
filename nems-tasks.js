@@ -4,7 +4,7 @@ module.exports = function registerTaskRoutes({
     app,
     pool,
     authenticate,
-    adminOnly
+    adminOnly, storeScope, lockProduct, assertDatesNotArchived, businessDate, scanOverdueTasks
 }) {
     if (!app || !pool || !authenticate || !adminOnly) {
         throw new Error('Missing NEMS task module dependencies');
@@ -55,6 +55,7 @@ module.exports = function registerTaskRoutes({
     };
  
     function handleError(res, error, message) {
+        if(error.status)return fail(res,error.status,error.message);
         console.error('[NEMS TASKS]', error);
  
         if (error.code === '23505') {
@@ -296,7 +297,7 @@ module.exports = function registerTaskRoutes({
                         a.assigned_by,
                         a.assigned_at,
                         a.expiry_scope,
-                        a.due_at,
+                        COALESCE(a.due_at, ((a.due_date+1)::timestamp AT TIME ZONE 'Asia/Manila')) AS due_at,
                         a.due_date,
                         a.status,
                         COUNT(sub.submission_id)::integer
@@ -310,8 +311,7 @@ module.exports = function registerTaskRoutes({
                                  (SELECT MAX(h.reopened_at) FROM public.nems_task_reopen_history h
                                   WHERE h.assignment_id = a.assignment_id), '-infinity'::timestamptz)
                                 THEN 'SUBMITTED'
-                            WHEN a.due_at IS NOT NULL
-                                AND a.due_at < NOW()
+                            WHEN COALESCE(a.due_at, ((a.due_date+1)::timestamp AT TIME ZONE 'Asia/Manila')) < NOW()
                                 THEN 'OVERDUE'
                             ELSE 'PENDING'
                         END AS display_status
@@ -364,6 +364,7 @@ module.exports = function registerTaskRoutes({
             }
  
             try {
+                await scanOverdueTasks();
                 const result = await pool.query(
                     `
                     SELECT
@@ -374,7 +375,7 @@ module.exports = function registerTaskRoutes({
                         sp.supplier_name,
                         a.assigned_at,
                         a.expiry_scope,
-                        a.due_at,
+                        COALESCE(a.due_at, ((a.due_date+1)::timestamp AT TIME ZONE 'Asia/Manila')) AS due_at,
                         a.due_date,
                         a.status,
                         COUNT(sub.submission_id)::integer
@@ -386,8 +387,7 @@ module.exports = function registerTaskRoutes({
                                  (SELECT MAX(h.reopened_at) FROM public.nems_task_reopen_history h
                                   WHERE h.assignment_id = a.assignment_id), '-infinity'::timestamptz)
                                 THEN 'SUBMITTED'
-                            WHEN a.due_at IS NOT NULL
-                                AND a.due_at < NOW()
+                            WHEN COALESCE(a.due_at, ((a.due_date+1)::timestamp AT TIME ZONE 'Asia/Manila')) < NOW()
                                 THEN 'OVERDUE'
                             ELSE 'PENDING'
                         END AS display_status
@@ -399,7 +399,7 @@ module.exports = function registerTaskRoutes({
                     LEFT JOIN public.nems_monitoring_submissions sub
                         ON sub.assignment_id = a.assignment_id
                     WHERE LOWER(TRIM(s.store_name))
-                        = LOWER(TRIM($1))
+                        = LOWER(TRIM($1)) AND LOWER(s.store_email)=LOWER($2)
                     GROUP BY
                         a.assignment_id,
                         s.store_name,
@@ -407,7 +407,7 @@ module.exports = function registerTaskRoutes({
                     ORDER BY a.assigned_at DESC,
                              a.assignment_id DESC
                     `,
-                    [storeName]
+                    [storeName,getEmail(req)]
                 );
  
                 return res.json(result.rows);
@@ -450,6 +450,8 @@ module.exports = function registerTaskRoutes({
             }
  
             const remarks = cleanText(req.body?.remarks);
+            const employeeName = cleanText(req.body?.employee_name);
+            if (!employeeName || employeeName.length>120 || !remarks) return fail(res,400,'Employee Full Name and completion remarks are required');
  
             if (remarks.length > 2000) {
                 return fail(
@@ -468,16 +470,17 @@ module.exports = function registerTaskRoutes({
  
                 const assignment = await client.query(
                     `
-                    SELECT a.assignment_id, a.status, a.due_at
+                    SELECT a.assignment_id, a.status, COALESCE(a.due_at, ((a.due_date+1)::timestamp AT TIME ZONE 'Asia/Manila')) AS due_at
                     FROM public.nems_task_assignments a
                     JOIN public.stores s
                         ON s.store_id = a.store_id
                     WHERE a.assignment_id = $1
                       AND LOWER(TRIM(s.store_name))
                           = LOWER(TRIM($2))
+                      AND LOWER(s.store_email)=LOWER($3)
                     FOR UPDATE OF a
                     `,
-                    [assignmentId, storeName]
+                    [assignmentId, storeName, submittedBy]
                 );
  
                 if (!assignment.rowCount) {
@@ -575,6 +578,12 @@ module.exports = function registerTaskRoutes({
                       AND p.store_task_visible = TRUE
                 `, [result.rows[0].submission_id, assignmentId]);
  
+                await client.query(`INSERT INTO public.nems_store_remarks
+                    (store_name,store_email,product_id,assignment_id,employee_name,remarks,source,account_email,details)
+                    SELECT $1,$2,i.product_id,$3,$4,$5,'MY_TASKS',$2,
+                           jsonb_build_object('submission_id',$6::bigint,'submission_item',to_jsonb(i),'event','TASK_SUBMIT')
+                    FROM public.nems_task_submission_items i WHERE i.submission_id=$6`,
+                    [storeName,submittedBy,assignmentId,employeeName,remarks,result.rows[0].submission_id]);
                 await client.query('COMMIT');
  
                 return res.status(201).json({
@@ -610,7 +619,7 @@ module.exports = function registerTaskRoutes({
         if (!id) return fail(res, 400, 'Invalid task ID');
         try {
             const task = await pool.query(`
-                SELECT a.assignment_id, a.status, a.due_at, sp.supplier_name,
+                SELECT a.assignment_id, a.status, COALESCE(a.due_at, ((a.due_date+1)::timestamp AT TIME ZONE 'Asia/Manila')) AS due_at, sp.supplier_name,
                        EXISTS (
                          SELECT 1 FROM public.nems_monitoring_submissions sub
                          WHERE sub.assignment_id = a.assignment_id
@@ -622,8 +631,8 @@ module.exports = function registerTaskRoutes({
                 JOIN public.stores s ON s.store_id = a.store_id
                 JOIN public.suppliers sp ON sp.supplier_id = a.supplier_id
                 WHERE a.assignment_id = $1
-                  AND LOWER(TRIM(s.store_name)) = LOWER(TRIM($2))
-            `, [id, getStoreName(req)]);
+                  AND LOWER(TRIM(s.store_name)) = LOWER(TRIM($2)) AND LOWER(s.store_email)=LOWER($3)
+            `, [id, getStoreName(req), getEmail(req)]);
             if (!task.rowCount) return fail(res, 404, 'Task not found');
             const a = task.rows[0];
             const locked = a.status !== 'ACTIVE' || a.submitted ||
@@ -631,7 +640,7 @@ module.exports = function registerTaskRoutes({
             const products = await pool.query(`
                 SELECT p.product_id, p.sku, p.product_name, p.master_barcode, p.supplier_name,
                        pr.expiration_1, pr.qty_1, pr.expiration_2, pr.qty_2,
-                       pr.expiration_3, pr.qty_3, COALESCE(pr.extra_expirations, '[]'::jsonb) AS extra_expirations, COALESCE(pr.no_stock, FALSE) AS no_stock, pr.saved_at,
+                       pr.expiration_3, pr.qty_3, COALESCE(pr.extra_expirations, '[]'::jsonb) AS extra_expirations, COALESCE(pr.no_stock, FALSE) AS no_stock, pr.saved_at, pr.xmin::text AS revision,
                        (pr.product_id IS NOT NULL) AS encoded
                 FROM public.products p
                 LEFT JOIN public.nems_task_product_progress pr
@@ -655,7 +664,7 @@ module.exports = function registerTaskRoutes({
                   AND LOWER(TRIM(m.supplier)) = LOWER(TRIM($3))
             `, [getStoreName(req), getEmail(req), a.supplier_name]);
             const monitoringByProduct = new Map(monitoring.rows.map(m => [Number(m.product_id), m]));
-            const today = new Date().toISOString().slice(0, 10);
+            const today = businessDate();
             const mergedProducts = products.rows.map(product => {
                 if (product.encoded) return product;
                 const m = monitoringByProduct.get(Number(product.product_id));
@@ -729,19 +738,20 @@ module.exports = function registerTaskRoutes({
                 return fail(res, 400, `Invalid additional expiration row ${i + 4}`);
             }
         }
+        if (!noStock && !dates.some(Boolean) && !extras.length) return fail(res,400,'Enter an expiration date and quantity or select NO STOCK');
         let client;
         try {
             client = await pool.connect();
             await client.query('BEGIN');
             const task = await client.query(`
-                SELECT a.assignment_id, a.status, a.due_at, sp.supplier_name
+                SELECT a.assignment_id, a.status, COALESCE(a.due_at, ((a.due_date+1)::timestamp AT TIME ZONE 'Asia/Manila')) AS due_at, sp.supplier_name
                 FROM public.nems_task_assignments a
                 JOIN public.stores s ON s.store_id = a.store_id
                 JOIN public.suppliers sp ON sp.supplier_id = a.supplier_id
                 WHERE a.assignment_id = $1
-                  AND LOWER(TRIM(s.store_name)) = LOWER(TRIM($2))
+                  AND LOWER(TRIM(s.store_name)) = LOWER(TRIM($2)) AND LOWER(s.store_email)=LOWER($3)
                 FOR UPDATE OF a
-            `, [id, getStoreName(req)]);
+            `, [id, getStoreName(req), getEmail(req)]);
             if (!task.rowCount) { await client.query('ROLLBACK'); return fail(res, 404, 'Task not found'); }
             const a = task.rows[0];
             if (a.status !== 'ACTIVE' ||
@@ -768,13 +778,21 @@ module.exports = function registerTaskRoutes({
             if (!product.rowCount) {
                 await client.query('ROLLBACK'); return fail(res, 404, 'Product not in assigned supplier');
             }
+            await lockProduct(client, getEmail(req), productId);
+            const previous = await client.query(`SELECT pr.*, xmin::text AS revision FROM public.nems_task_product_progress pr
+                WHERE assignment_id=$1 AND product_id=$2 FOR UPDATE`, [id, productId]);
+            if (!Object.hasOwn(b, 'expected_revision') || (b.expected_revision ?? null) !== (previous.rows[0]?.revision ?? null)) {
+                await client.query('ROLLBACK');
+                return fail(res,409,'Another session changed this product. Reload the task before saving. Your draft has not been saved.');
+            }
+            if (!noStock) await assertDatesNotArchived(client,getEmail(req),productId,[...dates.filter(Boolean),...extras.map(x=>x.date)]);
             const saved = noStock ? await client.query(`
                 INSERT INTO public.nems_task_product_progress
                     (assignment_id, product_id, no_stock, saved_by)
                 VALUES ($1, $2, TRUE, $3)
                 ON CONFLICT (assignment_id, product_id) DO UPDATE SET
                     no_stock=TRUE, saved_by=EXCLUDED.saved_by, saved_at=NOW()
-                RETURNING *
+                RETURNING *, xmin::text AS revision
             `, [id, productId, getEmail(req)]) : await client.query(`
                 INSERT INTO public.nems_task_product_progress
                 (assignment_id, product_id, expiration_1, qty_1,
@@ -785,14 +803,14 @@ module.exports = function registerTaskRoutes({
                   expiration_2=EXCLUDED.expiration_2, qty_2=EXCLUDED.qty_2,
                   expiration_3=EXCLUDED.expiration_3, qty_3=EXCLUDED.qty_3,
                   saved_by=EXCLUDED.saved_by, extra_expirations=EXCLUDED.extra_expirations, no_stock=FALSE, saved_at=NOW()
-                RETURNING *
+                RETURNING *, xmin::text AS revision
             `, [id, productId, dates[0], quantities[0], dates[1], quantities[1],
                 dates[2], quantities[2], getEmail(req), JSON.stringify(extras)]);
             await client.query(`INSERT INTO public.nems_store_remarks
                 (store_name, store_email, product_id, assignment_id, employee_name, remarks, source, account_email, details)
                 VALUES ($1,$2,$3,$4,$5,$6,'MY_TASKS',$7,$8::jsonb)`,
                 [getStoreName(req),getEmail(req),productId,id,employeeName,storeRemarks,getEmail(req),
-                 JSON.stringify({no_stock:noStock,expiration_1:dates[0],qty_1:quantities[0],expiration_2:dates[1],qty_2:quantities[1],expiration_3:dates[2],qty_3:quantities[2],extra_expirations:extras})]);
+                 JSON.stringify({before:previous.rows[0]||null,revision:saved.rows[0].revision,no_stock:noStock,expiration_1:dates[0],qty_1:quantities[0],expiration_2:dates[1],qty_2:quantities[1],expiration_3:dates[2],qty_3:quantities[2],extra_expirations:extras})]);
             await client.query('COMMIT');
             return res.json(saved.rows[0]);
         } catch (error) {
@@ -969,3 +987,4 @@ module.exports = function registerTaskRoutes({
  
 };
  
+
