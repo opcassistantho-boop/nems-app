@@ -549,7 +549,7 @@ td button { margin:2px; }
         <div class="row" style="margin-bottom:14px">
             <select
                 id="monitorCategory"
-                onchange="renderMonitoring()"
+                onchange="nemsMonitoringFilterChanged()"
             >
                 <option value="">All Categories</option>
                 <option>EXPIRED</option>
@@ -562,7 +562,7 @@ td button { margin:2px; }
             <input
                 id="monitorSearch"
                 placeholder="Search store, SKU, product or supplier"
-                oninput="renderMonitoring()"
+                oninput="nemsMonitoringFilterChanged()"
             >
         </div>
  
@@ -1266,7 +1266,7 @@ function fieldLabel(field) {
 // API REQUESTS
 // ==========================================
  
-async function api(url, options = {}) {
+async function nemsRawApi(url, options = {}) {
     const headers = {
         ...(options.headers || {})
     };
@@ -1323,14 +1323,33 @@ async function api(url, options = {}) {
             logout();
         }
  
-        throw new Error(
-            result.error || 'Request failed'
-        );
+        const failure=new Error(result.error || 'Request failed');failure.status=response.status;failure.requestPending=result.request_pending===true;throw failure;
     }
  
     return result;
 }
  
+const nemsWriteRequests=new Map();
+async function api(url,options={}){
+    const method=(options.method||'GET').toUpperCase();
+    const protectedWrite=['POST','PUT','PATCH','DELETE'].includes(method)&&/^\/api\/(?:store\/monitoring$|store\/tasks\/\d+\/(?:submit|explanation|products\/\d+)$|messages$|expired\/reports(?:\/\d+\/validate)?$|archive\/\d+\/restore$|admin\/import\/confirm$|admin\/tasks(?:\/\d+(?:\/reopen)?)?$)/.test(url);
+    if(!protectedWrite)return nemsRawApi(url,options);
+    const fingerprint=(currentUser?.email||'')+' '+method+' '+url+' '+String(options.body||'');
+    const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(fingerprint));
+    const storageKey='nems-pending-'+Array.from(new Uint8Array(digest),b=>b.toString(16).padStart(2,'0')).join('');
+    let storedKey;try{storedKey=sessionStorage.getItem(storageKey);}catch(_){}
+    let record=nemsWriteRequests.get(fingerprint);
+    if(record?.promise)return record.promise;
+    if(!record){record={key:storedKey||crypto.randomUUID()};nemsWriteRequests.set(fingerprint,record);try{sessionStorage.setItem(storageKey,record.key);}catch(_){}}
+    if(nemsWriteRequests.size>200){for(const [key,value] of nemsWriteRequests)if(!value.promise&&key!==fingerprint){nemsWriteRequests.delete(key);break;}}
+    record.promise=nemsRawApi(url,{...options,headers:{...options.headers,'Idempotency-Key':record.key}}).then(result=>{nemsWriteRequests.delete(fingerprint);try{sessionStorage.removeItem(storageKey);}catch(_){}return result;}).catch(error=>{
+        // Keep the original key after a lost response or unresolved operation.
+        if(error.status&&!error.requestPending){nemsWriteRequests.delete(fingerprint);try{sessionStorage.removeItem(storageKey);}catch(_){}}
+        throw error;
+    }).finally(()=>{record.promise=null;});
+    return record.promise;
+}
+
 // ==========================================
 // LOGIN
 // ==========================================
@@ -1444,7 +1463,11 @@ el('loginForm').addEventListener(
 // ==========================================
  
 function logout() {
-    nemsUnreadGeneration++;
+    nemsUnreadGeneration++;nemsFeatureGeneration++;nemsMonitoringGeneration++;nemsEmployeeGeneration++;nemsTrackerGeneration++;
+    nemsBadgeLastAt=0;nemsBadgeOwner='';nemsMonitoringPage=1;nemsEmployeePage=1;nemsTrackerPage=1;nemsAdminTaskPage=1;nemsStoreTaskPage=1;
+    for(const tab of Object.keys(nemsFeaturePages))nemsFeaturePages[tab]=1;
+    nemsTaskProducts=[];nemsStoreTasks=[];nemsTaskRows=[];nemsSelectedStoreIds.clear();
+    if(nemsMessageTimer){clearInterval(nemsMessageTimer);nemsMessageTimer=null;}
     if(el('nemsFeaturesNav'))el('nemsFeaturesNav').textContent='Messages and Follow-up';
     token = '';
     currentUser = null;
@@ -1594,17 +1617,23 @@ function openMonitoringCategory(category) {
 // MONITORING
 // ==========================================
  
-async function loadMonitoring() {
-    try {
-        monitoring = await api('/api/monitoring');
-        renderMonitoring();
-        renderMonitoringExportSuppliers();
- 
-    } catch (error) {
-        showMessage(error.message, true);
-    }
+let nemsMonitoringPage=1,nemsMonitoringMore=false,nemsMonitoringGeneration=0,nemsMonitorSearchTimer;
+let nemsExportSuppliers=[];
+function nemsMonitoringFilterChanged(){clearTimeout(nemsMonitorSearchTimer);nemsMonitoringPage=1;nemsMonitorSearchTimer=setTimeout(()=>void loadMonitoring(),300);}
+async function loadMonitoring(){
+    const generation=++nemsMonitoringGeneration,owner=currentUser?.email;
+    try{
+        const data=await api('/api/scale/monitoring?'+new URLSearchParams({page:nemsMonitoringPage,limit:50,category:el('monitorCategory').value,search:el('monitorSearch').value.trim()}));
+        if(generation!==nemsMonitoringGeneration||currentUser?.email!==owner)return;
+        monitoring=data.records;nemsMonitoringMore=data.has_more;renderMonitoring();
+        let pager=el('nemsMonitoringPager');if(!pager){pager=document.createElement('div');pager.id='nemsMonitoringPager';el('monitorCount').after(pager);}
+        pager.innerHTML=nemsPagerHTML('monitor',nemsMonitoringPage,data.has_more);
+        nemsBindPager(pager,()=>nemsMonitoringPage--,()=>nemsMonitoringPage++,loadMonitoring);
+        el('monitorCount').textContent='Page '+nemsMonitoringPage+' · '+monitoring.length+' records';
+        if(!nemsExportSuppliers.length){nemsExportSuppliers=await api('/api/scale/export-options');if(currentUser?.email===owner)renderMonitoringExportSuppliers();}
+    }catch(error){if(generation===nemsMonitoringGeneration)showMessage(error.message,true);}
 }
- 
+
 // Color only Monitoring Records product fields by remaining shelf life.
 function nemsMonitoringExpiryClass(value) {
     const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(value || ''));
@@ -1631,7 +1660,7 @@ function nemsMonitoringExpiryClass(value) {
 }
  
 function renderMonitoring() {
-    const category = el('monitorCategory').value;
+    const category = '';
  
     const search = el('monitorSearch')
         .value
@@ -1802,7 +1831,7 @@ async function disposeExpiredTaskMonitoring(productId, encodedEmail, expirationD
 function renderMonitoringExportSuppliers() {
     const host = el('monitorExportSuppliers');
     const previouslyChecked = new Set(Array.from(host.querySelectorAll('input:checked')).map(input => input.value));
-    const suppliers = [...new Set(monitoring.map(item => String(item.supplier || '').trim()).filter(Boolean))].sort((a,b) => a.localeCompare(b));
+    const suppliers = nemsExportSuppliers.map(item=>item.supplier_name);
     host.innerHTML = suppliers.map(name => `<label style="display:flex;align-items:center;gap:7px;font-weight:normal;font-size:13px;margin:0"><input type="checkbox" class="monitor-export-supplier" value="${escapeHtml(name)}" style="width:auto" ${previouslyChecked.has(name) ? 'checked' : ''}>${escapeHtml(name)}</label>`).join('') || '<span class="muted">No suppliers available.</span>';
 }
  
@@ -1817,6 +1846,9 @@ function setMonitoringExportCategories(checked) {
 }
  
 async function downloadMonitoring() {
+    const button=document.querySelector('[onclick="downloadMonitoring()"]');
+    if(button?.disabled)return;if(button)button.disabled=true;
+    const owner=currentUser?.email;
     try {
         const params = new URLSearchParams();
         el('monitorExportCategories').querySelectorAll('input.monitor-export-category:checked').forEach(input => {
@@ -1824,7 +1856,19 @@ async function downloadMonitoring() {
         });
         const suppliers = Array.from(el('monitorExportSuppliers').querySelectorAll('input.monitor-export-supplier:checked'));
         suppliers.forEach(input => params.append('supplier', input.value));
-        const response = await api('/api/export/monitoring' + (params.toString() ? '?' + params.toString() : ''));
+        const job = await api('/api/export/monitoring' + (params.toString() ? '?' + params.toString() : ''));
+        showMessage('Excel export queued. You can continue working while it is prepared.');
+        const deadline=Date.now()+10*60000;let status;
+        while(Date.now()<deadline){
+            if(currentUser?.email!==owner)return;
+            await new Promise(resolve=>setTimeout(resolve,document.hidden?10000:2000));
+            if(document.hidden)continue;
+            status=await api('/api/exports/'+job.job_id);
+            if(status.state==='FAILED')throw new Error(status.error||'Export failed');
+            if(status.state==='READY')break;
+        }
+        if(status?.state!=='READY')throw new Error('Export wait expired. Generate the export again.');
+        const response=await api('/api/exports/'+job.job_id+'/download');
  
         const blob = await response.blob();
         const url = URL.createObjectURL(blob);
@@ -1845,7 +1889,7 @@ async function downloadMonitoring() {
  
     } catch (error) {
         showMessage(error.message, true);
-    }
+    } finally {if(button)button.disabled=false;}
 }
  
 // ==========================================
@@ -2977,6 +3021,7 @@ el('historySearch').addEventListener(
 let nemsTaskStores = [];
 let nemsTaskSuppliers = [];
 let nemsTaskRows = [];
+let nemsAdminTaskPage=1,nemsAdminTaskTimer;
 const nemsSelectedStoreIds = new Set();
  
 function nemsTaskDeadline() {
@@ -3174,14 +3219,16 @@ async function nemsTaskLoad() {
         const [stores, suppliers, assignments] = await Promise.all([
             api('/api/admin/task-stores'),
             api('/api/admin/suppliers'),
-            api('/api/admin/tasks')
+            api('/api/scale/task-tracker?'+new URLSearchParams({page:nemsAdminTaskPage,limit:50,search:el('nemsTaskListSearch').value,status:el('nemsTaskStatus').value}))
         ]);
         nemsTaskStores = Array.isArray(stores) ? stores : [];
         nemsTaskSuppliers = Array.isArray(suppliers) ? suppliers : [];
-        nemsTaskRows = Array.isArray(assignments) ? assignments : [];
+        nemsTaskRows = assignments.records || [];
         nemsTaskStoresRender();
         nemsTaskSuppliersRender();
         nemsTaskRowsRender();
+        let pager=el('nemsAdminTaskPager');if(!pager){pager=document.createElement('div');pager.id='nemsAdminTaskPager';el('nemsTaskListCount').after(pager);}
+        pager.innerHTML=nemsPagerHTML('admin-tasks',nemsAdminTaskPage,assignments.has_more);nemsBindPager(pager,()=>nemsAdminTaskPage--,()=>nemsAdminTaskPage++,nemsTaskLoad);
     } catch (error) {
         showMessage(error.message, true);
     }
@@ -3258,8 +3305,8 @@ function nemsTaskSetup() {
     el('application').appendChild(page);
     el('nemsTaskStoreSearch').addEventListener('input', nemsTaskStoresRender);
     el('nemsTaskSupplierSearch').addEventListener('input', nemsTaskSuppliersRender);
-    el('nemsTaskListSearch').addEventListener('input', nemsTaskRowsRender);
-    el('nemsTaskStatus').addEventListener('change', nemsTaskRowsRender);
+    el('nemsTaskListSearch').addEventListener('input', ()=>{clearTimeout(nemsAdminTaskTimer);nemsAdminTaskPage=1;nemsAdminTaskTimer=setTimeout(()=>void nemsTaskLoad(),300);});
+    el('nemsTaskStatus').addEventListener('change', ()=>{nemsAdminTaskPage=1;void nemsTaskLoad();});
     el('nemsTaskRows').addEventListener('click', event => {
         const edit = event.target.closest('[data-nems-task-edit]');
         if (edit) nemsTaskEdit(Number(edit.dataset.nemsTaskEdit));
@@ -3309,9 +3356,11 @@ nemsTaskSetup();
 // ==========================================
  
 let nemsStoreTasks = [];
+let nemsStoreTaskPage=1,nemsStoreTaskTimer;
 let nemsStoreTasksBusy = false;
 let nemsActiveTaskId = null;
 let nemsTaskProducts = [];
+let nemsTaskProductPage=1,nemsTaskOnlyRemaining=false;
 let nemsTaskLocked = false;
  
 function nemsStoreTaskRender() {
@@ -3340,11 +3389,13 @@ async function nemsStoreTaskLoad() {
     const account = currentUser.email;
     el('nemsStoreTaskRows').innerHTML = '<tr><td colspan="7">Loading tasks...</td></tr>';
     try {
-        const result = await api('/api/store/tasks');
+        const result = await api('/api/scale/task-tracker?'+new URLSearchParams({page:nemsStoreTaskPage,limit:50,search:el('nemsStoreTaskSearch').value,status:el('nemsStoreTaskStatus').value}));
         if (currentUser?.role !== 'STORE' || currentUser.email !== account) return;
-        if (!Array.isArray(result)) throw new Error('Unexpected task response');
-        nemsStoreTasks = result;
+        if (!Array.isArray(result.records)) throw new Error('Unexpected task response');
+        nemsStoreTasks = result.records;
         nemsStoreTaskRender();
+        let pager=el('nemsStoreTaskPager');if(!pager){pager=document.createElement('div');pager.id='nemsStoreTaskPager';el('nemsStoreTaskCount').after(pager);}
+        pager.innerHTML=nemsPagerHTML('store-tasks',nemsStoreTaskPage,result.has_more);nemsBindPager(pager,()=>nemsStoreTaskPage--,()=>nemsStoreTaskPage++,nemsStoreTaskLoad);
     } catch (error) {
         el('nemsStoreTaskRows').innerHTML = '<tr><td colspan="7">Could not load tasks.</td></tr>';
         showMessage(error.message, true);
@@ -3354,11 +3405,15 @@ async function nemsStoreTaskLoad() {
 function nemsTaskProductCounts() {
     const encoded = nemsTaskProducts.filter(p => p.encoded &&
         (p.no_stock || p.expiration_1 || p.expiration_2 || p.expiration_3 || (Array.isArray(p.extra_expirations) && p.extra_expirations.length))).length;
-    el('nemsTaskProductCount').textContent =
-        `${encoded} of ${nemsTaskProducts.length} active supplier products encoded`;
+    el('nemsTaskProductCount').textContent = `${encoded} of ${nemsTaskProducts.length} products saved. ${nemsTaskProducts.length-encoded} remaining.`;
+    let checklist=el('nemsTaskChecklist');if(!checklist){checklist=document.createElement('div');checklist.id='nemsTaskChecklist';el('nemsTaskProductCount').after(checklist);}
+    const dirty=nemsTaskProducts.some(p=>p._dirty);
+    checklist.innerHTML='<p><strong>Before submitting</strong></p><p>'+(!nemsTaskProducts.length?'No required products.':encoded===nemsTaskProducts.length?'All required products have saved progress.':'Save the remaining required products.')+'</p><p>'+(dirty?'Unsaved edits remain. Save each edited product first.':'No unsaved product edits.')+'</p><p>Check the selected packs, every expiry date and quantity. Enter your name and completion remarks, then confirm final submission.</p><label><input type="checkbox" id="nemsOnlyRemaining" style="width:auto" '+(nemsTaskOnlyRemaining?'checked':'')+'> Show remaining products only</label>';
+    el('nemsOnlyRemaining').onchange=()=>{nemsTaskOnlyRemaining=el('nemsOnlyRemaining').checked;nemsTaskProductPage=1;nemsTaskProductRender();};
+
     const submit = el('nemsTaskSubmitProducts');
     submit.disabled = nemsTaskLocked || nemsStoreTasksBusy ||
-        !nemsTaskProducts.length || encoded !== nemsTaskProducts.length;
+        !nemsTaskProducts.length || encoded !== nemsTaskProducts.length || dirty;
 }
  
 function nemsProductExpirationRows(p) {
@@ -3380,8 +3435,9 @@ function nemsProductExpirationRows(p) {
 function nemsTaskProductRender() {
     const body = el('nemsTaskProductRows');
     const term = el('nemsTaskProductSearch').value.trim().toLowerCase();
-    const products = nemsTaskProducts.filter(p =>
-        [p.sku, p.product_name].join(' ').toLowerCase().includes(term));
+    const matches = nemsTaskProducts.filter(p =>[p.sku,p.product_name].join(' ').toLowerCase().includes(term)&&(!nemsTaskOnlyRemaining||!p.encoded||p._dirty));
+    nemsTaskProductPage=Math.min(nemsTaskProductPage,Math.max(1,Math.ceil(matches.length/25)));
+    const products=matches.slice((nemsTaskProductPage-1)*25,nemsTaskProductPage*25);
     body.innerHTML = products.length ? products.map(p => {
         const id = Number(p.product_id);
         const rows = nemsProductExpirationRows(p);
@@ -3394,15 +3450,17 @@ function nemsTaskProductRender() {
         return `<tr data-nems-product="${id}"><td>${escapeHtml(p.sku || '')}</td>
           <td>${escapeHtml(p.product_name)}</td><td>${nemsTaskLocked ? (noStock ? '<b>NO STOCK</b>' : '') : `<label style="display:flex;align-items:center;gap:7px;margin-bottom:10px"><input type="checkbox" data-nems-no-stock style="width:auto" ${noStock ? 'checked' : ''}> NO STOCK — item not available</label>`}<div class="nems-exp-entries" style="${noStock ? 'display:none' : ''}">${entries}</div>
           ${nemsTaskLocked || noStock ? '' : `<button type="button" class="small secondary" data-nems-add-row="${id}">+ Add Expiration Date</button>`}</td>
-          <td>${p.encoded ? (p.no_stock ? 'NO STOCK · Saved' : 'Saved') : 'Not encoded'}</td>
+          <td>${p._dirty ? 'Unsaved changes' : p.encoded ? (p.no_stock ? 'NO STOCK · Saved' : 'Saved') : 'Not encoded'}</td>
           <td>${nemsTaskLocked ? 'Locked' : `<button type="button" data-nems-save-product="${id}">Save</button>`}<button type="button" class="secondary small" data-nems-view-remarks="${id}">Remarks</button></td></tr>`;
     }).join('') : '<tr><td colspan="5">No matching products.</td></tr>';
+    let pager=el('nemsTaskProductsPager');if(!pager){pager=document.createElement('div');pager.id='nemsTaskProductsPager';body.closest('.tablewrap').after(pager);}
+    pager.innerHTML=nemsPagerHTML('taskproducts',nemsTaskProductPage,matches.length>nemsTaskProductPage*25);nemsBindPager(pager,()=>nemsTaskProductPage--,()=>nemsTaskProductPage++,nemsTaskProductRender);
     nemsTaskProductCounts();
 }
  
 async function nemsOpenTaskProducts(id) {
     if (currentUser?.role !== 'STORE' || nemsStoreTasksBusy) return;
-    nemsActiveTaskId = id;
+    nemsActiveTaskId = id;nemsTaskProductPage=1;nemsTaskOnlyRemaining=false;
     el('nemsTaskProductPanel').classList.remove('hidden');
     el('nemsTaskProductPanel').scrollIntoView({behavior:'smooth', block:'start'});
     el('nemsTaskProductRows').innerHTML = '<tr><td colspan="5">Loading products...</td></tr>';
@@ -3462,7 +3520,7 @@ async function nemsSaveTaskProduct(productId) {
                 Object.assign(p, payload, {encoded:true, no_stock:false});
                 delete p._draftRows;
             }
-            p.encoded = true;
+            p.encoded = true;p._dirty=false;
             delete p._draftNoStock;
         }
         nemsTaskProductRender();
@@ -3478,6 +3536,7 @@ async function nemsSaveTaskProduct(productId) {
  
 async function nemsStoreTaskSubmit(id) {
     if (currentUser?.role !== 'STORE' || nemsTaskLocked || nemsStoreTasksBusy) return;
+    if(nemsTaskProducts.some(p=>p._dirty))return showMessage('Save all edited products before submitting.',true);
     if (nemsTaskProducts.some(p => !p.encoded ||
         !(p.no_stock || p.expiration_1 || p.expiration_2 || p.expiration_3 || (Array.isArray(p.extra_expirations) && p.extra_expirations.length)))) {
         showMessage('Save all active supplier products before submitting.', true);
@@ -3496,7 +3555,7 @@ async function nemsStoreTaskSubmit(id) {
         });
         showMessage('Task submitted. Permanent snapshot saved.');
         await nemsStoreTaskLoad();
-        await nemsOpenTaskProducts(id);
+        nemsStoreTasksBusy=false;await nemsOpenTaskProducts(id);
     } catch (error) {
         showMessage(error.message, true);
     } finally {
@@ -3544,14 +3603,14 @@ function nemsStoreTaskSetup() {
         <div class="nems-task-actions"><button type="button" id="nemsTaskSubmitProducts">Submit completed task</button></div>
       </div>`;
     appRoot.appendChild(page);
-    el('nemsStoreTaskSearch').addEventListener('input', nemsStoreTaskRender);
-    el('nemsStoreTaskStatus').addEventListener('change', nemsStoreTaskRender);
+    el('nemsStoreTaskSearch').addEventListener('input', ()=>{clearTimeout(nemsStoreTaskTimer);nemsStoreTaskPage=1;nemsStoreTaskTimer=setTimeout(()=>void nemsStoreTaskLoad(),300);});
+    el('nemsStoreTaskStatus').addEventListener('change', ()=>{nemsStoreTaskPage=1;void nemsStoreTaskLoad();});
     el('nemsStoreTaskRefresh').addEventListener('click', nemsStoreTaskLoad);
     el('nemsStoreTaskRows').addEventListener('click', e => {
         const btn = e.target.closest('[data-nems-open-task]');
         if (btn) nemsOpenTaskProducts(Number(btn.dataset.nemsOpenTask));
     });
-    el('nemsTaskProductSearch').addEventListener('input', nemsTaskProductRender);
+    el('nemsTaskProductSearch').addEventListener('input', ()=>{nemsTaskProductPage=1;nemsTaskProductRender();});
     el('nemsTaskFindBarcode').addEventListener('click', nemsFindTaskBarcode);
     el('nemsTaskBarcode').addEventListener('keydown', e => {if(e.key === 'Enter'){e.preventDefault();nemsFindTaskBarcode();}});
     el('nemsTaskStartCamera').addEventListener('click', nemsStartTaskCamera);
@@ -3561,14 +3620,14 @@ function nemsStoreTaskSetup() {
         if (stockToggle) {
             const tr = stockToggle.closest('[data-nems-product]');
             const p = nemsTaskProducts.find(p => Number(p.product_id) === Number(tr.dataset.nemsProduct));
-            if (p) { p._draftNoStock = stockToggle.checked; nemsTaskProductRender(); }
+            if (p) { p._dirty=true;p._draftNoStock = stockToggle.checked; nemsTaskProductRender(); }
             return;
         }
         const field = e.target.closest('[data-nems-kind]');
         if (!field) return;
         const tr = field.closest('[data-nems-product]');
         const p = nemsTaskProducts.find(p => Number(p.product_id) === Number(tr.dataset.nemsProduct));
-        if (p) nemsProductExpirationRows(p)[Number(field.dataset.nemsRow)][field.dataset.nemsKind] = field.value;
+        if (p) {p._dirty=true;nemsProductExpirationRows(p)[Number(field.dataset.nemsRow)][field.dataset.nemsKind] = field.value;nemsTaskProductCounts();}
     });
     el('nemsTaskProductRows').addEventListener('click', e => {
         const btn = e.target.closest('[data-nems-save-product]');
@@ -3581,7 +3640,7 @@ function nemsStoreTaskSetup() {
         const tr = e.target.closest('[data-nems-product]');
         const p = nemsTaskProducts.find(p => Number(p.product_id) === Number(tr.dataset.nemsProduct));
         if (!p || nemsTaskLocked || (p._draftNoStock === undefined ? p.no_stock : p._draftNoStock)) return;
-        const rows = nemsProductExpirationRows(p);
+        p._dirty=true;const rows = nemsProductExpirationRows(p);
         if (add) {
             if (rows.length >= 100) return showMessage('Maximum 100 expiration dates.', true);
             rows.push({date:'',qty:''});
@@ -4291,6 +4350,14 @@ el('entryProduct').addEventListener('change',async()=>{
         if(!el('storeExpiryRows').children.length)addStoreExpiryRow();
     }catch(e){showMessage(e.message,true);}
 });
+function nemsPagerHTML(name,page,more){return '<div class="row" style="margin-top:12px"><button type="button" data-page-back '+(page<=1?'disabled':'')+'>Previous</button><span>Page '+page+'</span><button type="button" data-page-next '+(!more?'disabled':'')+'>Next</button></div>';}
+function nemsBindPager(host,previous,next,load){const back=host.querySelector('[data-page-back]'),forward=host.querySelector('[data-page-next]');back.onclick=()=>{previous();void load();};forward.onclick=()=>{next();void load();};}
+let nemsFeatureGeneration=0,nemsEmployeePage=1,nemsEmployeeGeneration=0;
+const nemsFeaturePages={notifications:1,expired:1,archive:1,tasks:1};
+async function nemsFeatureData(tab){
+    const endpoint={expired:'reports',archive:'archive',tasks:'task-followup',notifications:'notifications'}[tab];
+    return endpoint?api('/api/scale/'+endpoint+'?'+new URLSearchParams({page:nemsFeaturePages[tab]||1,limit:50})):null;
+}
 const nemsFeatures={stores:[],messages:[],reports:[],archive:[],stock:[],tasks:[],preview:null};
 function nemsFeatureSetup(){
     const nav=document.createElement('button');nav.id='nemsFeaturesNav';nav.type='button';nav.className='hidden';nav.textContent='Messages and Follow-up';nav.onclick=()=>showPage('followup');el('navigation').append(nav);
@@ -4302,8 +4369,9 @@ function nemsFeatureSetup(){
     el('page-history').append(historyPanel);el('nfHistoryRefresh').onclick=nemsEmployeeHistory;
 }
 async function nemsEmployeeHistory(){
-    try{const rows=await api('/api/history/employee-submissions');
+    try{const generation=++nemsEmployeeGeneration,owner=currentUser?.email;const data=await api('/api/scale/employee-history?'+new URLSearchParams({page:nemsEmployeePage,limit:50}));if(generation!==nemsEmployeeGeneration||currentUser?.email!==owner)return;const rows=data.records;
         el('nfEmployeeHistory').innerHTML=rows.map(r=>`<details><summary>${escapeHtml(r.created_at)} · ${escapeHtml(r.store_name)} · ${escapeHtml(r.employee_name)} · ${escapeHtml(r.source)} · Product ${escapeHtml(r.product_id)}</summary><p>${escapeHtml(r.remarks)}</p><p>Account: ${escapeHtml(r.account_email)} · Task: ${escapeHtml(r.assignment_id||'—')}</p><h3>View Changes</h3><pre style="white-space:pre-wrap;overflow-wrap:anywhere">${escapeHtml(JSON.stringify(r.details,null,2))}</pre></details>`).join('')||'<p>No employee submissions recorded.</p>';
+        const pager=document.createElement('div');pager.innerHTML=nemsPagerHTML('employee',nemsEmployeePage,data.has_more);el('nfEmployeeHistory').append(pager);nemsBindPager(pager,()=>nemsEmployeePage--,()=>nemsEmployeePage++,nemsEmployeeHistory);
     }catch(e){showMessage(e.message,true);}
 }
 // Keep the badge synchronized with the same read state shown in Notifications.
@@ -4315,14 +4383,15 @@ function nemsApplyUnreadBadge(rows){
     const button=el('nemsFeaturesNav');
     if(button)button.textContent='Messages and Follow-up'+(unread?' ('+unread+' unread)':'');
 }
-async function nemsRefreshUnreadBadge(){
-    if(!currentUser)return null;
-    const email=currentUser.email,generation=nemsUnreadGeneration;
-    const rows=await api('/api/notifications',{cache:'no-store'});
-    if(currentUser?.email!==email)return null;
-    if(!Array.isArray(rows))throw new Error('Unexpected notifications response');
-    if(generation===nemsUnreadGeneration)nemsApplyUnreadBadge(rows);
-    return rows;
+let nemsBadgeBusy=null,nemsBadgeLastAt=0,nemsBadgeOwner='';
+async function nemsRefreshUnreadBadge(force=false){
+    if(!currentUser||document.hidden)return null;
+    const email=currentUser.email;if(nemsBadgeBusy&&nemsBadgeOwner===email)return nemsBadgeBusy;
+    if(!force&&nemsBadgeOwner===email&&Date.now()-nemsBadgeLastAt<30000)return null;
+    nemsBadgeOwner=email;const generation=nemsUnreadGeneration;
+    const pending=api('/api/scale/notifications/count',{cache:'no-store'}).then(data=>{
+        if(currentUser?.email===email&&generation===nemsUnreadGeneration){const count=Number(data.unread)||0;const button=el('nemsFeaturesNav');if(button)button.textContent='Messages and Follow-up'+(count?' ('+count+' unread)':'');nemsBadgeLastAt=Date.now();}return data;
+    }).finally(()=>{if(nemsBadgeBusy===pending)nemsBadgeBusy=null;});nemsBadgeBusy=pending;return pending;
 }
 let nemsFeatureTab='notifications';
 let nemsMessageTimer=null;
@@ -4338,9 +4407,7 @@ showPage=function(page){
 async function nemsFeatureLoad(){
     el('nfState').textContent='Loading…';
     try{
-        const [stores,reports,archive,tasks]=await Promise.all([api('/api/messages/stores'),api('/api/expired/reports'),api('/api/archive'),api('/api/assigned/tasks')]);
         if(!currentUser)return;
-        Object.assign(nemsFeatures,{stores,reports,archive,tasks});
         const tabs=[['notifications','Notifications'],['messages','Messages'],['expired','Expired Reports'],['archive','Permanent Archive'],['tasks','Task Follow-up']];
         if(currentUser.role==='ADMIN')tabs.push(['imports','Products / Suppliers Import'],['barcodes','Register Barcode'],['email','Email Status']);
         el('nfTabs').innerHTML=tabs.map(([id,title])=>`<button type="button" data-nf-tab="${id}">${title}</button>`).join('');
@@ -4352,13 +4419,18 @@ function nfTable(headers,rows){return '<div class="tablewrap"><table><thead><tr>
 const nfCell=v=>'<td>'+escapeHtml(v??'')+'</td>';
 async function nemsFeatureRender(){
     if(nemsMessageTimer){clearInterval(nemsMessageTimer);nemsMessageTimer=null;}
-    const body=el('nfBody');body.onclick=null;body.innerHTML='Loading…';
+    const body=el('nfBody'),generation=++nemsFeatureGeneration,tab=nemsFeatureTab,owner=currentUser?.email;
+    const valid=()=>generation===nemsFeatureGeneration&&currentUser?.email===owner&&tab===nemsFeatureTab;
+    body.onclick=null;body.innerHTML='Loading…';
     try{
+        const paged=await nemsFeatureData(tab);if(!valid())return;
+        if(paged){const field={expired:'reports',archive:'archive',tasks:'tasks'}[tab];if(field)nemsFeatures[field]=paged.records;}
+        if(tab==='messages'){nemsFeatures.stores=await api('/api/messages/stores');if(!valid())return;}
+
         if(nemsFeatureTab==='notifications'){
-            const rows=await nemsRefreshUnreadBadge();
-            if(!rows)return;
+            const rows=paged.records;await nemsRefreshUnreadBadge(true);if(!valid())return;
             body.innerHTML=nfTable(['Date','Title','Message','Status'],rows.map(r=>'<tr>'+nfCell(dateTimeText(r.created_at))+nfCell(r.title)+nfCell(r.message)+`<td>${r.read_at?'Read':`<button type="button" data-nf-read="${Number(r.notification_id)}">Mark read</button>`}</td></tr>`));
-            body.onclick=async e=>{const b=e.target.closest('[data-nf-read]');if(b)try{b.disabled=true;nemsUnreadGeneration++;await api('/api/notifications/'+b.dataset.nfRead+'/read',{method:'POST',body:'{}'});nemsUnreadGeneration++;await nemsFeatureRender();}catch(err){showMessage(err.message,true);}};
+            body.onclick=async e=>{const b=e.target.closest('[data-nf-read]');if(b)try{b.disabled=true;nemsUnreadGeneration++;await api('/api/notifications/'+b.dataset.nfRead+'/read',{method:'POST',body:'{}'});nemsUnreadGeneration++;await nemsRefreshUnreadBadge(true);await nemsFeatureRender();}catch(err){showMessage(err.message,true);}};
         }else if(nemsFeatureTab==='messages'){
             const owner=currentUser.email;
             body.innerHTML=`<h3>Send message</h3><p>Chat is delivered inside NEMS. No email is sent for chat messages. Management retains oversight of store conversations.</p>
@@ -4368,9 +4440,9 @@ async function nemsFeatureRender(){
               <div id="nfAllStoresWrap"><label><input id="nfAllStores" type="checkbox" style="width:auto"> All stores I am authorized to access</label></div>
               <div id="nfPeopleWrap"><label for="nfPeopleSearch">Search recipients</label><input id="nfPeopleSearch" type="search" placeholder="Type a name or email" autocomplete="off"><label>Recipients</label><select id="nfMessagePeople" multiple size="6"></select><p id="nfPeopleSearchHint" aria-live="polite"></p><p id="nfContactHint">Choose one store to load its available recipients.</p></div>
               <label>Message</label><textarea id="nfMessageText" maxlength="5000"></textarea><button type="button" id="nfSendMessage">Send message</button>
-              <h3>Message History</h3><select id="nfConversation"><option value="">Choose store</option>${nemsFeatures.stores.map(s=>`<option value="${Number(s.store_id)}">${escapeHtml(s.store_name)}</option>`).join('')}</select><button type="button" id="nfRefreshMessages">Refresh messages</button><div id="nfMessages"></div>`;
+              <h3>Message History</h3><select id="nfConversation"><option value="">Choose store</option>${nemsFeatures.stores.map(s=>`<option value="${Number(s.store_id)}">${escapeHtml(s.store_name)}</option>`).join('')}</select><button type="button" id="nfRefreshMessages">Refresh messages</button><div id="nfMessages"></div><div id="nfMessagePager"></div>`;
             const storeSelect=el('nfMessageStores'),peopleSelect=el('nfMessagePeople'),historySelect=el('nfConversation');
-            let contactGeneration=0,historyGeneration=0,historyBusy=false,historyRows=[];
+            let contactGeneration=0,historyGeneration=0,historyBusy=false,historyRows=[],historyPage=1,historyVersion='';
             // Keep selected options visible when searching so recipients are never silently lost.
             const filterChoices=(select,choices,query,hint)=>{
                 const selected=new Set([...select.selectedOptions].map(o=>o.value));
@@ -4403,19 +4475,22 @@ async function nemsFeatureRender(){
                 const id=historySelect.value;if(!id){el('nfMessages').innerHTML='';return;}
                 const generation=++historyGeneration;historyBusy=true;
                 try{
-                    nemsUnreadGeneration++;
-                    await api('/api/messages/'+id+'/read',{method:'POST',body:'{}'});
+                    const data=await api('/api/scale/messages/'+id+'?'+new URLSearchParams({page:historyPage,limit:50,...(quiet&&historyVersion?{version:historyVersion}:{})}),{cache:'no-store'});
                     if(!active()||historySelect.value!==id||generation!==historyGeneration)return;
-                    nemsUnreadGeneration++;
-                    const rows=await api('/api/messages/'+id,{cache:'no-store'});
+                    if(data.unchanged)return;historyVersion=data.version||'';
+                    const rows=data.records;
+                    const unreadIds=rows.filter(r=>(r.recipients||[]).some(n=>n.email.toLowerCase()===owner.toLowerCase()&&!n.read_at)).map(r=>r.message_id);
+                    if(unreadIds.length){nemsUnreadGeneration++;const read=await api('/api/scale/messages/'+id+'/read',{method:'POST',body:JSON.stringify({message_ids:unreadIds})});nemsUnreadGeneration++;for(const row of rows)for(const recipient of row.recipients||[])if(recipient.email.toLowerCase()===owner.toLowerCase())recipient.read_at=recipient.read_at||read.read_at;}
                     if(!active()||historySelect.value!==id||generation!==historyGeneration)return;
+                    el('nfMessagePager').innerHTML=nemsPagerHTML('messages',historyPage,data.has_more);
+                    nemsBindPager(el('nfMessagePager'),()=>{if(!historyBusy)historyPage--;},()=>{if(!historyBusy)historyPage++;},loadHistory);
                     historyRows=rows;
                     el('nfMessages').innerHTML=rows.length?nfTable(['Date','Sender',...(currentUser.role==='ADMIN'?['Role']:[]),'Message','Recipients / Read status','Reply'],rows.map((r,i)=>'<tr>'+nfCell(dateTimeText(r.created_at))+nfCell(r.sender_email)+(currentUser.role==='ADMIN'?nfCell(r.sender_role):'')+nfCell(r.message_text)+nfCell((r.recipients||[]).map(n=>n.email+': '+(n.read_at?'Read '+dateTimeText(n.read_at):'Unread')).join('; ')||'Legacy message')+`<td>${r.sender_email.toLowerCase()!==owner.toLowerCase()?'<button type="button" data-nf-reply="'+i+'">Reply to sender</button>':''}</td></tr>`)):'<p>No messages to show for this store.</p>';
-                    await nemsRefreshUnreadBadge();
-                }catch(e){if(active()&&!quiet)showMessage(e.message,true);}finally{historyBusy=false;}
+                    await nemsRefreshUnreadBadge(true);
+                }catch(e){if(active()&&!quiet)showMessage(e.message,true);}finally{historyBusy=false;if(active()&&historySelect.value!==id)void loadHistory();}
             };
             storeSelect.onchange=loadContacts;el('nfMessageMode').onchange=loadContacts;
-            historySelect.onchange=()=>{historyGeneration++;if(!historyBusy)void loadHistory();};
+            historySelect.onchange=()=>{historyPage=1;historyVersion='';historyGeneration++;if(!historyBusy)void loadHistory();};
             el('nfRefreshMessages').onclick=()=>loadHistory();
             el('nfSendMessage').onclick=async()=>{
                 const direct=el('nfMessageMode').value==='PEOPLE';
@@ -4426,7 +4501,7 @@ async function nemsFeatureRender(){
                 try{const r=await api('/api/messages',{method:'POST',body:JSON.stringify(payload)});if(!active())return;
                     if(el('nfMessageText').value===draft)el('nfMessageText').value='';
                     showMessage(`Message saved for ${r.stores} store(s). In-app only; no email requested.`);
-                    if(payload.store_ids.length===1){historySelect.value=String(payload.store_ids[0]);await loadHistory();}
+                    if(payload.store_ids.length===1){historySelect.value=String(payload.store_ids[0]);historyPage=1;await loadHistory();}
                 }catch(e){if(active())showMessage(e.message,true);}finally{b.disabled=false;}
             };
             body.onclick=async e=>{const button=e.target.closest('[data-nf-reply]');if(!button)return;
@@ -4439,17 +4514,25 @@ async function nemsFeatureRender(){
                 option.selected=true;el('nfMessageText').focus();
             };
             if(nemsFeatures.stores.length===1){storeSelect.options[0].selected=true;historySelect.value=storeSelect.options[0].value;await loadContacts();await loadHistory();}
-            if(active())nemsMessageTimer=setInterval(()=>{if(active()&&!document.hidden)void loadHistory(true);},30000);
+            if(active())nemsMessageTimer=setInterval(()=>{if(active()&&!document.hidden&&historyPage===1)void loadHistory(true);},30000);
         }else if(nemsFeatureTab==='expired'){
             let form='';
             if(currentUser.role==='STORE'){
-                const stock=await api('/api/monitoring');
-                const map=new Map();for(const r of stock.filter(r=>r.category==='EXPIRED')){const key=r.product_id+'|'+String(r.expiration_date).slice(0,10);if(!map.has(key))map.set(key,{...r,quantity:0});map.get(key).quantity+=Number(r.quantity);}
-                nemsFeatures.stock=[...map.values()];
-                form=`<h3>Report expired stock</h3><p>Report the action first. Your assigned AS reviews afterward. ON STORE stock stays visible for follow-up.</p><label>Expired product and date</label><select id="nfExpiredProduct"><option value="">Choose expired entry</option>${nemsFeatures.stock.map((r,i)=>`<option value="${i}">${escapeHtml(r.product_name)} · ${escapeHtml(String(r.expiration_date).slice(0,10))} · ${Number(r.quantity)} pcs</option>`).join('')}</select>
+                nemsFeatures.stock=[];
+                form=`<h3>Report expired stock</h3><p>Report the action first. Your assigned AS reviews afterward. ON STORE stock stays visible for follow-up.</p><label for="nfExpiredSearch">Search expired stock</label><input id="nfExpiredSearch" type="search" placeholder="Search product or SKU"><div id="nfExpiredStockPager"></div><label>Expired product and date</label><select id="nfExpiredProduct"><option value="">Choose expired entry</option>${nemsFeatures.stock.map((r,i)=>`<option value="${i}">${escapeHtml(r.product_name)} · ${escapeHtml(String(r.expiration_date).slice(0,10))} · ${Number(r.quantity)} pcs</option>`).join('')}</select>
                 <label>Action</label><select id="nfExpiredStatus"><option>ON STORE</option><option>DISPOSE</option><option>TRANSFER TO DC</option></select><label>Employee Full Name</label><input id="nfExpiredEmployee" maxlength="120"><label>Store Remarks / Why the expired product remains ON STORE</label><textarea id="nfExpiredRemarks" maxlength="2000"></textarea><label><input id="nfOnStoreConfirm" type="checkbox" style="width:auto"> For ON STORE, I confirm that my remarks explain why this expired product remains in the store.</label><button type="button" id="nfReport">Submit for AS review</button>`;
             }
             body.innerHTML=form+'<h3>Report and Validation History</h3>'+nfTable(['Store','Product / Expiry','Action / Quantity','Employee / Remarks','AS Decision','Review'],nemsFeatures.reports.map(r=>'<tr>'+nfCell(r.store_name)+nfCell(r.product_name+' · '+String(r.expiration_date).slice(0,10))+nfCell(r.product_status+' · '+r.quantity)+nfCell(r.employee_name+' · '+r.store_remarks)+nfCell(r.validation_status+' · '+(r.validated_by||'')+' · '+(r.validation_remarks||'')+' · '+(r.validated_at?dateTimeText(r.validated_at):''))+`<td>${currentUser.role==='AS'&&r.validation_status==='PENDING'?`<button type="button" data-nf-validate="${Number(r.report_id)}" data-decision="APPROVED">Approve</button><button type="button" class="danger" data-nf-validate="${Number(r.report_id)}" data-decision="REJECTED">Reject</button>`:''}</td></tr>`));
+            if(el('nfExpiredSearch')){
+                let stockPage=1,stockGeneration=0,stockTimer;
+                const loadStock=async()=>{const own=++stockGeneration;
+                    try{const data=await api('/api/scale/expired-stock?'+new URLSearchParams({page:stockPage,limit:50,search:el('nfExpiredSearch').value}));if(!valid()||own!==stockGeneration)return;
+                        nemsFeatures.stock=data.records;el('nfExpiredProduct').innerHTML='<option value="">Choose expired entry</option>'+data.records.map((r,i)=>`<option value="${i}">${escapeHtml(r.product_name)} · ${escapeHtml(String(r.expiration_date).slice(0,10))} · ${Number(r.quantity)} pcs</option>`).join('');
+                        el('nfExpiredStockPager').innerHTML=nemsPagerHTML('expired-stock',stockPage,data.has_more);nemsBindPager(el('nfExpiredStockPager'),()=>stockPage--,()=>stockPage++,loadStock);
+                    }catch(e){if(valid())showMessage(e.message,true);}
+                };
+                el('nfExpiredSearch').oninput=()=>{clearTimeout(stockTimer);stockPage=1;stockTimer=setTimeout(()=>void loadStock(),300);};await loadStock();if(!valid())return;
+            }
             if(el('nfReport'))el('nfReport').onclick=async()=>{
                 const index=el('nfExpiredProduct').value;if(index==='')return showMessage('Select an expired product.',true);const entry=nemsFeatures.stock[Number(index)];
                 const payload={product_id:entry.product_id,expiration_date:String(entry.expiration_date).slice(0,10),quantity:entry.quantity,product_status:el('nfExpiredStatus').value,employee_name:el('nfExpiredEmployee').value.trim(),store_remarks:el('nfExpiredRemarks').value.trim(),on_store_explanation_confirmed:el('nfOnStoreConfirm').checked};
@@ -4513,15 +4596,63 @@ async function nemsFeatureRender(){
         }else if(nemsFeatureTab==='email'&&currentUser.role==='ADMIN'){
             const rows=await api('/api/admin/email-status');body.innerHTML='<p>SENT means Brevo confirmed delivery through the authenticated webhook. PENDING may mean queued or accepted with delivery still unconfirmed.</p>'+nfTable(['Recipient','Subject','Status','Delivered At','Provider details'],rows.map(r=>'<tr>'+nfCell(r.recipient_email)+nfCell(r.subject)+nfCell(r.delivery_status)+nfCell(r.sent_at?dateTimeText(r.sent_at):'')+nfCell(r.error_message)+'</tr>'));
         }else{nemsFeatureTab='notifications';await nemsFeatureRender();}
-    }catch(e){body.textContent=e.message;}
+        if(paged&&valid()){const pager=document.createElement('div');pager.innerHTML=nemsPagerHTML(tab,nemsFeaturePages[tab],paged.has_more);body.append(pager);nemsBindPager(pager,()=>nemsFeaturePages[tab]--,()=>nemsFeaturePages[tab]++,nemsFeatureRender);}
+    }catch(e){if(valid())body.textContent=e.message;}
 }
 nemsFeatureSetup();
-setInterval(()=>{void nemsRefreshUnreadBadge().catch(()=>{});},60000);
+setInterval(()=>{if(!document.hidden)void nemsRefreshUnreadBadge().catch(()=>{});},60000);
 window.addEventListener('focus',()=>{void nemsRefreshUnreadBadge().catch(()=>{});});
 document.addEventListener('visibilitychange',()=>{
     if(!document.hidden)void nemsRefreshUnreadBadge().catch(()=>{});
 });
 
+
+// Training help and a scoped management submission tracker.
+let nemsTrackerPage=1,nemsTrackerGeneration=0;
+async function nemsTrackerLoad(){
+    if(!['ADMIN','HEAD','AS','AOM'].includes(currentUser?.role))return;
+    const generation=++nemsTrackerGeneration,owner=currentUser.email;
+    const params=new URLSearchParams({page:nemsTrackerPage,limit:50});
+    for(const name of ['store','supplier','as','aom','status','from','to','search'])if(el('nt-'+name)?.value)params.set(name,el('nt-'+name).value);
+    try{el('nt-status').disabled=true;const data=await api('/api/scale/task-tracker?'+params);
+        if(generation!==nemsTrackerGeneration||currentUser?.email!==owner)return;
+        const sum=data.summary;el('nt-summary').textContent=`${sum.stores} stores · ${sum.assignments} assignments · ${sum.submitted} submitted · ${sum.pending} pending · ${sum.overdue} overdue · ${sum.closed} closed/cancelled`;
+        el('nt-summary-note').textContent='Summary uses the selected store, supplier, AS, AOM and dates. The status filter applies to the table below. Stores with no matching assignment are not included.';
+        el('nt-rows').innerHTML=nfTable(['Task','Store','Supplier','Scope','Deadline','Status'],data.records.map(r=>'<tr>'+[r.assignment_id,r.store_name,r.supplier_name,r.expiry_scope,r.due_at?dateTimeText(r.due_at):'No deadline',r.display_status].map(nfCell).join('')+'</tr>'));
+        el('nt-pager').innerHTML=nemsPagerHTML('tracker',nemsTrackerPage,data.has_more);nemsBindPager(el('nt-pager'),()=>nemsTrackerPage--,()=>nemsTrackerPage++,nemsTrackerLoad);
+    }catch(e){if(generation===nemsTrackerGeneration)showMessage(e.message,true);}finally{if(el('nt-status'))el('nt-status').disabled=false;}
+}
+async function nemsTrackerOpen(){
+    const owner=currentUser?.email;
+    try{const options=await api('/api/scale/task-tracker/options');if(currentUser?.email!==owner||el('page-tracker').classList.contains('hidden'))return;
+        const populate=(name,rows,key,label)=>{const select=el('nt-'+name),value=select.value;select.replaceChildren(new Option('All '+label,''),...rows.map(r=>new Option(r[label==='stores'?'store_name':label==='suppliers'?'supplier_name':'full_name']||r.email,r[key])));select.value=value;};
+        populate('store',options.stores,'store_id','stores');populate('supplier',options.suppliers,'supplier_id','suppliers');populate('as',options.as,'email','assigned AS');populate('aom',options.aom,'email','assigned AOM');await nemsTrackerLoad();
+    }catch(e){showMessage(e.message,true);}
+}
+function nemsScaleSetup(){
+    const tracker=document.createElement('section');tracker.id='page-tracker';tracker.className='page hidden';
+    tracker.innerHTML='<div class="panel"><h2>Store Submission Tracker</h2><p>Review assignments within your current store access.</p><div class="grid2">'+[['store','Store'],['supplier','Supplier'],['as','Assigned AS'],['aom','Assigned AOM'],['status','Task status']].map(([id,label])=>'<div><label for="nt-'+id+'">'+label+'</label><select id="nt-'+id+'">'+(id==='status'?'<option value="">All statuses</option>'+['SUBMITTED','PENDING','OVERDUE','CLOSED','CANCELLED'].map(v=>'<option>'+v+'</option>').join(''):'<option value="">All</option>')+'</select></div>').join('')+'<div><label for="nt-search">Search store, supplier or task</label><input type="search" id="nt-search"></div><div><label for="nt-from">Deadline from</label><input type="date" id="nt-from"></div><div><label for="nt-to">Deadline to</label><input type="date" id="nt-to"></div></div><button type="button" id="nt-filter">Apply filters</button><button type="button" id="nt-clear">Clear filters</button><p id="nt-summary" role="status"></p><p id="nt-summary-note"></p><div id="nt-rows"></div><div id="nt-pager"></div></div>';
+    el('application').append(tracker);
+    const trackButton=document.createElement('button');trackButton.id='nemsTrackerNav';trackButton.textContent='Submission Tracker';trackButton.type='button';trackButton.className='hidden';trackButton.dataset.page='tracker';trackButton.onclick=()=>showPage('tracker');el('navigation').append(trackButton);
+    el('nt-filter').onclick=()=>{nemsTrackerPage=1;void nemsTrackerLoad();};el('nt-clear').onclick=()=>{for(const name of ['store','supplier','as','aom','status','from','to','search'])el('nt-'+name).value='';nemsTrackerPage=1;void nemsTrackerLoad();};
+    const help=document.createElement('section');help.id='page-help';help.className='page hidden';help.innerHTML=`<div class="panel"><h2>NEMS Help for Stores</h2><p>Use your assigned store account. Check the actual stock before recording it.</p>
+    <details open><summary><strong>Store Encoding</strong></summary><p>Enter your actual full name and clear remarks. Find the exact product and pack. Record each expiration date and quantity separately, then Save Monitoring. Wait for the success message.</p></details>
+    <details><summary><strong>Scanner or camera</strong></summary><p>Click the barcode field, scan with a scanner and select Find Barcode. Or use Use Camera and allow camera access. Verify the product and pack. Scanning alone does not save stock.</p></details>
+    <details><summary><strong>Pieces and case packs</strong></summary><p>100ML and 100MLX24 identify different packs. Verify the selected product unit before entering quantity. Ask OPC if the pack or date is unclear. A manufacturing date is different from an expiration date.</p></details>
+    <details><summary><strong>My Tasks and submission</strong></summary><p>Check the supplier, scope and deadline. Save every required product. Use NO STOCK only when actually unavailable. The completion checklist shows remaining products and unsaved edits. Submit the completed task and confirm SUBMITTED. Saving a product is separate from final submission.</p></details>
+    <details><summary><strong>Locked or overdue tasks</strong></summary><p>Provide your name and the actual reason for a missed deadline. An explanation does not unlock or submit a task. Ask ADMIN to reopen a locked task when needed.</p></details>
+    <details><summary><strong>Messages and expired reports</strong></summary><p>Search for the correct store and recipients. Chat and replies stay in NEMS. For expired stock, choose the exact product/date and action, enter your name and remarks, then submit for AS review. Follow company approval procedures for disposal and transfer. Check the AS decision and remarks.</p></details>
+    <details><summary><strong>Slow connection or uncertain save</strong></summary><p>Wait for the result. Avoid repeated clicks. If the result is uncertain, refresh the record and check whether it saved before attempting another change. Keep your original details until the saved values are verified.</p></details>
+    <details><summary><strong>Excel export</strong></summary><p>Select suppliers and expiry categories before downloading. NEMS prepares one export per user in a background queue. Keep the browser session open. If the service restarts or the export expires, generate it again. Large selections may need to be split.</p></details>
+    <div id="nemsHelpVideo"></div></div>`;el('application').append(help);
+    const helpButton=document.createElement('button');helpButton.id='nemsHelpNav';helpButton.textContent='Help';helpButton.type='button';helpButton.dataset.page='help';helpButton.className='hidden';helpButton.onclick=()=>showPage('help');el('navigation').append(helpButton);
+    const previous=showPage;showPage=function(page){
+        if(page==='tracker'&&!['ADMIN','HEAD','AS','AOM'].includes(currentUser?.role))return;
+        el('nemsTrackerNav').classList.toggle('hidden',!['ADMIN','HEAD','AS','AOM'].includes(currentUser?.role));el('nemsHelpNav').classList.toggle('hidden',!currentUser);
+        previous(page);if(page==='tracker')void nemsTrackerOpen();if(page==='help'&&currentUser){const owner=currentUser.email;void api('/api/help').then(data=>{if(currentUser?.email!==owner)return;const host=el('nemsHelpVideo');host.replaceChildren();if(data.video_url){const link=document.createElement('a');link.href=data.video_url;link.textContent='Open the NEMS store training video';link.target='_blank';link.rel='noopener';host.append(link);}else host.textContent='Ask OPC for the NEMS training video.';}).catch(()=>{});}
+    };
+}
+nemsScaleSetup();
 
 </script>
  
