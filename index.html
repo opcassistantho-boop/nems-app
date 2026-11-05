@@ -4356,11 +4356,11 @@ async function nemsFeatureRender(){
             body.onclick=async e=>{const b=e.target.closest('[data-nf-read]');if(b)try{b.disabled=true;nemsUnreadGeneration++;await api('/api/notifications/'+b.dataset.nfRead+'/read',{method:'POST',body:'{}'});nemsUnreadGeneration++;await nemsFeatureRender();}catch(err){showMessage(err.message,true);}};
         }else if(nemsFeatureTab==='messages'){
             const owner=currentUser.email;
-            body.innerHTML=`<h3>Send message</h3><p>Chat is delivered inside NEMS. No email is sent for chat messages. ADMIN and HEAD retain oversight of store conversations.</p>
+            body.innerHTML=`<h3>Send message</h3><p>Chat is delivered inside NEMS. No email is sent for chat messages. Management retains oversight of store conversations.</p>
               <label>Send to</label><select id="nfMessageMode"><option value="PEOPLE">Choose people for one store</option><option value="STORES">${currentUser.role==='STORE'?'My assigned management team':'One, multiple, or all authorized stores'}</option></select>
               <label>Store</label><select id="nfMessageStores" multiple size="6">${nemsFeatures.stores.map(s=>`<option value="${Number(s.store_id)}">${escapeHtml(s.store_name)}</option>`).join('')}</select>
               <div id="nfAllStoresWrap"><label><input id="nfAllStores" type="checkbox" style="width:auto"> All stores I am authorized to access</label></div>
-              <div id="nfPeopleWrap"><label>Recipients</label><select id="nfMessagePeople" multiple size="6"></select><p id="nfContactHint">Choose one store to load its STORE, assigned AS/AOM, ADMIN and HEAD contacts.</p></div>
+              <div id="nfPeopleWrap"><label>Recipients</label><select id="nfMessagePeople" multiple size="6"></select><p id="nfContactHint">Choose one store to load its available recipients.</p></div>
               <label>Message</label><textarea id="nfMessageText" maxlength="5000"></textarea><button type="button" id="nfSendMessage">Send message</button>
               <h3>Message History</h3><select id="nfConversation"><option value="">Choose store</option>${nemsFeatures.stores.map(s=>`<option value="${Number(s.store_id)}">${escapeHtml(s.store_name)}</option>`).join('')}</select><button type="button" id="nfRefreshMessages">Refresh messages</button><div id="nfMessages"></div>`;
             const storeSelect=el('nfMessageStores'),peopleSelect=el('nfMessagePeople'),historySelect=el('nfConversation');
@@ -4374,7 +4374,7 @@ async function nemsFeatureRender(){
                 if(!direct||ids.length!==1){el('nfContactHint').textContent='Choose exactly one store to select people.';return;}
                 el('nfContactHint').textContent='Loading contacts…';
                 try{const contacts=await api('/api/messages/contacts/'+ids[0]);if(!active()||generation!==contactGeneration)return;
-                    peopleSelect.innerHTML=contacts.map(u=>`<option value="${escapeHtml(u.email)}">${escapeHtml(u.role+' · '+(u.full_name||u.email)+' · '+u.email)}</option>`).join('');
+                    peopleSelect.innerHTML=contacts.map(u=>`<option value="${escapeHtml(u.email)}">${escapeHtml((currentUser.role==='ADMIN'&&u.role?u.role+' · ':'')+(u.full_name||u.email)+' · '+u.email)}</option>`).join('');
                     el('nfContactHint').textContent=contacts.length?'Select one or more recipients. On a computer, hold Ctrl to select several.':'No active recipients are available. Contact your ADMIN to check assignments.';
                 }catch(e){if(active()&&generation===contactGeneration)el('nfContactHint').textContent=e.message;}
             };
@@ -4390,7 +4390,7 @@ async function nemsFeatureRender(){
                     const rows=await api('/api/messages/'+id,{cache:'no-store'});
                     if(!active()||historySelect.value!==id||generation!==historyGeneration)return;
                     historyRows=rows;
-                    el('nfMessages').innerHTML=rows.length?nfTable(['Date','Sender','Role','Message','Recipients / Read status','Reply'],rows.map((r,i)=>'<tr>'+nfCell(dateTimeText(r.created_at))+nfCell(r.sender_email)+nfCell(r.sender_role)+nfCell(r.message_text)+nfCell((r.recipients||[]).map(n=>n.email+': '+(n.read_at?'Read '+dateTimeText(n.read_at):'Unread')).join('; ')||'Legacy message')+`<td>${r.sender_email.toLowerCase()!==owner.toLowerCase()?'<button type="button" data-nf-reply="'+i+'">Reply to sender</button>':''}</td></tr>`)):'<p>No messages to show for this store.</p>';
+                    el('nfMessages').innerHTML=rows.length?nfTable(['Date','Sender',...(currentUser.role==='ADMIN'?['Role']:[]),'Message','Recipients / Read status','Reply'],rows.map((r,i)=>'<tr>'+nfCell(dateTimeText(r.created_at))+nfCell(r.sender_email)+(currentUser.role==='ADMIN'?nfCell(r.sender_role):'')+nfCell(r.message_text)+nfCell((r.recipients||[]).map(n=>n.email+': '+(n.read_at?'Read '+dateTimeText(n.read_at):'Unread')).join('; ')||'Legacy message')+`<td>${r.sender_email.toLowerCase()!==owner.toLowerCase()?'<button type="button" data-nf-reply="'+i+'">Reply to sender</button>':''}</td></tr>`)):'<p>No messages to show for this store.</p>';
                     await nemsRefreshUnreadBadge();
                 }catch(e){if(active()&&!quiet)showMessage(e.message,true);}finally{historyBusy=false;}
             };
