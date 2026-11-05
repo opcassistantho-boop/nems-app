@@ -4625,9 +4625,12 @@ async function nemsFeatureRender(){
             const rows=paged.records;body.innerHTML='<p>SENT means Brevo confirmed delivery through the authenticated webhook. PENDING may mean queued or accepted with delivery still unconfirmed.</p>'+nfTable(['Recipient','Subject','Status','Delivered At','Provider details'],rows.map(r=>'<tr>'+nfCell(r.recipient_email)+nfCell(r.subject)+nfCell(r.delivery_status)+nfCell(r.sent_at?dateTimeText(r.sent_at):'')+nfCell(r.error_message)+'</tr>'));
         }else{nemsFeatureTab='notifications';await nemsFeatureRender();}
         if(paged&&valid()){
-            const wrap=document.createElement('div');wrap.innerHTML='<label for="nfRecordSearch">Search records</label><input id="nfRecordSearch" type="search" maxlength="100" placeholder="Type a name, product, message or status"><p>Searches all accessible pages.</p>';
+            const wrap=document.createElement('div');wrap.innerHTML='<label for="nfRecordSearch">Search records</label><input id="nfRecordSearch" type="search" maxlength="100" placeholder="Type a name, product, message or status"><button type="button" id="nfRecordSearchGo">Search</button><p>Finish typing, then press Enter or click Search. Searches all accessible pages.</p>';
             const input=wrap.querySelector('input');input.value=nemsFeatureSearch[tab]||'';
-            let timer;input.oninput=()=>{nemsFeatureSearch[tab]=input.value;nemsFeaturePages[tab]=1;clearTimeout(timer);timer=setTimeout(()=>{if(valid())void nemsFeatureRender().then(()=>{const next=el('nfRecordSearch');if(next){next.focus();next.setSelectionRange(next.value.length,next.value.length);}});},350);};
+            input.oninput=()=>{nemsFeatureSearch[tab]=input.value;};
+            const runSearch=()=>{if(!valid())return;nemsFeatureSearch[tab]=input.value;nemsFeaturePages[tab]=1;void nemsFeatureRender();};
+            input.onkeydown=event=>{if(event.key==='Enter'&&!event.isComposing){event.preventDefault();runSearch();}};
+            wrap.querySelector('button').onclick=runSearch;
             body.prepend(wrap);
             for(const [id,value,checked] of reportDraft){const field=el(id);if(field&&id!=='nfRecordSearch'){field.value=value;field.checked=checked;}}
         }
