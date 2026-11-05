@@ -4320,8 +4320,10 @@ async function nemsRefreshUnreadBadge(){
     return rows;
 }
 let nemsFeatureTab='notifications';
+let nemsMessageTimer=null;
 const nemsFeatureShowPage=showPage;
 showPage=function(page){
+    if(page!=='followup'&&nemsMessageTimer){clearInterval(nemsMessageTimer);nemsMessageTimer=null;}
     el('nemsFeaturesNav')?.classList.toggle('hidden',!currentUser);
     nemsFeatureShowPage(page);
     if(currentUser)void nemsRefreshUnreadBadge().catch(()=>{});
@@ -4344,6 +4346,7 @@ async function nemsFeatureLoad(){
 function nfTable(headers,rows){return '<div class="tablewrap"><table><thead><tr>'+headers.map(h=>'<th>'+escapeHtml(h)+'</th>').join('')+'</tr></thead><tbody>'+rows.join('')+'</tbody></table></div>';}
 const nfCell=v=>'<td>'+escapeHtml(v??'')+'</td>';
 async function nemsFeatureRender(){
+    if(nemsMessageTimer){clearInterval(nemsMessageTimer);nemsMessageTimer=null;}
     const body=el('nfBody');body.onclick=null;body.innerHTML='Loading…';
     try{
         if(nemsFeatureTab==='notifications'){
@@ -4352,25 +4355,70 @@ async function nemsFeatureRender(){
             body.innerHTML=nfTable(['Date','Title','Message','Status'],rows.map(r=>'<tr>'+nfCell(dateTimeText(r.created_at))+nfCell(r.title)+nfCell(r.message)+`<td>${r.read_at?'Read':`<button type="button" data-nf-read="${Number(r.notification_id)}">Mark read</button>`}</td></tr>`));
             body.onclick=async e=>{const b=e.target.closest('[data-nf-read]');if(b)try{b.disabled=true;nemsUnreadGeneration++;await api('/api/notifications/'+b.dataset.nfRead+'/read',{method:'POST',body:'{}'});nemsUnreadGeneration++;await nemsFeatureRender();}catch(err){showMessage(err.message,true);}};
         }else if(nemsFeatureTab==='messages'){
-            body.innerHTML=`<h3>Send message</h3><p>Select one or more authorized stores. Email delivery is shown separately and is not guaranteed by an in-app send.</p>
-              <label>Stores</label><select id="nfMessageStores" multiple size="6">${nemsFeatures.stores.map(s=>`<option value="${Number(s.store_id)}">${escapeHtml(s.store_name)}</option>`).join('')}</select>
-              <label><input id="nfAllStores" type="checkbox" style="width:auto"> All stores I am authorized to access</label>
+            const owner=currentUser.email;
+            body.innerHTML=`<h3>Send message</h3><p>Chat is delivered inside NEMS. No email is sent for chat messages. ADMIN and HEAD retain oversight of store conversations.</p>
+              <label>Send to</label><select id="nfMessageMode"><option value="PEOPLE">Choose people for one store</option><option value="STORES">${currentUser.role==='STORE'?'My assigned management team':'One, multiple, or all authorized stores'}</option></select>
+              <label>Store</label><select id="nfMessageStores" multiple size="6">${nemsFeatures.stores.map(s=>`<option value="${Number(s.store_id)}">${escapeHtml(s.store_name)}</option>`).join('')}</select>
+              <div id="nfAllStoresWrap"><label><input id="nfAllStores" type="checkbox" style="width:auto"> All stores I am authorized to access</label></div>
+              <div id="nfPeopleWrap"><label>Recipients</label><select id="nfMessagePeople" multiple size="6"></select><p id="nfContactHint">Choose one store to load its STORE, assigned AS/AOM, ADMIN and HEAD contacts.</p></div>
               <label>Message</label><textarea id="nfMessageText" maxlength="5000"></textarea><button type="button" id="nfSendMessage">Send message</button>
-              <h3>Message History</h3><select id="nfConversation"><option value="">Choose store</option>${nemsFeatures.stores.map(s=>`<option value="${Number(s.store_id)}">${escapeHtml(s.store_name)}</option>`).join('')}</select><div id="nfMessages"></div>`;
-            el('nfSendMessage').onclick=async()=>{
-                const payload={store_ids:[...el('nfMessageStores').selectedOptions].map(o=>Number(o.value)),all:el('nfAllStores').checked,message:el('nfMessageText').value.trim()};
-                if(!payload.message)return showMessage('Enter a message.',true);
-                const b=el('nfSendMessage');b.disabled=true;
-                try{const r=await api('/api/messages',{method:'POST',body:JSON.stringify(payload)});el('nfMessageText').value='';showMessage(`Message saved for ${r.stores} store(s). ${r.email_delivery}`);}catch(e){showMessage(e.message,true);}finally{b.disabled=false;}
+              <h3>Message History</h3><select id="nfConversation"><option value="">Choose store</option>${nemsFeatures.stores.map(s=>`<option value="${Number(s.store_id)}">${escapeHtml(s.store_name)}</option>`).join('')}</select><button type="button" id="nfRefreshMessages">Refresh messages</button><div id="nfMessages"></div>`;
+            const storeSelect=el('nfMessageStores'),peopleSelect=el('nfMessagePeople'),historySelect=el('nfConversation');
+            let contactGeneration=0,historyGeneration=0,historyBusy=false,historyRows=[];
+            const active=()=>currentUser?.email===owner&&el('nfMessageStores')===storeSelect&&nemsFeatureTab==='messages'&&!el('page-followup')?.classList.contains('hidden');
+            const loadContacts=async()=>{
+                const generation=++contactGeneration;peopleSelect.innerHTML='';
+                const direct=el('nfMessageMode').value==='PEOPLE';
+                el('nfPeopleWrap').classList.toggle('hidden',!direct);el('nfAllStoresWrap').classList.toggle('hidden',direct);
+                const ids=[...storeSelect.selectedOptions].map(o=>o.value);
+                if(!direct||ids.length!==1){el('nfContactHint').textContent='Choose exactly one store to select people.';return;}
+                el('nfContactHint').textContent='Loading contacts…';
+                try{const contacts=await api('/api/messages/contacts/'+ids[0]);if(!active()||generation!==contactGeneration)return;
+                    peopleSelect.innerHTML=contacts.map(u=>`<option value="${escapeHtml(u.email)}">${escapeHtml(u.role+' · '+(u.full_name||u.email)+' · '+u.email)}</option>`).join('');
+                    el('nfContactHint').textContent=contacts.length?'Select one or more recipients. On a computer, hold Ctrl to select several.':'No active recipients are available. Contact your ADMIN to check assignments.';
+                }catch(e){if(active()&&generation===contactGeneration)el('nfContactHint').textContent=e.message;}
             };
-            el('nfConversation').onchange=async()=>{const id=el('nfConversation').value;if(!id)return;
-                try{const rows=await api('/api/messages/'+id);el('nfMessages').innerHTML=nfTable(['Date','Sender','Role','Message','Store read'],rows.map(r=>'<tr>'+nfCell(dateTimeText(r.created_at))+nfCell(r.sender_email)+nfCell(r.sender_role)+nfCell(r.message_text)+nfCell(r.read_at?dateTimeText(r.read_at):'Unread')+'</tr>'));
+            const loadHistory=async(quiet=false)=>{
+                if(!active()||historyBusy)return;
+                const id=historySelect.value;if(!id){el('nfMessages').innerHTML='';return;}
+                const generation=++historyGeneration;historyBusy=true;
+                try{
                     nemsUnreadGeneration++;
                     await api('/api/messages/'+id+'/read',{method:'POST',body:'{}'});
+                    if(!active()||historySelect.value!==id||generation!==historyGeneration)return;
                     nemsUnreadGeneration++;
+                    const rows=await api('/api/messages/'+id,{cache:'no-store'});
+                    if(!active()||historySelect.value!==id||generation!==historyGeneration)return;
+                    historyRows=rows;
+                    el('nfMessages').innerHTML=rows.length?nfTable(['Date','Sender','Role','Message','Recipients / Read status','Reply'],rows.map((r,i)=>'<tr>'+nfCell(dateTimeText(r.created_at))+nfCell(r.sender_email)+nfCell(r.sender_role)+nfCell(r.message_text)+nfCell((r.recipients||[]).map(n=>n.email+': '+(n.read_at?'Read '+dateTimeText(n.read_at):'Unread')).join('; ')||'Legacy message')+`<td>${r.sender_email.toLowerCase()!==owner.toLowerCase()?'<button type="button" data-nf-reply="'+i+'">Reply to sender</button>':''}</td></tr>`)):'<p>No messages to show for this store.</p>';
                     await nemsRefreshUnreadBadge();
-                }catch(e){showMessage(e.message,true);}
+                }catch(e){if(active()&&!quiet)showMessage(e.message,true);}finally{historyBusy=false;}
             };
+            storeSelect.onchange=loadContacts;el('nfMessageMode').onchange=loadContacts;
+            historySelect.onchange=()=>{historyGeneration++;if(!historyBusy)void loadHistory();};
+            el('nfRefreshMessages').onclick=()=>loadHistory();
+            el('nfSendMessage').onclick=async()=>{
+                const direct=el('nfMessageMode').value==='PEOPLE';
+                const payload={store_ids:[...storeSelect.selectedOptions].map(o=>Number(o.value)),all:!direct&&el('nfAllStores').checked,message:el('nfMessageText').value.trim()};
+                if(direct){payload.recipient_emails=[...peopleSelect.selectedOptions].map(o=>o.value);if(payload.store_ids.length!==1||!payload.recipient_emails.length)return showMessage('Choose one store and at least one recipient.',true);}
+                if(!payload.message)return showMessage('Enter a message.',true);
+                const draft=el('nfMessageText').value,b=el('nfSendMessage');b.disabled=true;
+                try{const r=await api('/api/messages',{method:'POST',body:JSON.stringify(payload)});if(!active())return;
+                    if(el('nfMessageText').value===draft)el('nfMessageText').value='';
+                    showMessage(`Message saved for ${r.stores} store(s). In-app only; no email requested.`);
+                    if(payload.store_ids.length===1){historySelect.value=String(payload.store_ids[0]);await loadHistory();}
+                }catch(e){if(active())showMessage(e.message,true);}finally{b.disabled=false;}
+            };
+            body.onclick=async e=>{const button=e.target.closest('[data-nf-reply]');if(!button)return;
+                const message=historyRows[Number(button.dataset.nfReply)];if(!message)return;
+                el('nfMessageMode').value='PEOPLE';for(const option of storeSelect.options)option.selected=option.value===historySelect.value;
+                await loadContacts();if(!active())return;
+                const option=[...peopleSelect.options].find(o=>o.value.toLowerCase()===message.sender_email.toLowerCase());
+                if(!option)return showMessage('This sender is no longer an active authorized contact.',true);
+                option.selected=true;el('nfMessageText').focus();
+            };
+            if(nemsFeatures.stores.length===1){storeSelect.options[0].selected=true;historySelect.value=storeSelect.options[0].value;await loadContacts();await loadHistory();}
+            if(active())nemsMessageTimer=setInterval(()=>{if(active()&&!document.hidden)void loadHistory(true);},30000);
         }else if(nemsFeatureTab==='expired'){
             let form='';
             if(currentUser.role==='STORE'){
