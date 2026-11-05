@@ -2339,9 +2339,19 @@ async function messageContacts(client,storeId,senderEmail) {
             (u.role='STORE' AND EXISTS(SELECT 1 FROM public.stores s WHERE s.store_id=$1 AND LOWER(s.store_email)=LOWER(u.email))))
         ORDER BY u.role,u.full_name,u.email`,[storeId,senderEmail])).rows;
 }
+// Roles of other users are visible only to ADMIN; authorization still uses real roles.
+function messageRoleView(user,row,emailField='email') {
+    const view={...row};
+    if(user.role!=='ADMIN' && cleanEmail(row[emailField])!==cleanEmail(user.email)){
+        delete view.role;
+        delete view.sender_role;
+    }
+    return view;
+}
 app.get('/api/messages/contacts/:storeId',authenticate,secureRoute(async(req,res)=>{
     const store=await requireStore(pool,req.user,req.params.storeId);
-    res.json(await messageContacts(pool,store.store_id,req.user.email));
+    const contacts=await messageContacts(pool,store.store_id,req.user.email);
+    res.json(contacts.map(row=>messageRoleView(req.user,row)).sort((a,b)=>String(a.full_name||a.email).localeCompare(String(b.full_name||b.email))));
 }));
 app.get('/api/messages/:storeId',authenticate,secureRoute(async(req,res)=>{
     await requireStore(pool,req.user,req.params.storeId);
@@ -2353,7 +2363,7 @@ app.get('/api/messages/:storeId',authenticate,secureRoute(async(req,res)=>{
             $3::boolean OR LOWER(m.sender_email)=LOWER($2::text) OR
             EXISTS(SELECT 1 FROM public.nems_notifications n WHERE n.reference_type='MESSAGE' AND n.reference_id=m.message_id AND LOWER(n.recipient_email)=LOWER($2::text)) OR
             NOT EXISTS(SELECT 1 FROM public.nems_notifications n WHERE n.reference_type='MESSAGE' AND n.reference_id=m.message_id AND n.title LIKE 'NEMS direct message · %'))
-        ORDER BY m.created_at DESC,m.message_id DESC LIMIT 500`,[req.params.storeId,req.user.email,['ADMIN','HEAD'].includes(req.user.role)]);res.json(r.rows);
+        ORDER BY m.created_at DESC,m.message_id DESC LIMIT 500`,[req.params.storeId,req.user.email,['ADMIN','HEAD'].includes(req.user.role)]);res.json(r.rows.map(row=>messageRoleView(req.user,row,'sender_email')));
 }));
 app.post('/api/messages',authenticate,secureRoute(async(req,res)=>{
     const text=requiredText(req.body.message,5000);if(!text)throw appError(400,'Message required (maximum 5000 characters)');
