@@ -2214,7 +2214,7 @@ async function notify(client,recipient,sender,type,title,message,refType,refId,s
     const r=await client.query(`INSERT INTO public.nems_notifications
         (recipient_email,sender_email,notification_type,title,message,reference_type,reference_id)
         VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING notification_id`,[cleanEmail(recipient),sender,type,title,message,refType,refId]);
-    if(sendEmail)await client.query(`INSERT INTO public.nems_email_notifications(recipient_email,subject,message)
+    if(sendEmail && ['EXPIRED_REPORT','VALIDATION'].includes(type))await client.query(`INSERT INTO public.nems_email_notifications(recipient_email,subject,message)
         VALUES($1,$2,$3)`,[cleanEmail(recipient),title,message]);
     return r.rows[0];
 }
@@ -2560,15 +2560,45 @@ async function scanOverdueTasks() {
             WHERE a.status='ACTIVE' AND COALESCE(a.due_at, ((a.due_date+1)::timestamp AT TIME ZONE 'Asia/Manila'))<NOW() AND s.status='ACTIVE' AND NOT EXISTS(SELECT 1 FROM public.nems_monitoring_submissions sub
             WHERE sub.assignment_id=a.assignment_id AND sub.submitted_at>COALESCE((SELECT MAX(reopened_at) FROM public.nems_task_reopen_history h WHERE h.assignment_id=a.assignment_id),'-infinity'))
             ORDER BY a.assignment_id FOR UPDATE OF a`)).rows;
+        const summaries=new Map();
         for(const a of rows){
             const message=`Task #${a.assignment_id} for ${a.store_name} is unsubmitted after ${new Date(a.due_at).toISOString()}. Employee Full Name and an overdue explanation are required. This is not a negligence determination.`;
-            const recipients=new Set([a.store_email,...(await c.query('SELECT as_email FROM public.as_store_assignments WHERE store_id=$1',[a.store_id])).rows.map(x=>x.as_email)]);
+            const recipients=new Set([a.store_email,...(await c.query('SELECT as_email FROM public.as_store_assignments WHERE store_id=$1',[a.store_id])).rows.map(x=>x.as_email)].filter(Boolean).map(cleanEmail));
             for(const mail of [...recipients].filter(Boolean)){
                 const prior=await c.query(`SELECT 1 FROM public.nems_notifications WHERE LOWER(recipient_email)=LOWER($1) AND reference_type='TASK' AND reference_id=$2 AND notification_type='OVERDUE' AND message=$3`,[mail,a.assignment_id,message]);
-                if(!prior.rowCount)await notify(c,mail,null,'OVERDUE','Overdue task — explanation required',message,'TASK',a.assignment_id);
+                if(!prior.rowCount)await notify(c,mail,null,'OVERDUE','Overdue task — explanation required',message,'TASK',a.assignment_id,false);
+                const key=cleanEmail(mail);
+                if(!summaries.has(key))summaries.set(key,[]);
+                summaries.get(key).push(a);
+            }
+        }
+        // At most one summary per recipient per Philippine calendar day, after 8 AM.
+        const hour=Number(new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Manila',hour:'2-digit',hourCycle:'h23'}).format(new Date()));
+        if(hour>=8){
+            const subject='NEMS overdue task summary · '+businessDate();
+            for(const [mail,tasks] of summaries){
+                const active=await c.query("SELECT 1 FROM public.users WHERE LOWER(email)=LOWER($1) AND status='ACTIVE' AND role IN ('STORE','AS')",[mail]);
+                if(!active.rowCount)continue;
+                const prior=await c.query('SELECT 1 FROM public.nems_email_notifications WHERE LOWER(recipient_email)=LOWER($1) AND subject=$2 LIMIT 1',[mail,subject]);
+                if(!prior.rowCount)await c.query('INSERT INTO public.nems_email_notifications(recipient_email,subject,message) VALUES($1,$2,$3)',[mail,subject,overdueSummaryText(tasks)]);
             }
         }
     });}catch(e){console.error('[NEMS overdue worker]',e.code||e.message);}finally{overdueBusy=false;}
+}
+function overdueSummaryText(tasks) {
+    const lines=tasks.map((a,i)=>`${i+1}. Task #${a.assignment_id} | Store: ${a.store_name}${a.supplier_name?' | Supplier: '+a.supplier_name:''} | Deadline: ${new Date(a.due_at).toLocaleString('en-GB',{timeZone:'Asia/Manila'})} (Philippine time)`);
+    return `You have ${tasks.length} overdue task(s).\n\n${lines.join('\n')}\n\nOpen NEMS to complete the tasks and provide any required explanations. Responses stay inside NEMS.\nhttps://nems-app.onrender.com/`;
+}
+async function currentOverdueEmailTasks(user) {
+    if(!['STORE','AS'].includes(user.role))return [];
+    const scope=storeScope(user,'s');
+    return (await pool.query(`SELECT a.*,s.store_name,COALESCE(a.due_at,((a.due_date+1)::timestamp AT TIME ZONE 'Asia/Manila')) AS due_at
+        FROM public.nems_task_assignments a JOIN public.stores s ON s.store_id=a.store_id
+        WHERE ${scope.sql} AND s.status='ACTIVE' AND a.status='ACTIVE'
+        AND COALESCE(a.due_at,((a.due_date+1)::timestamp AT TIME ZONE 'Asia/Manila'))<NOW()
+        AND NOT EXISTS(SELECT 1 FROM public.nems_monitoring_submissions sub WHERE sub.assignment_id=a.assignment_id
+            AND sub.submitted_at>COALESCE((SELECT MAX(reopened_at) FROM public.nems_task_reopen_history h WHERE h.assignment_id=a.assignment_id),'-infinity'))
+        ORDER BY s.store_name,a.assignment_id`,scope.args)).rows;
 }
 // Brevo API acceptance is NOT delivery. SENT is recorded only for a verified delivery webhook.
 let emailBusy=false;
@@ -2584,14 +2614,27 @@ async function processEmailQueue() {
                 await c.query(`UPDATE public.nems_email_notifications SET error_message=$2 WHERE email_id=$1`,[r.email_id,JSON.stringify({state:'SENDING',at:new Date().toISOString()})]);return r;
             });if(!row)break;
             try{
+                // Never send chat by email, including chat queued by older deployments.
+                if(/^NEMS (?:direct )?message(?:\s|[·:—-]|$)/i.test(String(row.subject||'')) || ['Overdue task explanation','Archived stock restored','Overdue task — explanation required'].includes(row.subject)){
+                    await pool.query(`UPDATE public.nems_email_notifications SET delivery_status='FAILED',error_message=$2 WHERE email_id=$1 AND delivery_status='PENDING'`,
+                        [row.email_id,JSON.stringify({state:'IN_APP_ONLY',reason:'Individual email suppressed; notification remains in NEMS'})]);
+                    continue;
+                }
                 const recipient=(await pool.query(`SELECT email,role,store_name FROM public.users WHERE LOWER(email)=LOWER($1) AND status='ACTIVE'`,[row.recipient_email])).rows[0];
                 if(!recipient)throw new Error('Recipient no longer has an active NEMS account');
+                if(String(row.subject).startsWith('NEMS overdue task summary · ')){
+                    if(row.subject!=='NEMS overdue task summary · '+businessDate())throw new Error('Expired daily summary; the current day gets a fresh summary');
+                    const tasks=await currentOverdueEmailTasks(recipient);
+                    if(!tasks.length)throw new Error('No authorized outstanding overdue tasks remain');
+                    row.message=overdueSummaryText(tasks);
+                }else{
                 const scope=notificationScope(recipient);
                 const access=await pool.query(`SELECT 1 FROM public.nems_notifications n WHERE ${scope.sql}
                     AND LOWER(n.recipient_email)=LOWER($${scope.args.length+1}) AND n.title=$${scope.args.length+2}
                     AND n.message=$${scope.args.length+3} AND n.created_at=$${scope.args.length+4}::timestamptz LIMIT 1`,
                     [...scope.args,row.recipient_email,row.subject,row.message,row.created_at_exact]);
                 if(!access.rowCount)throw new Error('Recipient no longer has access to this notification');
+                }
                 const response=await fetch('https://api.brevo.com/v3/smtp/email',{method:'POST',signal:AbortSignal.timeout(20000),headers:{'api-key':process.env.BREVO_API_KEY,'Content-Type':'application/json'},body:JSON.stringify({sender:{email:process.env.BREVO_SENDER_EMAIL,name:process.env.BREVO_SENDER_NAME||'CARD INDOGROSIR NEMS'},to:[{email:row.recipient_email}],subject:row.subject,textContent:row.message,tags:['nems-'+row.email_id]})});
                 const data=await response.json().catch(()=>({}));
                 if(!response.ok||!data.messageId)throw new Error('Brevo acceptance not confirmed: '+response.status);
