@@ -2756,7 +2756,8 @@ function monitoringFilters(user,query){
     const category=String(query.category||'').toUpperCase(),search=String(query.search||'').trim().slice(0,100);
     if(category){if(!['EXPIRED','RED','BLUE','GREEN','ORANGE','LATER'].includes(category))throw appError(400,'Invalid expiry category');
         const today=businessDate(),d=new Date(today+'T00:00:00Z');const six=new Date(Date.UTC(d.getUTCFullYear(),d.getUTCMonth()+6,1));six.setUTCDate(Math.min(d.getUTCDate(),new Date(Date.UTC(six.getUTCFullYear(),six.getUTCMonth()+1,0)).getUTCDate()));
-        args.push(today);const t='$'+args.length+'::date';args.push(six.toISOString().slice(0,10));const end='$'+args.length+'::date';
+        let t;if(category!=='LATER'){args.push(today);t='$'+args.length+'::date';}
+        let end;if(category==='ORANGE'||category==='LATER'){args.push(six.toISOString().slice(0,10));end='$'+args.length+'::date';}
         clauses.push(({EXPIRED:`m.expiration_date<${t}`,RED:`m.expiration_date BETWEEN ${t} AND ${t}+30`,BLUE:`m.expiration_date BETWEEN ${t}+31 AND ${t}+60`,GREEN:`m.expiration_date BETWEEN ${t}+61 AND ${t}+90`,ORANGE:`m.expiration_date>${t}+90 AND m.expiration_date<=${end}`,LATER:`m.expiration_date>${end}`})[category]);}
     if(search)add(search,p=>`POSITION(LOWER(${p}) IN LOWER(CONCAT_WS(' ',m.store_name,m.sku,m.product_name,m.supplier)))>0`);
     return {args,where:clauses.join(' AND ')};
