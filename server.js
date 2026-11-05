@@ -2815,17 +2815,27 @@ app.get('/api/scale/notifications/count',authenticate,secureRoute(async(req,res)
     const scope=notificationScope(req.user),args=[...scope.args,req.user.email];
     const r=await pool.query(`SELECT COUNT(*)::int AS unread FROM public.nems_notifications n WHERE n.read_at IS NULL AND ${scope.sql} AND LOWER(n.recipient_email)=LOWER($${args.length})`,args);res.json(r.rows[0]);
 }));
+// Literal, bounded search is applied inside the authorized query before pagination.
+function nemsRecordSearch(query,args,fields){
+    const term=String(query.search||'').trim().slice(0,100);
+    if(!term)return '';
+    args.push(term);return ` AND POSITION(LOWER($${args.length}::text) IN LOWER(CONCAT_WS(' ',${fields})))>0`;
+}
+app.get('/api/scale/email-status',authenticate,adminOnly,secureRoute(async(req,res)=>{
+    const args=[],search=nemsRecordSearch(req.query,args,'e.recipient_email,e.subject,e.delivery_status,e.error_message,e.sent_at::text');
+    res.json(await scalePageQuery(pool,req.query,`SELECT e.* FROM public.nems_email_notifications e WHERE TRUE${search}`,args,'e.email_id DESC'));
+}));
 app.get('/api/scale/notifications',authenticate,secureRoute(async(req,res)=>{
-    const scope=notificationScope(req.user),args=[...scope.args,req.user.email];res.json(await scalePageQuery(pool,req.query,`SELECT n.* FROM public.nems_notifications n WHERE ${scope.sql} AND LOWER(n.recipient_email)=LOWER($${args.length})`,args,'n.created_at DESC,n.notification_id DESC'));
+    const scope=notificationScope(req.user),args=[...scope.args,req.user.email],recipientPosition=args.length,search=nemsRecordSearch(req.query,args,'n.title,n.message,n.created_at::text');res.json(await scalePageQuery(pool,req.query,`SELECT n.* FROM public.nems_notifications n WHERE ${scope.sql} AND LOWER(n.recipient_email)=LOWER($${recipientPosition})${search}`,args,'n.created_at DESC,n.notification_id DESC'));
 }));
 app.get('/api/scale/employee-history',authenticate,secureRoute(async(req,res)=>{
-    const scope=storeScope(req.user,'r');res.json(await scalePageQuery(pool,req.query,`SELECT r.* FROM public.nems_store_remarks r WHERE ${scope.sql}`,scope.args,'r.created_at DESC,r.remark_id DESC'));
+    const scope=storeScope(req.user,'r'),args=[...scope.args],search=nemsRecordSearch(req.query,args,'r.store_name,r.employee_name,r.remarks,r.account_email,r.source,r.product_id::text,r.created_at::text');res.json(await scalePageQuery(pool,req.query,`SELECT r.* FROM public.nems_store_remarks r WHERE ${scope.sql}${search}`,args,'r.created_at DESC,r.remark_id DESC'));
 }));
 app.get('/api/scale/reports',authenticate,secureRoute(async(req,res)=>{
-    const scope=storeScope(req.user,'r');res.json(await scalePageQuery(pool,req.query,`SELECT r.*,p.product_name,p.sku FROM public.nems_expired_status_reports r LEFT JOIN public.products p ON p.product_id=r.product_id WHERE ${scope.sql}`,scope.args,'r.reported_at DESC,r.report_id DESC'));
+    const scope=storeScope(req.user,'r'),args=[...scope.args],search=nemsRecordSearch(req.query,args,'r.store_name,p.product_name,p.sku,r.employee_name,r.store_remarks,r.validation_status,r.validation_remarks,r.product_status');res.json(await scalePageQuery(pool,req.query,`SELECT r.*,p.product_name,p.sku FROM public.nems_expired_status_reports r LEFT JOIN public.products p ON p.product_id=r.product_id WHERE ${scope.sql}${search}`,args,'r.reported_at DESC,r.report_id DESC'));
 }));
 app.get('/api/scale/archive',authenticate,secureRoute(async(req,res)=>{
-    const scope=storeScope(req.user,'r');res.json(await scalePageQuery(pool,req.query,`SELECT r.* FROM public.nems_expired_archive r WHERE ${scope.sql}`,scope.args,'r.archived_at DESC,r.archive_id DESC'));
+    const scope=storeScope(req.user,'r'),args=[...scope.args],search=nemsRecordSearch(req.query,args,"r.store_name,r.product_snapshot->>'product_name',r.product_snapshot->>'sku',r.archive_reason,r.archived_at::text");res.json(await scalePageQuery(pool,req.query,`SELECT r.* FROM public.nems_expired_archive r WHERE ${scope.sql}${search}`,args,'r.archived_at DESC,r.archive_id DESC'));
 }));
 app.get('/api/scale/task-followup',authenticate,secureRoute(async(req,res)=>{
     const {sql,args}=taskTrackerSQL(req.user,req.query);res.json(await scalePageQuery(pool,req.query,`SELECT t.*,t.display_status='SUBMITTED' AS submitted,
@@ -2834,7 +2844,8 @@ app.get('/api/scale/task-followup',authenticate,secureRoute(async(req,res)=>{
 app.get('/api/scale/messages/:storeId',authenticate,secureRoute(async(req,res)=>{
     await requireStore(pool,req.user,req.params.storeId);
     const args=[req.params.storeId,req.user.email,['ADMIN','HEAD'].includes(req.user.role)];
-    const data=await scalePageQuery(pool,req.query,`SELECT m.*,COALESCE((SELECT jsonb_agg(jsonb_build_object('email',n.recipient_email,'read_at',n.read_at) ORDER BY n.recipient_email) FROM public.nems_notifications n WHERE n.reference_type='MESSAGE' AND n.reference_id=m.message_id),'[]'::jsonb) AS recipients FROM public.nems_messages m JOIN public.nems_conversations c ON c.conversation_id=m.conversation_id WHERE c.store_id=$1 AND ($3::boolean OR LOWER(m.sender_email)=LOWER($2::text) OR EXISTS(SELECT 1 FROM public.nems_notifications n WHERE n.reference_type='MESSAGE' AND n.reference_id=m.message_id AND LOWER(n.recipient_email)=LOWER($2::text)) OR NOT EXISTS(SELECT 1 FROM public.nems_notifications n WHERE n.reference_type='MESSAGE' AND n.reference_id=m.message_id AND n.title LIKE 'NEMS direct message · %'))`,args,'m.created_at DESC,m.message_id DESC');
+    const search=nemsRecordSearch(req.query,args,'m.sender_email,m.message_text,m.created_at::text');
+    const data=await scalePageQuery(pool,req.query,`SELECT m.*,COALESCE((SELECT jsonb_agg(jsonb_build_object('email',n.recipient_email,'read_at',n.read_at) ORDER BY n.recipient_email) FROM public.nems_notifications n WHERE n.reference_type='MESSAGE' AND n.reference_id=m.message_id),'[]'::jsonb) AS recipients FROM public.nems_messages m JOIN public.nems_conversations c ON c.conversation_id=m.conversation_id WHERE c.store_id=$1 AND ($3::boolean OR LOWER(m.sender_email)=LOWER($2::text) OR EXISTS(SELECT 1 FROM public.nems_notifications n WHERE n.reference_type='MESSAGE' AND n.reference_id=m.message_id AND LOWER(n.recipient_email)=LOWER($2::text)) OR NOT EXISTS(SELECT 1 FROM public.nems_notifications n WHERE n.reference_type='MESSAGE' AND n.reference_id=m.message_id AND n.title LIKE 'NEMS direct message · %'))${search}`,args,'m.created_at DESC,m.message_id DESC');
     if(req.user.role!=='ADMIN')data.records=data.records.map(({sender_role,...row})=>row);
     const version=require('crypto').createHash('sha256').update(JSON.stringify(data)).digest('hex');
     if(req.query.version===version)return res.json({unchanged:true,version});
