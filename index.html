@@ -4363,16 +4363,30 @@ async function nemsFeatureRender(){
             const owner=currentUser.email;
             body.innerHTML=`<h3>Send message</h3><p>Chat is delivered inside NEMS. No email is sent for chat messages. Management retains oversight of store conversations.</p>
               <label>Send to</label><select id="nfMessageMode"><option value="PEOPLE">Choose people for one store</option><option value="STORES">${currentUser.role==='STORE'?'My assigned management team':'One, multiple, or all authorized stores'}</option></select>
-              <label>Store</label><select id="nfMessageStores" multiple size="6">${nemsFeatures.stores.map(s=>`<option value="${Number(s.store_id)}">${escapeHtml(s.store_name)}</option>`).join('')}</select>
+              <label for="nfStoreSearch">Search stores</label><input id="nfStoreSearch" type="search" placeholder="Type a store name" autocomplete="off">
+              <label>Store</label><select id="nfMessageStores" multiple size="6">${nemsFeatures.stores.map(s=>`<option value="${Number(s.store_id)}">${escapeHtml(s.store_name)}</option>`).join('')}</select><p id="nfStoreSearchHint" aria-live="polite"></p>
               <div id="nfAllStoresWrap"><label><input id="nfAllStores" type="checkbox" style="width:auto"> All stores I am authorized to access</label></div>
-              <div id="nfPeopleWrap"><label>Recipients</label><select id="nfMessagePeople" multiple size="6"></select><p id="nfContactHint">Choose one store to load its available recipients.</p></div>
+              <div id="nfPeopleWrap"><label for="nfPeopleSearch">Search recipients</label><input id="nfPeopleSearch" type="search" placeholder="Type a name or email" autocomplete="off"><label>Recipients</label><select id="nfMessagePeople" multiple size="6"></select><p id="nfPeopleSearchHint" aria-live="polite"></p><p id="nfContactHint">Choose one store to load its available recipients.</p></div>
               <label>Message</label><textarea id="nfMessageText" maxlength="5000"></textarea><button type="button" id="nfSendMessage">Send message</button>
               <h3>Message History</h3><select id="nfConversation"><option value="">Choose store</option>${nemsFeatures.stores.map(s=>`<option value="${Number(s.store_id)}">${escapeHtml(s.store_name)}</option>`).join('')}</select><button type="button" id="nfRefreshMessages">Refresh messages</button><div id="nfMessages"></div>`;
             const storeSelect=el('nfMessageStores'),peopleSelect=el('nfMessagePeople'),historySelect=el('nfConversation');
             let contactGeneration=0,historyGeneration=0,historyBusy=false,historyRows=[];
+            // Keep selected options visible when searching so recipients are never silently lost.
+            const filterChoices=(select,choices,query,hint)=>{
+                const selected=new Set([...select.selectedOptions].map(o=>o.value));
+                const term=query.trim().toLocaleLowerCase();
+                const matches=choices.filter(o=>o.text.toLocaleLowerCase().includes(term));
+                select.replaceChildren(...choices.filter(o=>selected.has(o.value)||o.text.toLocaleLowerCase().includes(term)).map(o=>new Option(o.text,o.value,false,selected.has(o.value))));
+                hint.textContent=(matches.length?matches.length+' matching option(s).':'No matches.')+(selected.size?' Selected options stay visible.':'');
+            };
+            const storeChoices=[...storeSelect.options].map(o=>({value:o.value,text:o.text}));
+            let peopleChoices=[];
+            const filterStores=()=>filterChoices(storeSelect,storeChoices,el('nfStoreSearch').value,el('nfStoreSearchHint'));
+            const filterPeople=()=>filterChoices(peopleSelect,peopleChoices,el('nfPeopleSearch').value,el('nfPeopleSearchHint'));
+            el('nfStoreSearch').oninput=filterStores;el('nfPeopleSearch').oninput=filterPeople;
             const active=()=>currentUser?.email===owner&&el('nfMessageStores')===storeSelect&&nemsFeatureTab==='messages'&&!el('page-followup')?.classList.contains('hidden');
             const loadContacts=async()=>{
-                const generation=++contactGeneration;peopleSelect.innerHTML='';
+                const generation=++contactGeneration;peopleSelect.innerHTML='';peopleChoices=[];el('nfPeopleSearch').value='';el('nfPeopleSearchHint').textContent='';
                 const direct=el('nfMessageMode').value==='PEOPLE';
                 el('nfPeopleWrap').classList.toggle('hidden',!direct);el('nfAllStoresWrap').classList.toggle('hidden',direct);
                 const ids=[...storeSelect.selectedOptions].map(o=>o.value);
@@ -4380,6 +4394,7 @@ async function nemsFeatureRender(){
                 el('nfContactHint').textContent='Loading contacts…';
                 try{const contacts=await api('/api/messages/contacts/'+ids[0]);if(!active()||generation!==contactGeneration)return;
                     peopleSelect.innerHTML=contacts.map(u=>`<option value="${escapeHtml(u.email)}">${escapeHtml((currentUser.role==='ADMIN'&&u.role?u.role+' · ':'')+(u.full_name||u.email)+' · '+u.email)}</option>`).join('');
+                    peopleChoices=[...peopleSelect.options].map(o=>({value:o.value,text:o.text}));
                     el('nfContactHint').textContent=contacts.length?'Select one or more recipients. On a computer, hold Ctrl to select several.':'No active recipients are available. Contact your ADMIN to check assignments.';
                 }catch(e){if(active()&&generation===contactGeneration)el('nfContactHint').textContent=e.message;}
             };
@@ -4416,6 +4431,7 @@ async function nemsFeatureRender(){
             };
             body.onclick=async e=>{const button=e.target.closest('[data-nf-reply]');if(!button)return;
                 const message=historyRows[Number(button.dataset.nfReply)];if(!message)return;
+                el('nfStoreSearch').value='';filterStores();
                 el('nfMessageMode').value='PEOPLE';for(const option of storeSelect.options)option.selected=option.value===historySelect.value;
                 await loadContacts();if(!active())return;
                 const option=[...peopleSelect.options].find(o=>o.value.toLowerCase()===message.sender_email.toLowerCase());
