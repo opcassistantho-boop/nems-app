@@ -4,6 +4,7 @@ const express = require('express');
 const { Pool } = require('pg');
 const path = require('path');
 const XLSX = require('xlsx');
+const {pageQuery:scalePageQuery,createServices}=require('./nems-scale');
  
 const app = express();
  
@@ -19,8 +20,14 @@ const pool = new Pool({
     ssl: process.env.PGSSL_DISABLE === 'true'
         ? false
         : { rejectUnauthorized: false },
-    max: 10
+    max: Math.max(2,Math.min(20,parseInt(process.env.DB_POOL_MAX,10)||10)),
+    connectionTimeoutMillis: 10000,
+    idleTimeoutMillis: 30000,
+    statement_timeout: 30000,
+    application_name: 'nems-app'
 });
+const scaleServices=createServices(pool,{scopeSignature:async user=>user.role+':'+exportScopeKey(await accessibleStores(pool,user))});
+pool.on('error',error=>console.error('[NEMS idle database connection]',error.code||error.message));
  
 // ==========================================
 // SUPABASE AUTHENTICATION
@@ -411,8 +418,7 @@ async function authenticate(req, res, next) {
         }
  
         req.user = rows[0];
- 
-        next();
+        return await scaleServices.idempotency(req,res,next);
  
     } catch (error) {
         console.error(
@@ -944,27 +950,11 @@ app.get(
         try {
             const scope = storeScope(req.user);
  
-            const { rows } = await pool.query(
-                `
-                SELECT * FROM (${combinedMonitoringEntries}) m WHERE ${scope.sql}
-                `,
-                scope.args
-            );
- 
-            const counts = {
-                RED: 0,
-                BLUE: 0,
-                GREEN: 0,
-                EXPIRED: 0,
-                LATER: 0,
-                ORANGE: 0
-            };
- 
-            for (const record of rows) {
-                const category = expiryCategory(record.expiration_date);
-                counts[category]++;
-            }
- 
+            const today=businessDate(),d=new Date(today+'T00:00:00Z');const endDate=new Date(Date.UTC(d.getUTCFullYear(),d.getUTCMonth()+6,1));endDate.setUTCDate(Math.min(d.getUTCDate(),new Date(Date.UTC(endDate.getUTCFullYear(),endDate.getUTCMonth()+1,0)).getUTCDate()));
+            const args=[...scope.args,today,endDate.toISOString().slice(0,10)],t='$'+(args.length-1)+'::date',six='$'+args.length+'::date';
+            const category=`CASE WHEN m.expiration_date<${t} THEN 'EXPIRED' WHEN m.expiration_date<=${t}+30 THEN 'RED' WHEN m.expiration_date<=${t}+60 THEN 'BLUE' WHEN m.expiration_date<=${t}+90 THEN 'GREEN' WHEN m.expiration_date<=${six} THEN 'ORANGE' ELSE 'LATER' END`;
+            const {rows}=await pool.query(`SELECT ${category} AS category,COUNT(*)::int AS count FROM (${scopedMonitoringSQL(req.user)}) m WHERE ${scope.sql} GROUP BY 1`,args);
+            const counts={RED:0,BLUE:0,GREEN:0,EXPIRED:0,LATER:0,ORANGE:0};for(const r of rows)counts[r.category]=r.count;
             res.json(counts);
         } catch (error) {
             databaseError(res, error, 'Could not load dashboard');
@@ -1278,135 +1268,12 @@ app.post('/api/admin/monitoring/dispose-task-expired', authenticate, adminOnly, 
 // EXPORT MONITORING TO EXCEL
 // ==========================================
  
-app.get(
-    '/api/export/monitoring',
-    authenticate,
-    async (req, res) => {
-        try {
-            const scope = storeScope(req.user);
-            const allowedCategories = new Set(['EXPIRED', 'RED', 'BLUE', 'GREEN', 'ORANGE', 'LATER']);
-            const rawCategories = req.query.category == null ? [] :
-                (Array.isArray(req.query.category) ? req.query.category : [req.query.category]);
-            const categories = [...new Set(rawCategories.map(value => String(value).trim().toUpperCase()))];
-            if (categories.length > 6 || categories.some(value => !allowedCategories.has(value))) {
-                return sendError(res, 400, 'Invalid monitoring category');
-            }
-            const rawSuppliers = req.query.supplier == null ? [] :
-                (Array.isArray(req.query.supplier) ? req.query.supplier : [req.query.supplier]);
-            if (rawSuppliers.length > 500 || rawSuppliers.some(name => typeof name !== 'string' || !name.trim() || name.length > 255)) {
-                return sendError(res, 400, 'Invalid supplier selection');
-            }
-            const suppliers = [...new Set(rawSuppliers.map(name => name.trim()))];
-            const supplierCondition = suppliers.length ?
-                ` AND m.supplier = ANY($${scope.args.length + 1}::text[])` : '';
-            const queryArgs = suppliers.length ? [...scope.args, suppliers] : scope.args;
- 
-            const { rows } = await pool.query(
-                `
-                SELECT *
-                FROM (${combinedMonitoringEntries}) m
-                WHERE ${scope.sql}${supplierCondition}
-                ORDER BY
-                    store_name,
-                    expiration_date
-                LIMIT 50000
-                `,
-                queryArgs
-            );
- 
-            const enrichedRows = await enrichMonitoring(pool, rows);
-            const filteredRows = categories.length ? enrichedRows.filter(record => categories.includes(expiryCategory(record.expiration_date))) : enrichedRows;
-            const records = filteredRows.map(record => ({
-                Store: record.store_name,
-                Supplier: record.supplier,
-                SKU: record.sku,
-                Product: record.product_name,
-                Barcode: record.store_barcode,
-                'Retail Price': record.srp,
-                'Expiration Date':
-                    record.expiration_date
-                        ?.toISOString?.()
-                        .slice(0, 10)
-                    || String(
-                        record.expiration_date
-                    ).slice(0, 10),
-                'Quantity (Pieces)': record.quantity,
-                Category: expiryCategory(
-                    record.expiration_date
-                ),
-                'Updated By': record.updated_by,
-                'Product Status': record.product_status || 'ACTIVE',
-                'Employee Full Name': record.employee_name || '',
-                'Store Remarks': record.store_remarks || '',
-                'AS Validation': record.validation_status || '',
-                'Validated By': record.validated_by || '',
-                'Validation Remarks': record.validation_remarks || '',
-                'Validated At': record.validated_at || '',
-                'Days Remaining': expiryDays(record.expiration_date),
-                'Days Overdue': Math.max(0, -expiryDays(record.expiration_date)),
-                ...(req.user.role === 'ADMIN' ? {'ACTION / REMARKS': record.action_remarks || ''} : {})
-            }));
- 
-            const workbook = XLSX.utils.book_new();
- 
-            const worksheet = XLSX.utils.json_to_sheet(
-                records.length
-                    ? records
-                    : [{ Message: 'No monitoring records' }]
-            );
- 
-            XLSX.utils.book_append_sheet(
-                workbook,
-                worksheet,
-                'Monitoring'
-            );
- 
-            const archiveScope=storeScope(req.user,'ar');
-            const archiveRows=(await pool.query(`SELECT ar.*,r.employee_name,r.store_remarks,r.validation_status,r.validated_by,r.validated_at,r.validation_remarks
-                FROM public.nems_expired_archive ar LEFT JOIN public.nems_expired_status_reports r ON r.report_id=ar.source_report_id
-                WHERE ${archiveScope.sql} ORDER BY ar.archived_at DESC LIMIT 50000`,archiveScope.args)).rows;
-            const archiveExport=archiveRows.map(r=>({
-                Store:r.store_name,Supplier:r.product_snapshot.supplier_name,SKU:r.product_snapshot.sku,Product:r.product_snapshot.product_name,
-                Barcode:r.product_snapshot.master_barcode,'Retail Price':r.product_snapshot.master_srp,
-                'Expiration Date':r.monitoring_snapshot.expiration_date,'Quantity (Pieces)':r.monitoring_snapshot.quantity,
-                Category:expiryCategory(r.monitoring_snapshot.expiration_date),'Updated By':r.archived_by,
-                'Product Status':r.archive_reason,'Archive Status':r.restored_at?'RESTORED':'ARCHIVED',
-                'Employee Full Name':r.employee_name||r.monitoring_snapshot.employee_history?.at(-1)?.employee_name||'',
-                'Store Remarks':r.store_remarks||r.monitoring_snapshot.employee_history?.at(-1)?.remarks||'',
-                'AS Validation':r.validation_status||'','Validated By':r.validated_by||'','Validation Remarks':r.validation_remarks||'',
-                'Validated At':r.validated_at||'','Days Remaining':expiryDays(r.monitoring_snapshot.expiration_date),
-                'Days Overdue':Math.max(0,-expiryDays(r.monitoring_snapshot.expiration_date)),
-                'Archived At':r.archived_at,'Restored At':r.restored_at||'','Restored By':r.restored_by||'','Restoration Remarks':r.restore_remarks||''
-            }));
-            XLSX.utils.book_append_sheet(workbook,XLSX.utils.json_to_sheet(archiveExport.length?archiveExport:[{Message:'No archived records'}]),'Permanent Archive');
-            const file = XLSX.write(
-                workbook,
-                {
-                    type: 'buffer',
-                    bookType: 'xlsx'
-                }
-            );
- 
-            res.set({
-                'Content-Type':
-                    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                'Content-Disposition':
-                    'attachment; filename="NEMS_Monitoring.xlsx"',
-                'Cache-Control': 'no-store'
-            });
- 
-            res.send(file);
- 
-        } catch (error) {
-            databaseError(
-                res,
-                error,
-                'Export failed'
-            );
-        }
-    }
-);
- 
+app.get('/api/export/monitoring',authenticate,secureRoute(async(req,res)=>{
+    const user={...req.user},query={...req.query};
+    const scope=exportScopeKey(await accessibleStores(pool,user));
+    const job=scaleServices.queueExport(user,scope,async()=>({databaseExport:true,request:{user,query},monitoringSQL:scopedMonitoringSQL(user),scopes:{m:storeScope(user),ar:storeScope(user,'ar')}}));
+    res.status(202).json(job);
+}));
 // ==========================================
 // DISABLE OUTDATED MASTERLIST IMPORT
 // ==========================================
@@ -2169,7 +2036,7 @@ require('./nems-tasks')({
     app,
     pool,
     authenticate,
-    adminOnly, storeScope, lockProduct, assertDatesNotArchived, businessDate, scanOverdueTasks
+    adminOnly, storeScope, lockProduct, assertDatesNotArchived, businessDate, scanOverdueTasks: async()=>{}
 });
  
 // ADMIN USER MANAGEMENT ROUTES
@@ -2297,7 +2164,6 @@ app.get('/api/history/employee-submissions',authenticate,secureRoute(async(req,r
     res.json(result.rows);
 }));
 app.get('/api/assigned/tasks',authenticate,secureRoute(async(req,res)=>{
-    await scanOverdueTasks();
     const scope=storeScope(req.user,'s');
     const r=await pool.query(`SELECT a.*,COALESCE(a.due_at, ((a.due_date+1)::timestamp AT TIME ZONE 'Asia/Manila')) AS due_at,s.store_name,s.store_email,sp.supplier_name,
         EXISTS(SELECT 1 FROM public.nems_monitoring_submissions sub WHERE sub.assignment_id=a.assignment_id
@@ -2417,7 +2283,6 @@ function notificationScope(user) {
     const s=storeScope(user,'s');return {sql:notificationAccess.replaceAll('SCOPE',s.sql),args:s.args};
 }
 app.get('/api/notifications',authenticate,secureRoute(async(req,res)=>{
-    await scanOverdueTasks();
     const scope=notificationScope(req.user),args=[...scope.args,req.user.email];
     res.json((await pool.query(`SELECT n.* FROM public.nems_notifications n WHERE ${scope.sql}
         AND LOWER(n.recipient_email)=LOWER($${args.length}) ORDER BY n.created_at DESC,n.notification_id DESC LIMIT 500`,args)).rows);
@@ -2561,37 +2426,32 @@ app.post('/api/archive/:id/restore',authenticate,adminOnly,secureRoute(async(req
 }));
 
 // Durable, deduplicated overdue notifications. Reopened task cycles use their new deadline.
-let overdueBusy=false;
+let overdueBusy=false,overdueLastRun=0;
 async function scanOverdueTasks() {
-    if(overdueBusy)return;overdueBusy=true;
+    if(overdueBusy||Date.now()-overdueLastRun<60000)return;overdueBusy=true;overdueLastRun=Date.now();
     try{await transaction(async c=>{
-        await c.query("SELECT pg_advisory_xact_lock(hashtextextended('nems-overdue-worker',0))");
-        const rows=(await c.query(`SELECT a.*,COALESCE(a.due_at, ((a.due_date+1)::timestamp AT TIME ZONE 'Asia/Manila')) AS due_at,s.store_name,s.store_email FROM public.nems_task_assignments a JOIN public.stores s ON s.store_id=a.store_id
-            WHERE a.status='ACTIVE' AND COALESCE(a.due_at, ((a.due_date+1)::timestamp AT TIME ZONE 'Asia/Manila'))<NOW() AND s.status='ACTIVE' AND NOT EXISTS(SELECT 1 FROM public.nems_monitoring_submissions sub
-            WHERE sub.assignment_id=a.assignment_id AND sub.submitted_at>COALESCE((SELECT MAX(reopened_at) FROM public.nems_task_reopen_history h WHERE h.assignment_id=a.assignment_id),'-infinity'))
-            ORDER BY a.assignment_id FOR UPDATE OF a`)).rows;
-        const summaries=new Map();
-        for(const a of rows){
-            const message=`Task #${a.assignment_id} for ${a.store_name} is unsubmitted after ${new Date(a.due_at).toISOString()}. Employee Full Name and an overdue explanation are required. This is not a negligence determination.`;
-            const recipients=new Set([a.store_email,...(await c.query('SELECT as_email FROM public.as_store_assignments WHERE store_id=$1',[a.store_id])).rows.map(x=>x.as_email)].filter(Boolean).map(cleanEmail));
-            for(const mail of [...recipients].filter(Boolean)){
-                const prior=await c.query(`SELECT 1 FROM public.nems_notifications WHERE LOWER(recipient_email)=LOWER($1) AND reference_type='TASK' AND reference_id=$2 AND notification_type='OVERDUE' AND message=$3`,[mail,a.assignment_id,message]);
-                if(!prior.rowCount)await notify(c,mail,null,'OVERDUE','Overdue task — explanation required',message,'TASK',a.assignment_id,false);
-                const key=cleanEmail(mail);
-                if(!summaries.has(key))summaries.set(key,[]);
-                summaries.get(key).push(a);
-            }
-        }
-        // At most one summary per recipient per Philippine calendar day, after 8 AM.
+        const acquired=await c.query("SELECT pg_try_advisory_xact_lock(hashtextextended('nems-overdue-worker',0)) AS acquired");
+        if(!acquired.rows[0]?.acquired)return;
+        // Set-based work avoids a query and task-row lock for every overdue assignment.
+        const eligible=`SELECT DISTINCT a.assignment_id,s.store_name,s.store_email,sp.supplier_name,
+            COALESCE(a.due_at,((a.due_date+1)::timestamp AT TIME ZONE 'Asia/Manila')) AS due_at,LOWER(u.email) AS recipient_email
+            FROM public.nems_task_assignments a JOIN public.stores s ON s.store_id=a.store_id
+            JOIN public.suppliers sp ON sp.supplier_id=a.supplier_id
+            CROSS JOIN LATERAL(SELECT s.store_email AS email UNION SELECT x.as_email FROM public.as_store_assignments x WHERE x.store_id=s.store_id) recipient
+            JOIN public.users u ON LOWER(u.email)=LOWER(recipient.email) AND u.status='ACTIVE' AND u.role IN ('STORE','AS')
+            WHERE a.status='ACTIVE' AND s.status='ACTIVE' AND COALESCE(a.due_at,((a.due_date+1)::timestamp AT TIME ZONE 'Asia/Manila'))<NOW()
+            AND NOT EXISTS(SELECT 1 FROM public.nems_monitoring_submissions sub WHERE sub.assignment_id=a.assignment_id
+                AND sub.submitted_at>COALESCE((SELECT MAX(reopened_at) FROM public.nems_task_reopen_history h WHERE h.assignment_id=a.assignment_id),'-infinity'::timestamptz))`;
+        await c.query(`WITH eligible AS (${eligible}), prepared AS(SELECT e.*,
+            'Task #'||e.assignment_id||' for '||e.store_name||' is unsubmitted after '||to_char(e.due_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')||'. Employee Full Name and an overdue explanation are required. This is not a negligence determination.' AS message FROM eligible e)
+            INSERT INTO public.nems_notifications(recipient_email,sender_email,notification_type,title,message,reference_type,reference_id)
+            SELECT e.recipient_email,NULL,'OVERDUE','Overdue task — explanation required',e.message,'TASK',e.assignment_id FROM prepared e
+            WHERE NOT EXISTS(SELECT 1 FROM public.nems_notifications n WHERE LOWER(n.recipient_email)=e.recipient_email AND n.reference_type='TASK' AND n.reference_id=e.assignment_id AND n.notification_type='OVERDUE' AND n.message=e.message)`);
         const hour=Number(new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Manila',hour:'2-digit',hourCycle:'h23'}).format(new Date()));
         if(hour>=8){
             const subject='NEMS overdue task summary · '+businessDate();
-            for(const [mail,tasks] of summaries){
-                const active=await c.query("SELECT 1 FROM public.users WHERE LOWER(email)=LOWER($1) AND status='ACTIVE' AND role IN ('STORE','AS')",[mail]);
-                if(!active.rowCount)continue;
-                const prior=await c.query('SELECT 1 FROM public.nems_email_notifications WHERE LOWER(recipient_email)=LOWER($1) AND subject=$2 LIMIT 1',[mail,subject]);
-                if(!prior.rowCount)await c.query('INSERT INTO public.nems_email_notifications(recipient_email,subject,message) VALUES($1,$2,$3)',[mail,subject,overdueSummaryText(tasks)]);
-            }
+            const summaries=(await c.query(`SELECT e.recipient_email,jsonb_agg(jsonb_build_object('assignment_id',e.assignment_id,'store_name',e.store_name,'supplier_name',e.supplier_name,'due_at',e.due_at) ORDER BY e.store_name,e.assignment_id) AS tasks FROM (${eligible}) e WHERE NOT EXISTS(SELECT 1 FROM public.nems_email_notifications q WHERE LOWER(q.recipient_email)=e.recipient_email AND q.subject=$1) GROUP BY e.recipient_email`,[subject])).rows;
+            if(summaries.length)await c.query(`INSERT INTO public.nems_email_notifications(recipient_email,subject,message) SELECT x.recipient_email,$2,x.message FROM jsonb_to_recordset($1::jsonb) AS x(recipient_email text,message text) WHERE NOT EXISTS(SELECT 1 FROM public.nems_email_notifications q WHERE LOWER(q.recipient_email)=x.recipient_email AND q.subject=$2)`,[JSON.stringify(summaries.map(row=>({recipient_email:row.recipient_email,message:overdueSummaryText(row.tasks)}))),subject]);
         }
     });}catch(e){console.error('[NEMS overdue worker]',e.code||e.message);}finally{overdueBusy=false;}
 }
@@ -2602,8 +2462,8 @@ function overdueSummaryText(tasks) {
 async function currentOverdueEmailTasks(user) {
     if(!['STORE','AS'].includes(user.role))return [];
     const scope=storeScope(user,'s');
-    return (await pool.query(`SELECT a.*,s.store_name,COALESCE(a.due_at,((a.due_date+1)::timestamp AT TIME ZONE 'Asia/Manila')) AS due_at
-        FROM public.nems_task_assignments a JOIN public.stores s ON s.store_id=a.store_id
+    return (await pool.query(`SELECT a.*,s.store_name,sp.supplier_name,COALESCE(a.due_at,((a.due_date+1)::timestamp AT TIME ZONE 'Asia/Manila')) AS due_at
+        FROM public.nems_task_assignments a JOIN public.stores s ON s.store_id=a.store_id JOIN public.suppliers sp ON sp.supplier_id=a.supplier_id
         WHERE ${scope.sql} AND s.status='ACTIVE' AND a.status='ACTIVE'
         AND COALESCE(a.due_at,((a.due_date+1)::timestamp AT TIME ZONE 'Asia/Manila'))<NOW()
         AND NOT EXISTS(SELECT 1 FROM public.nems_monitoring_submissions sub WHERE sub.assignment_id=a.assignment_id
@@ -2669,7 +2529,9 @@ app.post('/api/email/brevo-webhook',secureRoute(async(req,res)=>{
 app.get('/api/admin/email-status',authenticate,adminOnly,secureRoute(async(req,res)=>{
     res.json((await pool.query('SELECT * FROM public.nems_email_notifications ORDER BY email_id DESC LIMIT 200')).rows);
 }));
-const maintenanceTimer=setInterval(()=>{void scanOverdueTasks();void processEmailQueue();},60000);
+let lastRequestCleanup=0;
+async function cleanupRequestReceipts(){if(Date.now()-lastRequestCleanup<3600000)return;lastRequestCleanup=Date.now();try{await pool.query(`DELETE FROM public.nems_request_keys WHERE (owner_email,request_key) IN (SELECT owner_email,request_key FROM public.nems_request_keys WHERE state='COMPLETE' AND completed_at<NOW()-INTERVAL '30 days' LIMIT 1000)`);}catch(e){console.error('[NEMS receipt cleanup]',e.code||e.message);}}
+const maintenanceTimer=setInterval(()=>{void scanOverdueTasks();void processEmailQueue();void cleanupRequestReceipts();},60000);
 maintenanceTimer.unref();
 
 // Separate Products/Suppliers imports: preview first, then an owner-bound one-use confirmation.
@@ -2878,6 +2740,132 @@ app.post('/api/admin/import/confirm',authenticate,adminOnly,secureRoute(async(re
 app.get('/api/admin/import/history',authenticate,adminOnly,secureRoute(async(req,res)=>{
     res.json((await pool.query(`SELECT import_id,import_type,imported_by,filename,added_count,updated_count,unchanged_count,confirmed_at
         FROM public.nems_import_history ORDER BY import_id DESC LIMIT 200`)).rows);
+}));
+
+// Bounded list endpoints. Authorization stays in SQL before paging or aggregation.
+function expiryBounds(){const today=businessDate(),d=new Date(today+'T00:00:00Z'),six=new Date(Date.UTC(d.getUTCFullYear(),d.getUTCMonth()+6,1));six.setUTCDate(Math.min(d.getUTCDate(),new Date(Date.UTC(six.getUTCFullYear(),six.getUTCMonth()+1,0)).getUTCDate()));return [today,six.toISOString().slice(0,10)];}
+function expiryCaseSQL(column,today,six){return `CASE WHEN ${column}<${today} THEN 'EXPIRED' WHEN ${column}<=${today}+30 THEN 'RED' WHEN ${column}<=${today}+60 THEN 'BLUE' WHEN ${column}<=${today}+90 THEN 'GREEN' WHEN ${column}<=${six} THEN 'ORANGE' ELSE 'LATER' END`;}
+function scopedMonitoringSQL(user){
+    const ms=storeScope(user,'m'),ss=storeScope(user,'s');
+    return combinedMonitoringEntries.replaceAll('FROM public.monitoring m',`FROM (SELECT * FROM public.monitoring m WHERE ${ms.sql}) m`)
+        .replaceAll('JOIN public.stores s ON s.store_id = a.store_id',`JOIN (SELECT * FROM public.stores s WHERE ${ss.sql}) s ON s.store_id = a.store_id`);
+}
+function monitoringFilters(user,query){
+    const scope=storeScope(user),args=[...scope.args],clauses=[scope.sql];
+    const add=(value,sql)=>{args.push(value);clauses.push(sql('$'+args.length));};
+    const category=String(query.category||'').toUpperCase(),search=String(query.search||'').trim().slice(0,100);
+    if(category){if(!['EXPIRED','RED','BLUE','GREEN','ORANGE','LATER'].includes(category))throw appError(400,'Invalid expiry category');
+        const today=businessDate(),d=new Date(today+'T00:00:00Z');const six=new Date(Date.UTC(d.getUTCFullYear(),d.getUTCMonth()+6,1));six.setUTCDate(Math.min(d.getUTCDate(),new Date(Date.UTC(six.getUTCFullYear(),six.getUTCMonth()+1,0)).getUTCDate()));
+        args.push(today);const t='$'+args.length+'::date';args.push(six.toISOString().slice(0,10));const end='$'+args.length+'::date';
+        clauses.push(({EXPIRED:`m.expiration_date<${t}`,RED:`m.expiration_date BETWEEN ${t} AND ${t}+30`,BLUE:`m.expiration_date BETWEEN ${t}+31 AND ${t}+60`,GREEN:`m.expiration_date BETWEEN ${t}+61 AND ${t}+90`,ORANGE:`m.expiration_date>${t}+90 AND m.expiration_date<=${end}`,LATER:`m.expiration_date>${end}`})[category]);}
+    if(search)add(search,p=>`POSITION(LOWER(${p}) IN LOWER(CONCAT_WS(' ',m.store_name,m.sku,m.product_name,m.supplier)))>0`);
+    return {args,where:clauses.join(' AND ')};
+}
+app.get('/api/scale/monitoring',authenticate,secureRoute(async(req,res)=>{
+    const filters=monitoringFilters(req.user,req.query);
+    const data=await scalePageQuery(pool,req.query,`SELECT m.* FROM (${scopedMonitoringSQL(req.user)}) m WHERE ${filters.where}`,filters.args,'m.expiration_date,m.store_name,m.product_id,m.slot,m.monitoring_id NULLS LAST');
+    data.records=(await enrichMonitoring(pool,data.records)).map(r=>({...r,action_remarks:req.user.role==='ADMIN'?r.action_remarks:undefined,category:expiryCategory(r.expiration_date)}));res.json(data);
+}));
+app.get('/api/scale/expired-stock',authenticate,secureRoute(async(req,res)=>{
+    if(req.user.role!=='STORE')throw appError(403,'STORE access required');
+    const filters=monitoringFilters(req.user,{category:'EXPIRED',search:req.query.search});
+    res.json(await scalePageQuery(pool,req.query,`SELECT m.product_id,m.product_name,m.expiration_date,SUM(m.quantity)::int AS quantity FROM (${scopedMonitoringSQL(req.user)}) m WHERE ${filters.where} GROUP BY m.product_id,m.product_name,m.expiration_date`,filters.args,'m.product_name,m.product_id,m.expiration_date'));
+}));
+app.get('/api/scale/export-options',authenticate,secureRoute(async(req,res)=>{
+    // Supplier metadata is small. Do not download stock rows to populate checkboxes.
+    res.json((await pool.query("SELECT supplier_name FROM public.suppliers ORDER BY supplier_name")).rows);
+}));
+function taskTrackerSQL(user,query){
+    const scope=storeScope(user,'s'),args=[...scope.args],conditions=[scope.sql];
+    const add=(v,sql)=>{if(v){args.push(v);conditions.push(sql('$'+args.length));}};
+    add(validId(query.store),p=>`s.store_id=${p}`);add(validId(query.supplier),p=>`a.supplier_id=${p}`);
+    for(const role of ['as','aom'])add(requiredText(query[role],255),p=>`EXISTS(SELECT 1 FROM public.${role}_store_assignments z WHERE z.store_id=s.store_id AND LOWER(z.${role}_email)=LOWER(${p}))`);
+    const date=value=>/^\d{4}-\d{2}-\d{2}$/.test(String(value||''))?value:null;
+    add(date(query.from),p=>`COALESCE(a.due_at,((a.due_date+1)::timestamp AT TIME ZONE 'Asia/Manila'))>=(${p}::date::timestamp AT TIME ZONE 'Asia/Manila')`);
+    add(date(query.to),p=>`COALESCE(a.due_at,((a.due_date+1)::timestamp AT TIME ZONE 'Asia/Manila'))<((${p}::date+1)::timestamp AT TIME ZONE 'Asia/Manila')`);
+    add(requiredText(query.search,100),p=>`POSITION(LOWER(${p}) IN LOWER(CONCAT_WS(' ',s.store_name,sp.supplier_name,a.assignment_id::text)))>0`);
+    const sql=`SELECT a.assignment_id,a.store_id,s.store_name,s.store_email,sp.supplier_name,a.supplier_id,a.expiry_scope,a.status,a.assigned_at,a.assigned_by,a.due_date,
+        (SELECT COUNT(*)::int FROM public.nems_monitoring_submissions sub WHERE sub.assignment_id=a.assignment_id) AS submission_count,
+        COALESCE(a.due_at,((a.due_date+1)::timestamp AT TIME ZONE 'Asia/Manila')) AS due_at,
+        CASE WHEN a.status='CANCELLED' THEN 'CANCELLED'
+          WHEN EXISTS(SELECT 1 FROM public.nems_monitoring_submissions sub WHERE sub.assignment_id=a.assignment_id AND sub.submitted_at>COALESCE((SELECT MAX(h.reopened_at) FROM public.nems_task_reopen_history h WHERE h.assignment_id=a.assignment_id),'-infinity'::timestamptz)) THEN 'SUBMITTED'
+          WHEN a.status<>'ACTIVE' THEN 'CLOSED'
+          WHEN COALESCE(a.due_at,((a.due_date+1)::timestamp AT TIME ZONE 'Asia/Manila'))<NOW() THEN 'OVERDUE' ELSE 'PENDING' END AS display_status
+        FROM public.nems_task_assignments a JOIN public.stores s ON s.store_id=a.store_id JOIN public.suppliers sp ON sp.supplier_id=a.supplier_id WHERE ${conditions.join(' AND ')}`;
+    return {sql,args};
+}
+app.get('/api/scale/task-tracker/options',authenticate,secureRoute(async(req,res)=>{
+    const stores=await accessibleStores(pool,req.user),ids=stores.map(s=>s.store_id);
+    const staff=(await pool.query(`SELECT DISTINCT u.email,u.full_name,u.role FROM public.users u WHERE u.status='ACTIVE' AND (
+        (u.role='AS' AND EXISTS(SELECT 1 FROM public.as_store_assignments z WHERE LOWER(z.as_email)=LOWER(u.email) AND z.store_id=ANY($1::int[]))) OR
+        (u.role='AOM' AND EXISTS(SELECT 1 FROM public.aom_store_assignments z WHERE LOWER(z.aom_email)=LOWER(u.email) AND z.store_id=ANY($1::int[])))) ORDER BY u.full_name,u.email`,[ids])).rows;
+    const scope=storeScope(req.user,'s');const suppliers=(await pool.query(`SELECT DISTINCT sp.supplier_id,sp.supplier_name FROM public.nems_task_assignments a JOIN public.stores s ON s.store_id=a.store_id JOIN public.suppliers sp ON sp.supplier_id=a.supplier_id WHERE ${scope.sql} ORDER BY sp.supplier_name`,scope.args)).rows;
+    res.json({stores,suppliers,as:staff.filter(u=>u.role==='AS').map(({email,full_name})=>({email,full_name})),aom:staff.filter(u=>u.role==='AOM').map(({email,full_name})=>({email,full_name}))});
+}));
+app.get('/api/scale/task-tracker',authenticate,secureRoute(async(req,res)=>{
+    const {sql,args}=taskTrackerSQL(req.user,req.query),status=String(req.query.status||'');
+    if(status&&!['SUBMITTED','PENDING','OVERDUE','CANCELLED','CLOSED'].includes(status))throw appError(400,'Invalid task status');
+    const summary=(await pool.query(`SELECT COUNT(*)::int AS assignments,COUNT(DISTINCT store_id)::int AS stores,
+        COUNT(*) FILTER(WHERE display_status='SUBMITTED')::int AS submitted,COUNT(*) FILTER(WHERE display_status='PENDING')::int AS pending,
+        COUNT(*) FILTER(WHERE display_status='OVERDUE')::int AS overdue,COUNT(*) FILTER(WHERE display_status IN ('CANCELLED','CLOSED'))::int AS closed FROM (${sql}) t`,args)).rows[0];
+    const values=[...args];if(status)values.push(status);
+    const page=await scalePageQuery(pool,req.query,`SELECT * FROM (${sql}) t${status?' WHERE t.display_status=$'+values.length:''}`,values,'t.due_at NULLS LAST,t.assignment_id');res.json({...page,summary});
+}));
+app.get('/api/scale/notifications/count',authenticate,secureRoute(async(req,res)=>{
+    const scope=notificationScope(req.user),args=[...scope.args,req.user.email];
+    const r=await pool.query(`SELECT COUNT(*)::int AS unread FROM public.nems_notifications n WHERE n.read_at IS NULL AND ${scope.sql} AND LOWER(n.recipient_email)=LOWER($${args.length})`,args);res.json(r.rows[0]);
+}));
+app.get('/api/scale/notifications',authenticate,secureRoute(async(req,res)=>{
+    const scope=notificationScope(req.user),args=[...scope.args,req.user.email];res.json(await scalePageQuery(pool,req.query,`SELECT n.* FROM public.nems_notifications n WHERE ${scope.sql} AND LOWER(n.recipient_email)=LOWER($${args.length})`,args,'n.created_at DESC,n.notification_id DESC'));
+}));
+app.get('/api/scale/employee-history',authenticate,secureRoute(async(req,res)=>{
+    const scope=storeScope(req.user,'r');res.json(await scalePageQuery(pool,req.query,`SELECT r.* FROM public.nems_store_remarks r WHERE ${scope.sql}`,scope.args,'r.created_at DESC,r.remark_id DESC'));
+}));
+app.get('/api/scale/reports',authenticate,secureRoute(async(req,res)=>{
+    const scope=storeScope(req.user,'r');res.json(await scalePageQuery(pool,req.query,`SELECT r.*,p.product_name,p.sku FROM public.nems_expired_status_reports r LEFT JOIN public.products p ON p.product_id=r.product_id WHERE ${scope.sql}`,scope.args,'r.reported_at DESC,r.report_id DESC'));
+}));
+app.get('/api/scale/archive',authenticate,secureRoute(async(req,res)=>{
+    const scope=storeScope(req.user,'r');res.json(await scalePageQuery(pool,req.query,`SELECT r.* FROM public.nems_expired_archive r WHERE ${scope.sql}`,scope.args,'r.archived_at DESC,r.archive_id DESC'));
+}));
+app.get('/api/scale/task-followup',authenticate,secureRoute(async(req,res)=>{
+    const {sql,args}=taskTrackerSQL(req.user,req.query);res.json(await scalePageQuery(pool,req.query,`SELECT t.*,t.display_status='SUBMITTED' AS submitted,
+      COALESCE((SELECT jsonb_agg(to_jsonb(e) ORDER BY e.submitted_at DESC) FROM (SELECT * FROM public.nems_task_overdue_explanations e WHERE e.assignment_id=t.assignment_id ORDER BY e.submitted_at DESC LIMIT 5) e),'[]'::jsonb) AS explanations FROM (${sql}) t`,args,'t.due_at NULLS LAST,t.assignment_id'));
+}));
+app.get('/api/scale/messages/:storeId',authenticate,secureRoute(async(req,res)=>{
+    await requireStore(pool,req.user,req.params.storeId);
+    const args=[req.params.storeId,req.user.email,['ADMIN','HEAD'].includes(req.user.role)];
+    const data=await scalePageQuery(pool,req.query,`SELECT m.*,COALESCE((SELECT jsonb_agg(jsonb_build_object('email',n.recipient_email,'read_at',n.read_at) ORDER BY n.recipient_email) FROM public.nems_notifications n WHERE n.reference_type='MESSAGE' AND n.reference_id=m.message_id),'[]'::jsonb) AS recipients FROM public.nems_messages m JOIN public.nems_conversations c ON c.conversation_id=m.conversation_id WHERE c.store_id=$1 AND ($3::boolean OR LOWER(m.sender_email)=LOWER($2::text) OR EXISTS(SELECT 1 FROM public.nems_notifications n WHERE n.reference_type='MESSAGE' AND n.reference_id=m.message_id AND LOWER(n.recipient_email)=LOWER($2::text)) OR NOT EXISTS(SELECT 1 FROM public.nems_notifications n WHERE n.reference_type='MESSAGE' AND n.reference_id=m.message_id AND n.title LIKE 'NEMS direct message · %'))`,args,'m.created_at DESC,m.message_id DESC');
+    if(req.user.role!=='ADMIN')data.records=data.records.map(({sender_role,...row})=>row);
+    const version=require('crypto').createHash('sha256').update(JSON.stringify(data)).digest('hex');
+    if(req.query.version===version)return res.json({unchanged:true,version});
+    res.json({...data,version});
+}));
+app.post('/api/scale/messages/:storeId/read',authenticate,secureRoute(async(req,res)=>{
+    const ids=Array.isArray(req.body.message_ids)?req.body.message_ids.map(validId):[];
+    if(!ids.length||ids.length>100||ids.some(id=>!id))throw appError(400,'Select 1–100 visible messages');
+    await requireStore(pool,req.user,req.params.storeId);
+    const when=new Date().toISOString();
+    await pool.query(`UPDATE public.nems_notifications n SET read_at=COALESCE(n.read_at,$4::timestamptz) WHERE LOWER(n.recipient_email)=LOWER($1) AND n.reference_type='MESSAGE' AND n.reference_id=ANY($3::bigint[]) AND EXISTS(SELECT 1 FROM public.nems_messages m JOIN public.nems_conversations c ON c.conversation_id=m.conversation_id WHERE m.message_id=n.reference_id AND c.store_id=$2)`,[req.user.email,req.params.storeId,ids,when]);
+    res.json({read_at:when});
+}));
+app.get('/api/help',authenticate,(req,res)=>{
+    const value=String(process.env.NEMS_HELP_VIDEO_URL||'').trim();
+    let video_url=null;try{const url=new URL(value);if(url.protocol==='https:')video_url=url.href;}catch(_){}
+    res.json({video_url});
+});
+app.get('/api/admin/system-status',authenticate,adminOnly,secureRoute(async(req,res)=>{
+    const ready=await pool.query("SELECT to_regclass('public.nems_request_keys') IS NOT NULL AS save_protection_ready");
+    res.json({version:'nems-scale-2026-11',save_protection_ready:ready.rows[0].save_protection_ready,database_pool:{total:pool.totalCount,idle:pool.idleCount,waiting:pool.waitingCount,max:pool.options.max},export_jobs:scaleServices.stats()});
+}));
+function exportScopeKey(stores){return stores.map(s=>String(s.store_id)+':'+cleanEmail(s.store_email)).sort().join(',');}
+app.get('/api/exports/:id',authenticate,secureRoute(async(req,res)=>{
+    const j=scaleServices.getJob(req.user,req.params.id);res.json({job_id:j.id,state:j.state,error:j.error||null});
+}));
+app.get('/api/exports/:id/download',authenticate,secureRoute(async(req,res)=>{
+    const j=scaleServices.getJob(req.user,req.params.id);
+    if(j.state!=='READY')throw appError(409,'Export is not ready');
+    if(exportScopeKey(await accessibleStores(pool,req.user))!==j.scope)throw appError(409,'Store access changed. Generate a fresh export.');
+    res.set({'Content-Type':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','Content-Disposition':'attachment; filename="NEMS_Monitoring.xlsx"','Cache-Control':'no-store'});res.send(j.buffer);
 }));
 
 app.use((error,req,res,next)=>{
