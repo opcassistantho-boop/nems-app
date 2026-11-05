@@ -3776,8 +3776,13 @@ function nemsUserSetup() {
             const result = await api('/api/admin/users/password-link', {
                 method: 'POST', body: JSON.stringify({ email })
             });
-            if (!result.sent) throw new Error('Email delivery was not confirmed by NEMS.');
-            showMessage(result.message || 'Password invitation emailed to ' + email + '.');
+            if (result.provider_accepted === true) {
+                showMessage('Invitation accepted by the email service for ' + email + '. Please check the recipient’s inbox or spam folder. Inbox delivery is confirmed separately in Brevo logs.');
+            } else if (result.sent === true) {
+                showMessage(result.message || 'Password invitation emailed to ' + email + '.');
+            } else {
+                throw new Error(result.message || 'The email service did not confirm acceptance of the invitation. Check Brevo logs before trying again.');
+            }
         } catch (err) { showMessage(err.message, true); }
         finally { button.disabled = false; }
     });
