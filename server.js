@@ -2210,11 +2210,11 @@ async function managersForStore(client,storeId) {
         (u.role='AS' AND EXISTS(SELECT 1 FROM public.as_store_assignments a WHERE a.store_id=$1 AND LOWER(a.as_email)=LOWER(u.email))) OR
         (u.role='AOM' AND EXISTS(SELECT 1 FROM public.aom_store_assignments a WHERE a.store_id=$1 AND LOWER(a.aom_email)=LOWER(u.email))))`,[storeId])).rows.map(x=>x.email);
 }
-async function notify(client,recipient,sender,type,title,message,refType,refId) {
+async function notify(client,recipient,sender,type,title,message,refType,refId,sendEmail=true) {
     const r=await client.query(`INSERT INTO public.nems_notifications
         (recipient_email,sender_email,notification_type,title,message,reference_type,reference_id)
         VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING notification_id`,[cleanEmail(recipient),sender,type,title,message,refType,refId]);
-    await client.query(`INSERT INTO public.nems_email_notifications(recipient_email,subject,message)
+    if(sendEmail)await client.query(`INSERT INTO public.nems_email_notifications(recipient_email,subject,message)
         VALUES($1,$2,$3)`,[cleanEmail(recipient),title,message]);
     return r.rows[0];
 }
@@ -2329,10 +2329,31 @@ app.post('/api/store/tasks/:id/explanation',authenticate,secureRoute(async(req,r
 
 // Scoped conversations preserve the existing one-conversation-per-store model.
 app.get('/api/messages/stores',authenticate,secureRoute(async(req,res)=>res.json(await accessibleStores(pool,req.user))));
+// Direct recipients are active users authorized for the same store. No new schema is required.
+async function messageContacts(client,storeId,senderEmail) {
+    return (await client.query(`SELECT DISTINCT u.email,u.full_name,u.role FROM public.users u
+        WHERE u.status='ACTIVE' AND LOWER(u.email)<>LOWER($2::text) AND (
+            u.role IN ('ADMIN','HEAD') OR
+            (u.role='AS' AND EXISTS(SELECT 1 FROM public.as_store_assignments a WHERE a.store_id=$1 AND LOWER(a.as_email)=LOWER(u.email))) OR
+            (u.role='AOM' AND EXISTS(SELECT 1 FROM public.aom_store_assignments a WHERE a.store_id=$1 AND LOWER(a.aom_email)=LOWER(u.email))) OR
+            (u.role='STORE' AND EXISTS(SELECT 1 FROM public.stores s WHERE s.store_id=$1 AND LOWER(s.store_email)=LOWER(u.email))))
+        ORDER BY u.role,u.full_name,u.email`,[storeId,senderEmail])).rows;
+}
+app.get('/api/messages/contacts/:storeId',authenticate,secureRoute(async(req,res)=>{
+    const store=await requireStore(pool,req.user,req.params.storeId);
+    res.json(await messageContacts(pool,store.store_id,req.user.email));
+}));
 app.get('/api/messages/:storeId',authenticate,secureRoute(async(req,res)=>{
     await requireStore(pool,req.user,req.params.storeId);
-    const r=await pool.query(`SELECT m.* FROM public.nems_messages m JOIN public.nems_conversations c ON c.conversation_id=m.conversation_id
-        WHERE c.store_id=$1 ORDER BY m.created_at DESC,m.message_id DESC LIMIT 500`,[req.params.storeId]);res.json(r.rows);
+    const r=await pool.query(`SELECT m.*,
+        COALESCE((SELECT jsonb_agg(jsonb_build_object('email',n.recipient_email,'read_at',n.read_at) ORDER BY n.recipient_email)
+            FROM public.nems_notifications n WHERE n.reference_type='MESSAGE' AND n.reference_id=m.message_id),'[]'::jsonb) AS recipients
+        FROM public.nems_messages m JOIN public.nems_conversations c ON c.conversation_id=m.conversation_id
+        WHERE c.store_id=$1 AND (
+            $3::boolean OR LOWER(m.sender_email)=LOWER($2::text) OR
+            EXISTS(SELECT 1 FROM public.nems_notifications n WHERE n.reference_type='MESSAGE' AND n.reference_id=m.message_id AND LOWER(n.recipient_email)=LOWER($2::text)) OR
+            NOT EXISTS(SELECT 1 FROM public.nems_notifications n WHERE n.reference_type='MESSAGE' AND n.reference_id=m.message_id AND n.title LIKE 'NEMS direct message · %'))
+        ORDER BY m.created_at DESC,m.message_id DESC LIMIT 500`,[req.params.storeId,req.user.email,['ADMIN','HEAD'].includes(req.user.role)]);res.json(r.rows);
 }));
 app.post('/api/messages',authenticate,secureRoute(async(req,res)=>{
     const text=requiredText(req.body.message,5000);if(!text)throw appError(400,'Message required (maximum 5000 characters)');
@@ -2340,6 +2361,15 @@ app.post('/api/messages',authenticate,secureRoute(async(req,res)=>{
         const allowed=await accessibleStores(c,req.user);
         const ids=req.body.all===true?allowed.map(s=>String(s.store_id)):[...new Set((Array.isArray(req.body.store_ids)?req.body.store_ids:[]).map(String))];
         if(!ids.length||ids.length>1000||ids.some(id=>!allowed.some(s=>String(s.store_id)===id)))throw appError(403,'Select only authorized stores');
+        const direct=Object.hasOwn(req.body,'recipient_emails');
+        let directRecipients=[];
+        if(direct){
+            if(ids.length!==1||!Array.isArray(req.body.recipient_emails))throw appError(400,'Choose one store before selecting people');
+            directRecipients=[...new Set(req.body.recipient_emails.map(cleanEmail))];
+            if(!directRecipients.length||directRecipients.length>50)throw appError(400,'Select 1–50 recipients');
+            const contacts=await messageContacts(c,ids[0],req.user.email);
+            if(directRecipients.some(mail=>!contacts.some(u=>cleanEmail(u.email)===mail)))throw appError(403,'Select only active authorized recipients for this store');
+        }
         let count=0;
         for(const id of ids){
             const store=allowed.find(s=>String(s.store_id)===id);
@@ -2347,10 +2377,11 @@ app.post('/api/messages',authenticate,secureRoute(async(req,res)=>{
                 DO UPDATE SET updated_at=NOW() RETURNING conversation_id`,[id])).rows[0];
             const m=(await c.query(`INSERT INTO public.nems_messages(conversation_id,sender_email,sender_role,message_type,message_text)
                 VALUES($1,$2,$3,$4,$5) RETURNING message_id`,[conv.conversation_id,req.user.email,req.user.role,ids.length>1?'ANNOUNCEMENT':'DIRECT',text])).rows[0];
-            const recipients=req.user.role==='STORE'?await managersForStore(c,id):[store.store_email];
-            for(const mail of recipients.filter(Boolean))await notify(c,mail,req.user.email,'MESSAGE',`NEMS message · ${store.store_name}`,text,'MESSAGE',m.message_id);
+            const recipients=direct?directRecipients:(req.user.role==='STORE'?await managersForStore(c,id):[store.store_email]);
+            for(const mail of [...new Set(recipients.filter(Boolean).map(cleanEmail))].filter(mail=>mail!==cleanEmail(req.user.email)))
+                await notify(c,mail,req.user.email,'MESSAGE',`${direct?'NEMS direct message':'NEMS message'} · ${store.store_name}`,text,'MESSAGE',m.message_id,false);
             count++;
-        }return {stores:count,email_delivery:'Queued; delivery unconfirmed'};
+        }return {stores:count,email_delivery:'In-app only; no email requested'};
     });res.status(201).json(result);
 }));
 app.post('/api/messages/:storeId/read',authenticate,secureRoute(async(req,res)=>{
@@ -2361,7 +2392,9 @@ app.post('/api/messages/:storeId/read',authenticate,secureRoute(async(req,res)=>
             SELECT 1 FROM public.nems_messages m JOIN public.nems_conversations cv ON cv.conversation_id=m.conversation_id
             WHERE m.message_id=n.reference_id AND cv.store_id=$2)`,[req.user.email,req.params.storeId]);
         if(req.user.role==='STORE')await c.query(`UPDATE public.nems_messages m SET read_at=COALESCE(m.read_at,NOW())
-            FROM public.nems_conversations cv WHERE cv.conversation_id=m.conversation_id AND cv.store_id=$1 AND m.sender_role<>'STORE'`,[req.params.storeId]);
+            FROM public.nems_conversations cv WHERE cv.conversation_id=m.conversation_id AND cv.store_id=$1 AND m.sender_role<>'STORE' AND (
+                EXISTS(SELECT 1 FROM public.nems_notifications n WHERE n.reference_type='MESSAGE' AND n.reference_id=m.message_id AND LOWER(n.recipient_email)=LOWER($2::text)) OR
+                NOT EXISTS(SELECT 1 FROM public.nems_notifications n WHERE n.reference_type='MESSAGE' AND n.reference_id=m.message_id AND n.title LIKE 'NEMS direct message · %'))`,[req.params.storeId,req.user.email]);
     });res.json({message:'Marked read for your account'});
 }));
 // Notifications remain visible only while the recipient retains access to the source store.
