@@ -556,6 +556,7 @@ td button { margin:2px; }
                 <option>RED</option>
                 <option>BLUE</option>
                 <option>GREEN</option>
+                <option>ORANGE</option>
                 <option>LATER</option>
             </select>
  
@@ -1619,19 +1620,34 @@ function openMonitoringCategory(category) {
  
 let nemsMonitoringPage=1,nemsMonitoringMore=false,nemsMonitoringGeneration=0,nemsMonitorSearchTimer;
 let nemsExportSuppliers=[];
-function nemsMonitoringFilterChanged(){clearTimeout(nemsMonitorSearchTimer);nemsMonitoringPage=1;nemsMonitorSearchTimer=setTimeout(()=>void loadMonitoring(),300);}
+function nemsMonitoringClear(message){
+    monitoring=[];nemsMonitoringMore=false;renderMonitoring();
+    el('monitorCount').textContent=message;
+    const pager=el('nemsMonitoringPager');if(pager)pager.replaceChildren();
+}
+function nemsMonitoringFilterChanged(){
+    clearTimeout(nemsMonitorSearchTimer);nemsMonitoringGeneration++;nemsMonitoringPage=1;
+    nemsMonitoringClear('Loading matching records…');
+    nemsMonitorSearchTimer=setTimeout(()=>void loadMonitoring(),300);
+}
 async function loadMonitoring(){
     const generation=++nemsMonitoringGeneration,owner=currentUser?.email;
+    const category=el('monitorCategory').value,search=el('monitorSearch').value.trim();
+    const valid=()=>generation===nemsMonitoringGeneration&&currentUser?.email===owner&&el('monitorCategory').value===category&&el('monitorSearch').value.trim()===search;
+    nemsMonitoringClear('Loading matching records…');
     try{
-        const data=await api('/api/scale/monitoring?'+new URLSearchParams({page:nemsMonitoringPage,limit:50,category:el('monitorCategory').value,search:el('monitorSearch').value.trim()}));
-        if(generation!==nemsMonitoringGeneration||currentUser?.email!==owner)return;
+        const data=await api('/api/scale/monitoring?'+new URLSearchParams({page:nemsMonitoringPage,limit:50,category,search}));
+        if(!valid())return;
         monitoring=data.records;nemsMonitoringMore=data.has_more;renderMonitoring();
         let pager=el('nemsMonitoringPager');if(!pager){pager=document.createElement('div');pager.id='nemsMonitoringPager';el('monitorCount').after(pager);}
         pager.innerHTML=nemsPagerHTML('monitor',nemsMonitoringPage,data.has_more);
         nemsBindPager(pager,()=>nemsMonitoringPage--,()=>nemsMonitoringPage++,loadMonitoring);
-        el('monitorCount').textContent='Page '+nemsMonitoringPage+' · '+monitoring.length+' records';
-        if(!nemsExportSuppliers.length){nemsExportSuppliers=await api('/api/scale/export-options');if(currentUser?.email===owner)renderMonitoringExportSuppliers();}
-    }catch(error){if(generation===nemsMonitoringGeneration)showMessage(error.message,true);}
+        el('monitorCount').textContent=monitoring.length?'Page '+nemsMonitoringPage+' · '+monitoring.length+' records':'No records match this category and search.';
+    }catch(error){if(valid()){nemsMonitoringClear('Could not load matching records. Click Refresh to try again.');showMessage(error.message,true);}return;}
+    if(!nemsExportSuppliers.length&&valid()){
+        try{const suppliers=await api('/api/scale/export-options');if(valid()){nemsExportSuppliers=suppliers;renderMonitoringExportSuppliers();}}
+        catch(error){if(valid())console.warn('Export supplier options unavailable');}
+    }
 }
 
 // Color only Monitoring Records product fields by remaining shelf life.
@@ -4525,23 +4541,27 @@ async function nemsFeatureRender(){
             let form='';
             if(currentUser.role==='STORE'){
                 nemsFeatures.stock=[];
-                form=`<h3>Report expired stock</h3><p>Report the action first. Your assigned AS reviews afterward. ON STORE stock stays visible for follow-up.</p><label for="nfExpiredSearch">Search expired stock</label><input id="nfExpiredSearch" type="search" placeholder="Search product or SKU"><div id="nfExpiredStockPager"></div><label>Expired product and date</label><select id="nfExpiredProduct"><option value="">Choose expired entry</option>${nemsFeatures.stock.map((r,i)=>`<option value="${i}">${escapeHtml(r.product_name)} · ${escapeHtml(String(r.expiration_date).slice(0,10))} · ${Number(r.quantity)} pcs</option>`).join('')}</select>
+                form=`<h3>Report expired stock</h3><p>Report the action first. Your assigned AS reviews afterward. ON STORE stock stays visible for follow-up.</p><label for="nfExpiredSearch">Search expired stock</label><input id="nfExpiredSearch" type="search" placeholder="Search product or SKU"><p id="nfExpiredStockState" role="status" aria-live="polite"></p><div id="nfExpiredStockPager"></div><label>Expired product and date</label><select id="nfExpiredProduct"><option value="">Choose expired entry</option>${nemsFeatures.stock.map((r,i)=>`<option value="${i}">${escapeHtml(r.product_name)} · ${escapeHtml(String(r.expiration_date).slice(0,10))} · ${Number(r.quantity)} pcs</option>`).join('')}</select>
                 <label>Action</label><select id="nfExpiredStatus"><option>ON STORE</option><option>DISPOSE</option><option>TRANSFER TO DC</option></select><label>Employee Full Name</label><input id="nfExpiredEmployee" maxlength="120"><label>Store Remarks / Why the expired product remains ON STORE</label><textarea id="nfExpiredRemarks" maxlength="2000"></textarea><label><input id="nfOnStoreConfirm" type="checkbox" style="width:auto"> For ON STORE, I confirm that my remarks explain why this expired product remains in the store.</label><button type="button" id="nfReport">Submit for AS review</button>`;
             }
             body.innerHTML=form+'<h3>Report and Validation History</h3>'+nfTable(['Store','Product / Expiry','Action / Quantity','Employee / Remarks','AS Decision','Review'],nemsFeatures.reports.map(r=>'<tr>'+nfCell(r.store_name)+nfCell(r.product_name+' · '+String(r.expiration_date).slice(0,10))+nfCell(r.product_status+' · '+r.quantity)+nfCell(r.employee_name+' · '+r.store_remarks)+nfCell(r.validation_status+' · '+(r.validated_by||'')+' · '+(r.validation_remarks||'')+' · '+(r.validated_at?dateTimeText(r.validated_at):''))+`<td>${currentUser.role==='AS'&&r.validation_status==='PENDING'?`<button type="button" data-nf-validate="${Number(r.report_id)}" data-decision="APPROVED">Approve</button><button type="button" class="danger" data-nf-validate="${Number(r.report_id)}" data-decision="REJECTED">Reject</button>`:''}</td></tr>`));
             for(const [id,value,checked] of reportDraft){const field=el(id);if(field){field.value=value;field.checked=checked;}}
             if(el('nfExpiredSearch')){
                 let stockPage=1,stockGeneration=0,stockTimer;
-                const loadStock=async()=>{const own=++stockGeneration;
-                    try{const data=await api('/api/scale/expired-stock?'+new URLSearchParams({page:stockPage,limit:50,search:el('nfExpiredSearch').value}));if(!valid()||own!==stockGeneration)return;
+                const loadStock=async()=>{const own=++stockGeneration,term=el('nfExpiredSearch').value;
+                    const select=el('nfExpiredProduct'),selectedEntry=select.value!==''?nemsFeatures.stock[Number(select.value)]:reportChoice;
+                    select.disabled=true;el('nfExpiredStockState').textContent='Loading expired products…';
+                    try{const data=await api('/api/scale/expired-stock?'+new URLSearchParams({page:stockPage,limit:50,search:term}));if(!valid()||own!==stockGeneration||term!==el('nfExpiredSearch').value)return;
                         nemsFeatures.stock=data.records;el('nfExpiredProduct').innerHTML='<option value="">Choose expired entry</option>'+data.records.map((r,i)=>`<option value="${i}">${escapeHtml(r.product_name)} · ${escapeHtml(String(r.expiration_date).slice(0,10))} · ${Number(r.quantity)} pcs</option>`).join('');
-                        if(reportChoice){const selected=data.records.findIndex(r=>r.product_id===reportChoice.product_id&&String(r.expiration_date).slice(0,10)===String(reportChoice.expiration_date).slice(0,10));el('nfExpiredProduct').value=selected<0?'':String(selected);}
+                        if(selectedEntry){const selected=data.records.findIndex(r=>r.product_id===selectedEntry.product_id&&String(r.expiration_date).slice(0,10)===String(selectedEntry.expiration_date).slice(0,10));el('nfExpiredProduct').value=selected<0?'':String(selected);}
+                        el('nfExpiredStockState').textContent=data.records.length?'Choose a product and its expiration date below.':term?'No expired products match your search.':'No expired stock is available for this store.';
                         el('nfExpiredStockPager').innerHTML=nemsPagerHTML('expired-stock',stockPage,data.has_more);nemsBindPager(el('nfExpiredStockPager'),()=>stockPage--,()=>stockPage++,loadStock);
-                    }catch(e){if(valid())showMessage(e.message,true);}
+                    }catch(e){if(valid()&&own===stockGeneration){el('nfExpiredStockState').textContent='Could not load expired products. '+e.message;showMessage(e.message,true);}}finally{if(valid()&&own===stockGeneration)select.disabled=false;}
                 };
-                el('nfExpiredSearch').oninput=()=>{clearTimeout(stockTimer);stockPage=1;stockTimer=setTimeout(()=>void loadStock(),300);};await loadStock();if(!valid())return;
+                el('nfExpiredSearch').oninput=()=>{clearTimeout(stockTimer);stockGeneration++;el('nfExpiredProduct').disabled=true;stockPage=1;stockTimer=setTimeout(()=>void loadStock(),300);};await loadStock();if(!valid())return;
             }
             if(el('nfReport'))el('nfReport').onclick=async()=>{
+                if(el('nfExpiredProduct').disabled)return showMessage('Wait for expired products to finish loading.',true);
                 const index=el('nfExpiredProduct').value;if(index==='')return showMessage('Select an expired product.',true);const entry=nemsFeatures.stock[Number(index)];
                 const payload={product_id:entry.product_id,expiration_date:String(entry.expiration_date).slice(0,10),quantity:entry.quantity,product_status:el('nfExpiredStatus').value,employee_name:el('nfExpiredEmployee').value.trim(),store_remarks:el('nfExpiredRemarks').value.trim(),on_store_explanation_confirmed:el('nfOnStoreConfirm').checked};
                 const b=el('nfReport');b.disabled=true;try{await api('/api/expired/reports',{method:'POST',body:JSON.stringify(payload)});showMessage('Report saved. Awaiting assigned AS review.');await nemsFeatureLoad();}catch(e){showMessage(e.message,true);}finally{b.disabled=false;}
