@@ -573,7 +573,7 @@ td button { margin:2px; }
                 <button type="button" class="secondary small" onclick="setMonitoringExportSuppliers(true)">Select All Suppliers</button>
                 <button type="button" class="secondary small" onclick="setMonitoringExportSuppliers(false)">Clear Selection (All Suppliers)</button>
             </div>
-            <div id="monitorExportSuppliers" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:6px;max-height:210px;overflow:auto"></div>
+            <label for="monitorExportSupplierSearch">Search export suppliers</label><input id="monitorExportSupplierSearch" type="search" placeholder="Type a supplier name" oninput="nemsFilterExportSuppliers()"><div id="monitorExportSuppliers" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:6px;max-height:210px;overflow:auto"></div>
             <p><strong>Expiration categories for Excel</strong></p>
             <div class="row" style="margin-bottom:8px">
                 <button type="button" class="secondary small" onclick="setMonitoringExportCategories(true)">Select All Categories</button>
@@ -1465,7 +1465,7 @@ el('loginForm').addEventListener(
 function logout() {
     nemsUnreadGeneration++;nemsFeatureGeneration++;nemsMonitoringGeneration++;nemsEmployeeGeneration++;nemsTrackerGeneration++;
     nemsBadgeLastAt=0;nemsBadgeOwner='';nemsMonitoringPage=1;nemsEmployeePage=1;nemsTrackerPage=1;nemsAdminTaskPage=1;nemsStoreTaskPage=1;
-    for(const tab of Object.keys(nemsFeaturePages))nemsFeaturePages[tab]=1;
+    for(const tab of Object.keys(nemsFeaturePages)){nemsFeaturePages[tab]=1;delete nemsFeatureSearch[tab];}
     nemsTaskProducts=[];nemsStoreTasks=[];nemsTaskRows=[];nemsSelectedStoreIds.clear();
     if(nemsMessageTimer){clearInterval(nemsMessageTimer);nemsMessageTimer=null;}
     if(el('nemsFeaturesNav'))el('nemsFeaturesNav').textContent='Messages and Follow-up';
@@ -1833,8 +1833,10 @@ function renderMonitoringExportSuppliers() {
     const previouslyChecked = new Set(Array.from(host.querySelectorAll('input:checked')).map(input => input.value));
     const suppliers = nemsExportSuppliers.map(item=>item.supplier_name);
     host.innerHTML = suppliers.map(name => `<label style="display:flex;align-items:center;gap:7px;font-weight:normal;font-size:13px;margin:0"><input type="checkbox" class="monitor-export-supplier" value="${escapeHtml(name)}" style="width:auto" ${previouslyChecked.has(name) ? 'checked' : ''}>${escapeHtml(name)}</label>`).join('') || '<span class="muted">No suppliers available.</span>';
+    nemsFilterExportSuppliers();
 }
  
+function nemsFilterExportSuppliers(){const term=el('monitorExportSupplierSearch').value.trim().toLocaleLowerCase();el('monitorExportSuppliers').querySelectorAll('label').forEach(label=>{label.hidden=!!term&&!label.textContent.toLocaleLowerCase().includes(term);label.style.display=label.hidden?'none':'flex';});}
 function setMonitoringExportSuppliers(checked) {
     el('monitorExportSuppliers').querySelectorAll('input.monitor-export-supplier').forEach(input => { input.checked = checked; });
 }
@@ -4353,10 +4355,11 @@ el('entryProduct').addEventListener('change',async()=>{
 function nemsPagerHTML(name,page,more){return '<div class="row" style="margin-top:12px"><button type="button" data-page-back '+(page<=1?'disabled':'')+'>Previous</button><span>Page '+page+'</span><button type="button" data-page-next '+(!more?'disabled':'')+'>Next</button></div>';}
 function nemsBindPager(host,previous,next,load){const back=host.querySelector('[data-page-back]'),forward=host.querySelector('[data-page-next]');back.onclick=()=>{previous();void load();};forward.onclick=()=>{next();void load();};}
 let nemsFeatureGeneration=0,nemsEmployeePage=1,nemsEmployeeGeneration=0;
-const nemsFeaturePages={notifications:1,expired:1,archive:1,tasks:1};
+const nemsFeaturePages={notifications:1,expired:1,archive:1,tasks:1,email:1};
+const nemsFeatureSearch={};
 async function nemsFeatureData(tab){
-    const endpoint={expired:'reports',archive:'archive',tasks:'task-followup',notifications:'notifications'}[tab];
-    return endpoint?api('/api/scale/'+endpoint+'?'+new URLSearchParams({page:nemsFeaturePages[tab]||1,limit:50})):null;
+    const endpoint={expired:'reports',archive:'archive',tasks:'task-followup',notifications:'notifications',email:'email-status'}[tab];
+    return endpoint?api('/api/scale/'+endpoint+'?'+new URLSearchParams({page:nemsFeaturePages[tab]||1,limit:50,search:nemsFeatureSearch[tab]||''})):null;
 }
 const nemsFeatures={stores:[],messages:[],reports:[],archive:[],stock:[],tasks:[],preview:null};
 function nemsFeatureSetup(){
@@ -4365,11 +4368,11 @@ function nemsFeatureSetup(){
     section.innerHTML=`<div class="panel"><h2>Messages and Follow-up</h2><button type="button" id="nfRefresh">Refresh</button><p id="nfState" role="status"></p>
       <div class="tabs" id="nfTabs"></div><div id="nfBody"></div></div>`;el('application').append(section);
     el('nfRefresh').onclick=()=>nemsFeatureLoad();
-    const historyPanel=document.createElement('div');historyPanel.className='panel';historyPanel.innerHTML='<h2>Employee Submission History</h2><p>Store Encoding and My Tasks employee names, remarks, before values and submitted values.</p><button type="button" id="nfHistoryRefresh">Refresh employee history</button><div id="nfEmployeeHistory"></div>';
-    el('page-history').append(historyPanel);el('nfHistoryRefresh').onclick=nemsEmployeeHistory;
+    const historyPanel=document.createElement('div');historyPanel.className='panel';historyPanel.innerHTML='<h2>Employee Submission History</h2><p>Store Encoding and My Tasks employee names, remarks, before values and submitted values.</p><button type="button" id="nfHistoryRefresh">Refresh employee history</button><label for="nfEmployeeSearch">Search employee history</label><input id="nfEmployeeSearch" type="search" maxlength="100" placeholder="Employee, store, remarks or product ID"><div id="nfEmployeeHistory"></div>';
+    el('page-history').append(historyPanel);el('nfHistoryRefresh').onclick=nemsEmployeeHistory;let employeeTimer;el('nfEmployeeSearch').oninput=()=>{nemsEmployeePage=1;nemsEmployeeGeneration++;clearTimeout(employeeTimer);employeeTimer=setTimeout(nemsEmployeeHistory,350);};
 }
 async function nemsEmployeeHistory(){
-    try{const generation=++nemsEmployeeGeneration,owner=currentUser?.email;const data=await api('/api/scale/employee-history?'+new URLSearchParams({page:nemsEmployeePage,limit:50}));if(generation!==nemsEmployeeGeneration||currentUser?.email!==owner)return;const rows=data.records;
+    try{const generation=++nemsEmployeeGeneration,owner=currentUser?.email;const data=await api('/api/scale/employee-history?'+new URLSearchParams({page:nemsEmployeePage,limit:50,search:el('nfEmployeeSearch')?.value||''}));if(generation!==nemsEmployeeGeneration||currentUser?.email!==owner)return;const rows=data.records;
         el('nfEmployeeHistory').innerHTML=rows.map(r=>`<details><summary>${escapeHtml(r.created_at)} · ${escapeHtml(r.store_name)} · ${escapeHtml(r.employee_name)} · ${escapeHtml(r.source)} · Product ${escapeHtml(r.product_id)}</summary><p>${escapeHtml(r.remarks)}</p><p>Account: ${escapeHtml(r.account_email)} · Task: ${escapeHtml(r.assignment_id||'—')}</p><h3>View Changes</h3><pre style="white-space:pre-wrap;overflow-wrap:anywhere">${escapeHtml(JSON.stringify(r.details,null,2))}</pre></details>`).join('')||'<p>No employee submissions recorded.</p>';
         const pager=document.createElement('div');pager.innerHTML=nemsPagerHTML('employee',nemsEmployeePage,data.has_more);el('nfEmployeeHistory').append(pager);nemsBindPager(pager,()=>nemsEmployeePage--,()=>nemsEmployeePage++,nemsEmployeeHistory);
     }catch(e){showMessage(e.message,true);}
@@ -4421,6 +4424,8 @@ async function nemsFeatureRender(){
     if(nemsMessageTimer){clearInterval(nemsMessageTimer);nemsMessageTimer=null;}
     const body=el('nfBody'),generation=++nemsFeatureGeneration,tab=nemsFeatureTab,owner=currentUser?.email;
     const valid=()=>generation===nemsFeatureGeneration&&currentUser?.email===owner&&tab===nemsFeatureTab;
+    const reportChoice=tab==='expired'&&el('nfExpiredProduct')?.value!==''?nemsFeatures.stock[Number(el('nfExpiredProduct')?.value)]:null;
+    const reportDraft=tab==='expired'?[...body.querySelectorAll('input,textarea,select')].filter(n=>n.id&&n.id!=='nfExpiredProduct'&&n.id!=='nfRecordSearch').map(n=>[n.id,n.value,n.checked]):[];
     body.onclick=null;body.innerHTML='Loading…';
     try{
         const paged=await nemsFeatureData(tab);if(!valid())return;
@@ -4440,7 +4445,7 @@ async function nemsFeatureRender(){
               <div id="nfAllStoresWrap"><label><input id="nfAllStores" type="checkbox" style="width:auto"> All stores I am authorized to access</label></div>
               <div id="nfPeopleWrap"><label for="nfPeopleSearch">Search recipients</label><input id="nfPeopleSearch" type="search" placeholder="Type a name or email" autocomplete="off"><label>Recipients</label><select id="nfMessagePeople" multiple size="6"></select><p id="nfPeopleSearchHint" aria-live="polite"></p><p id="nfContactHint">Choose one store to load its available recipients.</p></div>
               <label>Message</label><textarea id="nfMessageText" maxlength="5000"></textarea><button type="button" id="nfSendMessage">Send message</button>
-              <h3>Message History</h3><select id="nfConversation"><option value="">Choose store</option>${nemsFeatures.stores.map(s=>`<option value="${Number(s.store_id)}">${escapeHtml(s.store_name)}</option>`).join('')}</select><button type="button" id="nfRefreshMessages">Refresh messages</button><div id="nfMessages"></div><div id="nfMessagePager"></div>`;
+              <h3>Message History</h3><label for="nfMessageSearch">Search messages</label><input id="nfMessageSearch" type="search" maxlength="100" placeholder="Search message text or sender"><select id="nfConversation"><option value="">Choose store</option>${nemsFeatures.stores.map(s=>`<option value="${Number(s.store_id)}">${escapeHtml(s.store_name)}</option>`).join('')}</select><button type="button" id="nfRefreshMessages">Refresh messages</button><div id="nfMessages"></div><div id="nfMessagePager"></div>`;
             const storeSelect=el('nfMessageStores'),peopleSelect=el('nfMessagePeople'),historySelect=el('nfConversation');
             let contactGeneration=0,historyGeneration=0,historyBusy=false,historyRows=[],historyPage=1,historyVersion='';
             // Keep selected options visible when searching so recipients are never silently lost.
@@ -4473,9 +4478,9 @@ async function nemsFeatureRender(){
             const loadHistory=async(quiet=false)=>{
                 if(!active()||historyBusy)return;
                 const id=historySelect.value;if(!id){el('nfMessages').innerHTML='';return;}
-                const generation=++historyGeneration;historyBusy=true;
+                const generation=++historyGeneration,searchTerm=el('nfMessageSearch').value;historyBusy=true;
                 try{
-                    const data=await api('/api/scale/messages/'+id+'?'+new URLSearchParams({page:historyPage,limit:50,...(quiet&&historyVersion?{version:historyVersion}:{})}),{cache:'no-store'});
+                    const data=await api('/api/scale/messages/'+id+'?'+new URLSearchParams({page:historyPage,limit:50,search:el('nfMessageSearch').value,...(quiet&&historyVersion?{version:historyVersion}:{})}),{cache:'no-store'});
                     if(!active()||historySelect.value!==id||generation!==historyGeneration)return;
                     if(data.unchanged)return;historyVersion=data.version||'';
                     const rows=data.records;
@@ -4487,8 +4492,9 @@ async function nemsFeatureRender(){
                     historyRows=rows;
                     el('nfMessages').innerHTML=rows.length?nfTable(['Date','Sender',...(currentUser.role==='ADMIN'?['Role']:[]),'Message','Recipients / Read status','Reply'],rows.map((r,i)=>'<tr>'+nfCell(dateTimeText(r.created_at))+nfCell(r.sender_email)+(currentUser.role==='ADMIN'?nfCell(r.sender_role):'')+nfCell(r.message_text)+nfCell((r.recipients||[]).map(n=>n.email+': '+(n.read_at?'Read '+dateTimeText(n.read_at):'Unread')).join('; ')||'Legacy message')+`<td>${r.sender_email.toLowerCase()!==owner.toLowerCase()?'<button type="button" data-nf-reply="'+i+'">Reply to sender</button>':''}</td></tr>`)):'<p>No messages to show for this store.</p>';
                     await nemsRefreshUnreadBadge(true);
-                }catch(e){if(active()&&!quiet)showMessage(e.message,true);}finally{historyBusy=false;if(active()&&historySelect.value!==id)void loadHistory();}
+                }catch(e){if(active()&&!quiet)showMessage(e.message,true);}finally{historyBusy=false;if(active()&&(historySelect.value!==id||el('nfMessageSearch').value!==searchTerm))void loadHistory();}
             };
+            let messageSearchTimer;el('nfMessageSearch').oninput=()=>{historyPage=1;historyVersion='';historyGeneration++;clearTimeout(messageSearchTimer);messageSearchTimer=setTimeout(()=>void loadHistory(),350);};
             storeSelect.onchange=loadContacts;el('nfMessageMode').onchange=loadContacts;
             historySelect.onchange=()=>{historyPage=1;historyVersion='';historyGeneration++;if(!historyBusy)void loadHistory();};
             el('nfRefreshMessages').onclick=()=>loadHistory();
@@ -4523,11 +4529,13 @@ async function nemsFeatureRender(){
                 <label>Action</label><select id="nfExpiredStatus"><option>ON STORE</option><option>DISPOSE</option><option>TRANSFER TO DC</option></select><label>Employee Full Name</label><input id="nfExpiredEmployee" maxlength="120"><label>Store Remarks / Why the expired product remains ON STORE</label><textarea id="nfExpiredRemarks" maxlength="2000"></textarea><label><input id="nfOnStoreConfirm" type="checkbox" style="width:auto"> For ON STORE, I confirm that my remarks explain why this expired product remains in the store.</label><button type="button" id="nfReport">Submit for AS review</button>`;
             }
             body.innerHTML=form+'<h3>Report and Validation History</h3>'+nfTable(['Store','Product / Expiry','Action / Quantity','Employee / Remarks','AS Decision','Review'],nemsFeatures.reports.map(r=>'<tr>'+nfCell(r.store_name)+nfCell(r.product_name+' · '+String(r.expiration_date).slice(0,10))+nfCell(r.product_status+' · '+r.quantity)+nfCell(r.employee_name+' · '+r.store_remarks)+nfCell(r.validation_status+' · '+(r.validated_by||'')+' · '+(r.validation_remarks||'')+' · '+(r.validated_at?dateTimeText(r.validated_at):''))+`<td>${currentUser.role==='AS'&&r.validation_status==='PENDING'?`<button type="button" data-nf-validate="${Number(r.report_id)}" data-decision="APPROVED">Approve</button><button type="button" class="danger" data-nf-validate="${Number(r.report_id)}" data-decision="REJECTED">Reject</button>`:''}</td></tr>`));
+            for(const [id,value,checked] of reportDraft){const field=el(id);if(field){field.value=value;field.checked=checked;}}
             if(el('nfExpiredSearch')){
                 let stockPage=1,stockGeneration=0,stockTimer;
                 const loadStock=async()=>{const own=++stockGeneration;
                     try{const data=await api('/api/scale/expired-stock?'+new URLSearchParams({page:stockPage,limit:50,search:el('nfExpiredSearch').value}));if(!valid()||own!==stockGeneration)return;
                         nemsFeatures.stock=data.records;el('nfExpiredProduct').innerHTML='<option value="">Choose expired entry</option>'+data.records.map((r,i)=>`<option value="${i}">${escapeHtml(r.product_name)} · ${escapeHtml(String(r.expiration_date).slice(0,10))} · ${Number(r.quantity)} pcs</option>`).join('');
+                        if(reportChoice){const selected=data.records.findIndex(r=>r.product_id===reportChoice.product_id&&String(r.expiration_date).slice(0,10)===String(reportChoice.expiration_date).slice(0,10));el('nfExpiredProduct').value=selected<0?'':String(selected);}
                         el('nfExpiredStockPager').innerHTML=nemsPagerHTML('expired-stock',stockPage,data.has_more);nemsBindPager(el('nfExpiredStockPager'),()=>stockPage--,()=>stockPage++,loadStock);
                     }catch(e){if(valid())showMessage(e.message,true);}
                 };
@@ -4594,8 +4602,15 @@ async function nemsFeatureRender(){
                 try{await api('/api/admin/products/'+id+'/barcodes',{method:'POST',body:JSON.stringify({barcode})});showMessage('Additional barcode registered.');}catch(e){showMessage(e.message,true);}
             };
         }else if(nemsFeatureTab==='email'&&currentUser.role==='ADMIN'){
-            const rows=await api('/api/admin/email-status');body.innerHTML='<p>SENT means Brevo confirmed delivery through the authenticated webhook. PENDING may mean queued or accepted with delivery still unconfirmed.</p>'+nfTable(['Recipient','Subject','Status','Delivered At','Provider details'],rows.map(r=>'<tr>'+nfCell(r.recipient_email)+nfCell(r.subject)+nfCell(r.delivery_status)+nfCell(r.sent_at?dateTimeText(r.sent_at):'')+nfCell(r.error_message)+'</tr>'));
+            const rows=paged.records;body.innerHTML='<p>SENT means Brevo confirmed delivery through the authenticated webhook. PENDING may mean queued or accepted with delivery still unconfirmed.</p>'+nfTable(['Recipient','Subject','Status','Delivered At','Provider details'],rows.map(r=>'<tr>'+nfCell(r.recipient_email)+nfCell(r.subject)+nfCell(r.delivery_status)+nfCell(r.sent_at?dateTimeText(r.sent_at):'')+nfCell(r.error_message)+'</tr>'));
         }else{nemsFeatureTab='notifications';await nemsFeatureRender();}
+        if(paged&&valid()){
+            const wrap=document.createElement('div');wrap.innerHTML='<label for="nfRecordSearch">Search records</label><input id="nfRecordSearch" type="search" maxlength="100" placeholder="Type a name, product, message or status"><p>Searches all accessible pages.</p>';
+            const input=wrap.querySelector('input');input.value=nemsFeatureSearch[tab]||'';
+            let timer;input.oninput=()=>{nemsFeatureSearch[tab]=input.value;nemsFeaturePages[tab]=1;clearTimeout(timer);timer=setTimeout(()=>{if(valid())void nemsFeatureRender().then(()=>{const next=el('nfRecordSearch');if(next){next.focus();next.setSelectionRange(next.value.length,next.value.length);}});},350);};
+            body.prepend(wrap);
+            for(const [id,value,checked] of reportDraft){const field=el(id);if(field&&id!=='nfRecordSearch'){field.value=value;field.checked=checked;}}
+        }
         if(paged&&valid()){const pager=document.createElement('div');pager.innerHTML=nemsPagerHTML(tab,nemsFeaturePages[tab],paged.has_more);body.append(pager);nemsBindPager(pager,()=>nemsFeaturePages[tab]--,()=>nemsFeaturePages[tab]++,nemsFeatureRender);}
     }catch(e){if(valid())body.textContent=e.message;}
 }
@@ -4653,6 +4668,51 @@ function nemsScaleSetup(){
     };
 }
 nemsScaleSetup();
+
+// Add local search to long menus without changing or losing selections.
+function nemsSearchableChoices(select){
+    if(select.dataset.searchReady||select.options.length<8)return;
+    const existing=new Set(['nfMessageStores','nfMessagePeople','nfExpiredProduct','nemsTaskSupplierList']);
+    if(existing.has(select.id))return;
+    // Menus with their own dedicated search retain that implementation.
+    const related={nemsTaskSupplier:'nemsTaskSupplierSearch',nemsUserASStores:'nemsUserASSearch'};
+    if(related[select.id]&&el(related[select.id]))return;
+    select.dataset.searchReady='1';
+    const input=document.createElement('input');input.type='search';input.placeholder='Search options…';input.maxLength=100;input.setAttribute('aria-label','Search '+(select.previousElementSibling?.textContent||'options').slice(0,100));
+    const hint=document.createElement('small');hint.setAttribute('aria-live','polite');
+    select.before(input);select.after(hint);
+    let choices=[...select.options];
+    const watch=new MutationObserver(()=>{choices=[...select.options];filter();});
+    function filter(){
+        watch.disconnect();const term=input.value.trim().toLocaleLowerCase();
+        const selected=new Set([...select.selectedOptions].map(o=>o.value));
+        const visible=choices.filter(o=>!o.value||selected.has(o.value)||o.text.toLocaleLowerCase().includes(term));
+        select.replaceChildren(...visible);
+        for(const option of choices)option.selected=selected.has(option.value);
+        if(!select.multiple&&selected.size)select.value=[...selected][0];
+        if(!selected.size)select.selectedIndex=-1;
+        hint.textContent=term?choices.filter(o=>o.value&&o.text.toLocaleLowerCase().includes(term)).length+' matches. Selected options stay visible.':'';
+        watch.observe(select,{childList:true,subtree:true,characterData:true});
+    }
+    input.oninput=filter;watch.observe(select,{childList:true,subtree:true,characterData:true});
+}
+// Local searches are explicitly labeled; paged history lists use server search above.
+function nemsLocalTableSearch(table){
+    if(table.dataset.searchReady||table.closest('#nfMessages,#nfEmployeeHistory')||table.closest('#nfBody')&&!table.closest('#nfPreviewBody'))return;
+    if(table.tBodies[0]?.rows.length<8)return;
+    table.dataset.searchReady='1';const wrap=table.closest('.tablewrap')||table;
+    const input=document.createElement('input');input.type='search';input.placeholder='Search loaded rows…';input.setAttribute('aria-label','Search loaded rows');
+    const hint=document.createElement('small');wrap.before(input,hint);
+    const apply=()=>{const term=input.value.trim().toLocaleLowerCase();let count=0;for(const row of table.tBodies[0].rows){row.hidden=!!term&&!row.textContent.toLocaleLowerCase().includes(term);if(!row.hidden)count++;}hint.textContent=term?count+' matching loaded rows.':'';};
+    input.oninput=apply;new MutationObserver(apply).observe(table,{childList:true,subtree:true});
+}
+let nemsSearchDiscoveryTimer;
+const nemsSearchObserver=new MutationObserver(()=>{clearTimeout(nemsSearchDiscoveryTimer);nemsSearchDiscoveryTimer=setTimeout(()=>{
+    document.querySelectorAll('select:not([data-search-ready])').forEach(nemsSearchableChoices);
+    // Only preview/error tables need an additional local filter; other paged lists have dedicated search.
+    document.querySelectorAll('#nfPreviewBody table:not([data-search-ready])').forEach(nemsLocalTableSearch);
+},100);});
+nemsSearchObserver.observe(el('application'),{childList:true,subtree:true});
 
 </script>
  
