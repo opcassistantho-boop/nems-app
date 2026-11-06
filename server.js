@@ -530,121 +530,68 @@ const monitoringEntries = `
       AND v.quantity > 0
 `;
  
-const combinedMonitoringEntries = `
-                WITH saved_task_rows AS (
-                    SELECT DISTINCT ON (LOWER(TRIM(s.store_email)), p.product_id, v.expiration_date)
-                        NULL::integer AS monitoring_id,
-                        s.store_name, s.store_email,
-                        p.product_id, p.sku, p.product_name,
-                        p.supplier_name AS supplier,
-                        p.master_barcode AS store_barcode,
-                        p.master_srp AS srp,
-                        pr.saved_at AS updated_at,
-                        pr.saved_by AS updated_by,
-                        p.shelf_life, p.condition, p.remarks, p.master_barcode,
-                        v.expiration_date, v.quantity, v.slot,
-                         (SELECT ar.action_remarks FROM public.nems_task_action_remarks ar
-                          WHERE LOWER(ar.store_email) = LOWER(s.store_email)
-                            AND ar.product_id = p.product_id
-                            AND ar.expiration_date = v.expiration_date
-                          LIMIT 1) AS action_remarks
-                    FROM public.nems_task_product_progress pr
-                    JOIN public.nems_task_assignments a ON a.assignment_id = pr.assignment_id
-                    JOIN public.stores s ON s.store_id = a.store_id
-                    JOIN public.products p ON p.product_id = pr.product_id
-                    CROSS JOIN LATERAL (
-                        SELECT x.expiration_date, x.quantity, x.slot
-                        FROM (VALUES
-                            (pr.expiration_1, pr.qty_1, 1),
-                            (pr.expiration_2, pr.qty_2, 2),
-                            (pr.expiration_3, pr.qty_3, 3)
-                        ) AS x(expiration_date, quantity, slot)
-                        UNION ALL
-                        SELECT COALESCE(e.item->>'date', e.item->>'expiration_date')::date,
-                               COALESCE(e.item->>'qty', e.item->>'quantity')::integer,
-                               e.ordinality::integer + 3
-                        FROM jsonb_array_elements(COALESCE(pr.extra_expirations, '[]'::jsonb))
-                             WITH ORDINALITY AS e(item, ordinality)
-                    ) v
-                    WHERE COALESCE(pr.no_stock, FALSE) = FALSE
-                      AND v.expiration_date IS NOT NULL
-                      AND v.quantity > 0
-                      AND s.store_email IS NOT NULL
-                    ORDER BY LOWER(TRIM(s.store_email)), p.product_id,
-                             v.expiration_date, pr.saved_at DESC NULLS LAST,
-                             pr.assignment_id DESC
-                ), combined AS (
-                    SELECT * FROM (${monitoringEntries})
-                    UNION ALL
-                    SELECT t.* FROM saved_task_rows t
-                    WHERE NOT EXISTS (
-                        SELECT 1 FROM (${monitoringEntries}) existing
-                        WHERE LOWER(TRIM(existing.store_email)) = LOWER(TRIM(t.store_email))
-                          AND existing.product_id = t.product_id
-                          AND existing.expiration_date = t.expiration_date
-                    )
-                )
- SELECT * FROM combined c WHERE NOT EXISTS (
-                    SELECT 1 FROM public.nems_expired_archive ar
-                    WHERE LOWER(ar.store_email)=LOWER(c.store_email)
-                      AND ar.product_id=c.product_id AND ar.restored_at IS NULL
-                      AND (ar.monitoring_snapshot->>'expiration_date')::date=c.expiration_date
-                )`;
-const rawCombinedMonitoringEntries = `
-                WITH saved_task_rows AS (
-                    SELECT DISTINCT ON (LOWER(TRIM(s.store_email)), p.product_id, v.expiration_date)
-                        NULL::integer AS monitoring_id,
-                        s.store_name, s.store_email,
-                        p.product_id, p.sku, p.product_name,
-                        p.supplier_name AS supplier,
-                        p.master_barcode AS store_barcode,
-                        p.master_srp AS srp,
-                        pr.saved_at AS updated_at,
-                        pr.saved_by AS updated_by,
-                        p.shelf_life, p.condition, p.remarks, p.master_barcode,
-                        v.expiration_date, v.quantity, v.slot,
-                         (SELECT ar.action_remarks FROM public.nems_task_action_remarks ar
-                          WHERE LOWER(ar.store_email) = LOWER(s.store_email)
-                            AND ar.product_id = p.product_id
-                            AND ar.expiration_date = v.expiration_date
-                          LIMIT 1) AS action_remarks
-                    FROM public.nems_task_product_progress pr
-                    JOIN public.nems_task_assignments a ON a.assignment_id = pr.assignment_id
-                    JOIN public.stores s ON s.store_id = a.store_id
-                    JOIN public.products p ON p.product_id = pr.product_id
-                    CROSS JOIN LATERAL (
-                        SELECT x.expiration_date, x.quantity, x.slot
-                        FROM (VALUES
-                            (pr.expiration_1, pr.qty_1, 1),
-                            (pr.expiration_2, pr.qty_2, 2),
-                            (pr.expiration_3, pr.qty_3, 3)
-                        ) AS x(expiration_date, quantity, slot)
-                        UNION ALL
-                        SELECT COALESCE(e.item->>'date', e.item->>'expiration_date')::date,
-                               COALESCE(e.item->>'qty', e.item->>'quantity')::integer,
-                               e.ordinality::integer + 3
-                        FROM jsonb_array_elements(COALESCE(pr.extra_expirations, '[]'::jsonb))
-                             WITH ORDINALITY AS e(item, ordinality)
-                    ) v
-                    WHERE COALESCE(pr.no_stock, FALSE) = FALSE
-                      AND v.expiration_date IS NOT NULL
-                      AND v.quantity > 0
-                      AND s.store_email IS NOT NULL
-                    ORDER BY LOWER(TRIM(s.store_email)), p.product_id,
-                             v.expiration_date, pr.saved_at DESC NULLS LAST,
-                             pr.assignment_id DESC
-                ), combined AS (
-                    SELECT * FROM (${monitoringEntries})
-                    UNION ALL
-                    SELECT t.* FROM saved_task_rows t
-                    WHERE NOT EXISTS (
-                        SELECT 1 FROM (${monitoringEntries}) existing
-                        WHERE LOWER(TRIM(existing.store_email)) = LOWER(TRIM(t.store_email))
-                          AND existing.product_id = t.product_id
-                          AND existing.expiration_date = t.expiration_date
-                    )
-                )
- SELECT * FROM combined`;
+// Both Store Encoding and saved task progress are live stock sources.
+// Creating an assignment alone never suppresses stock. Task submission is independent.
+const taskDateInScopeSQL=(scope,date,savedAt)=>{
+    const day=`(${savedAt} AT TIME ZONE 'Asia/Manila')::date`;
+    return `(${scope}='BOTH' AND ${date}<=(${day}+90)
+        OR ${scope}='EXPIRED' AND ${date}<${day}
+        OR ${scope}='NEAR' AND ${date} BETWEEN ${day} AND (${day}+90))`;
+};
+const currentStockSQL = `WITH task_snapshots AS (
+    SELECT pr.*,a.expiry_scope,s.store_name,s.store_email,p.sku,p.product_name,
+           p.supplier_name,p.master_barcode,p.master_srp,p.shelf_life,p.condition,p.remarks
+    FROM public.nems_task_product_progress pr
+    JOIN public.nems_task_assignments a ON a.assignment_id=pr.assignment_id
+    JOIN public.stores s ON s.store_id = a.store_id
+    JOIN public.products p ON p.product_id=pr.product_id
+    WHERE s.store_email IS NOT NULL AND pr.saved_at IS NOT NULL
+), task_dates AS (
+    SELECT ts.*,v.expiration_date,v.quantity,v.slot
+    FROM task_snapshots ts CROSS JOIN LATERAL (
+        SELECT x.expiration_date,x.quantity,x.slot FROM (VALUES
+          (ts.expiration_1,ts.qty_1,1),(ts.expiration_2,ts.qty_2,2),(ts.expiration_3,ts.qty_3,3)
+        ) x(expiration_date,quantity,slot)
+        UNION ALL
+        SELECT COALESCE(e.item->>'date',e.item->>'expiration_date')::date,
+               COALESCE(e.item->>'qty',e.item->>'quantity')::integer,e.ordinality::integer+3
+        FROM jsonb_array_elements(COALESCE(ts.extra_expirations,'[]'::jsonb)) WITH ORDINALITY e(item,ordinality)
+    ) v WHERE NOT COALESCE(ts.no_stock,FALSE) AND v.expiration_date IS NOT NULL
+), task_rows AS (
+    SELECT DISTINCT ON (LOWER(TRIM(t.store_email)),t.product_id,t.expiration_date)
+        NULL::integer AS monitoring_id,t.store_name,t.store_email,t.product_id,t.sku,t.product_name,
+        t.supplier_name AS supplier,t.master_barcode AS store_barcode,t.master_srp AS srp,
+        t.saved_at AS updated_at,t.saved_by AS updated_by,t.shelf_life,t.condition,t.remarks,t.master_barcode,
+        t.expiration_date,t.quantity,t.slot,
+        (SELECT ar.action_remarks FROM public.nems_task_action_remarks ar
+          WHERE LOWER(ar.store_email)=LOWER(t.store_email) AND ar.product_id=t.product_id
+          AND ar.expiration_date=t.expiration_date LIMIT 1) AS action_remarks
+    FROM task_dates t WHERE t.quantity>0
+      AND NOT EXISTS(SELECT 1 FROM public.monitoring m
+          WHERE LOWER(TRIM(m.store_email))=LOWER(TRIM(t.store_email)) AND m.product_id=t.product_id
+          AND m.updated_at>t.saved_at)
+      AND NOT EXISTS(SELECT 1 FROM task_snapshots newer
+          WHERE LOWER(TRIM(newer.store_email))=LOWER(TRIM(t.store_email)) AND newer.product_id=t.product_id
+          AND (newer.saved_at>t.saved_at OR newer.saved_at=t.saved_at AND newer.assignment_id>t.assignment_id)
+          AND (${taskDateInScopeSQL('newer.expiry_scope','t.expiration_date','newer.saved_at')}
+               OR EXISTS(SELECT 1 FROM task_dates nd WHERE nd.assignment_id=newer.assignment_id
+                  AND nd.product_id=newer.product_id AND nd.expiration_date=t.expiration_date)))
+    ORDER BY LOWER(TRIM(t.store_email)),t.product_id,t.expiration_date,t.saved_at DESC,t.assignment_id DESC,t.slot
+), combined AS (
+    SELECT m.* FROM (${monitoringEntries}) m
+    WHERE NOT EXISTS(SELECT 1 FROM task_snapshots ts
+       WHERE LOWER(TRIM(ts.store_email))=LOWER(TRIM(m.store_email)) AND ts.product_id=m.product_id
+       AND ts.saved_at>=COALESCE(m.updated_at,'-infinity'::timestamptz)
+       AND (${taskDateInScopeSQL('ts.expiry_scope','m.expiration_date','ts.saved_at')}
+            OR EXISTS(SELECT 1 FROM task_dates td WHERE td.assignment_id=ts.assignment_id
+              AND td.product_id=ts.product_id AND td.expiration_date=m.expiration_date)))
+    UNION ALL SELECT * FROM task_rows
+)`;
+const rawCombinedMonitoringEntries = `${currentStockSQL} SELECT * FROM combined`;
+const combinedMonitoringEntries = `${currentStockSQL} SELECT * FROM combined c WHERE NOT EXISTS (
+    SELECT 1 FROM public.nems_expired_archive ar WHERE LOWER(ar.store_email)=LOWER(c.store_email)
+      AND ar.product_id=c.product_id AND ar.restored_at IS NULL
+      AND (ar.monitoring_snapshot->>'expiration_date')::date=c.expiration_date)`;
 
 // ==========================================
 // EXPIRATION CATEGORY
@@ -2033,6 +1980,10 @@ app.get(
 // ==========================================
 // Requires nems-tasks.js in the same folder as server.js.
 require('./nems-tasks')({
+    getMonitoringStock: async (user,supplier) => {
+        const scope=storeScope(user);
+        return (await pool.query(`SELECT m.product_id,m.expiration_date,m.quantity FROM (${scopedMonitoringSQL(user)}) m WHERE ${scope.sql} AND LOWER(TRIM(m.supplier))=LOWER(TRIM($${scope.args.length+1}::text)) ORDER BY m.product_id,m.expiration_date`,[...scope.args,supplier])).rows;
+    },
     app,
     pool,
     authenticate,
