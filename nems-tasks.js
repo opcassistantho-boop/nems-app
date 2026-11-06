@@ -115,8 +115,7 @@ module.exports = function registerTaskRoutes({
         async (req, res) => {
             const body = req.body || {};
  
-            const supplierId = positiveId(body.supplier_id);
- 
+            const supplierIds=[...new Set((Array.isArray(body.supplier_ids)?body.supplier_ids:[body.supplier_id]).map(positiveId))];
             const rawStoreIds = Array.isArray(body.store_ids)
                 ? body.store_ids
                 : body.store_id !== undefined
@@ -130,7 +129,7 @@ module.exports = function registerTaskRoutes({
             const scope = validScope(body.expiry_scope);
             const dueAt = parseDueAt(body.due_at);
  
-            if (!supplierId) {
+            if (!supplierIds.length || supplierIds.some(id=>id===null)) {
                 return fail(res, 400, 'Select a valid supplier');
             }
  
@@ -166,12 +165,12 @@ module.exports = function registerTaskRoutes({
                     `
                     SELECT supplier_id
                     FROM public.suppliers
-                    WHERE supplier_id = $1
+                    WHERE supplier_id = ANY($1::bigint[])
                     `,
-                    [supplierId]
+                    [supplierIds]
                 );
  
-                if (!supplierCheck.rowCount) {
+                if (supplierCheck.rowCount !== supplierIds.length) {
                     await client.query('ROLLBACK');
                     return fail(res, 404, 'Supplier not found');
                 }
@@ -194,64 +193,25 @@ module.exports = function registerTaskRoutes({
                     );
                 }
  
-                const existing = await client.query(
-                    `
-                    SELECT store_id
-                    FROM public.nems_task_assignments
-                    WHERE supplier_id = $1
-                      AND store_id = ANY($2::bigint[])
-                    `,
-                    [supplierId, storeIds]
-                );
- 
-                if (existing.rowCount) {
-                    await client.query('ROLLBACK');
- 
-                    return res.status(409).json({
-                        error:
-                            'One or more selected stores already have an assignment for this supplier. Existing assignments were not changed.',
-                        conflicting_store_ids:
-                            existing.rows.map(row => row.store_id)
-                    });
-                }
- 
-                const created = [];
- 
-                for (const storeId of storeIds) {
-                    const result = await client.query(
-                        `
-                        INSERT INTO public.nems_task_assignments (
-                            store_id,
-                            supplier_id,
-                            assigned_by,
-                            expiry_scope,
-                            due_at,
-                            due_date,
-                            status
-                        )
-                        VALUES (
-                            $1, $2, $3, $4, $5,
-                            $5::timestamptz::date,
-                            'ACTIVE'
-                        )
-                        RETURNING *
-                        `,
-                        [
-                            storeId,
-                            supplierId,
-                            assignedBy,
-                            scope,
-                            dueAt
-                        ]
-                    );
- 
-                    created.push(result.rows[0]);
-                }
- 
+                // Serialize task creation so concurrent admins cannot create duplicate pairs.
+                await client.query("SELECT pg_advisory_xact_lock(hashtextextended('nems-task-create',0))");
+                const result=await client.query(`
+                    INSERT INTO public.nems_task_assignments
+                    (store_id,supplier_id,assigned_by,expiry_scope,due_at,due_date,status)
+                    SELECT st.store_id,sp.supplier_id,$3,$4,$5::timestamptz,$5::timestamptz::date,'ACTIVE'
+                    FROM unnest($1::bigint[]) AS st(store_id)
+                    CROSS JOIN unnest($2::bigint[]) AS sp(supplier_id)
+                    WHERE NOT EXISTS (SELECT 1 FROM public.nems_task_assignments a
+                        WHERE a.store_id=st.store_id AND a.supplier_id=sp.supplier_id)
+                    RETURNING *`,[storeIds,supplierIds,assignedBy,scope,dueAt]);
+                const created=result.rows;
+                const skipped=storeIds.length*supplierIds.length-created.length;
+
                 await client.query('COMMIT');
  
                 return res.status(201).json({
-                    message: 'Task assignments created',
+                    message: `${created.length} task assignments created; ${skipped} existing assignments skipped.`,
+                    skipped,
                     count: created.length,
                     tasks: created
                 });
@@ -962,4 +922,3 @@ module.exports = function registerTaskRoutes({
  
 };
  
-

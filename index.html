@@ -3041,6 +3041,7 @@ let nemsTaskSuppliers = [];
 let nemsTaskRows = [];
 let nemsAdminTaskPage=1,nemsAdminTaskTimer;
 const nemsSelectedStoreIds = new Set();
+const nemsSelectedSupplierIds = new Set();
  
 function nemsTaskDeadline() {
     const choice = el('nemsTaskDeadline').value;
@@ -3070,15 +3071,12 @@ function nemsTaskStoresRender() {
 }
  
 function nemsTaskSuppliersRender() {
-    const search = el('nemsTaskSupplierSearch').value.trim().toLowerCase();
-    const select = el('nemsTaskSupplier');
-    const previous = select.value;
-    select.innerHTML = '<option value="">Select supplier</option>' + nemsTaskSuppliers
-        .filter(s => String(s.supplier_name || '').toLowerCase().includes(search))
-        .map(s => `<option value="${Number(s.supplier_id)}">${escapeHtml(s.supplier_name)}</option>`).join('');
-    if ([...select.options].some(o => o.value === previous)) select.value = previous;
+    const search=el('nemsTaskSupplierSearch').value.trim().toLowerCase();
+    const visible=nemsTaskSuppliers.filter(s=>String(s.supplier_name||'').toLowerCase().includes(search));
+    el('nemsTaskSuppliersList').innerHTML=visible.map(s=>`<label class="nems-task-store"><input type="checkbox" data-task-supplier="${Number(s.supplier_id)}" ${nemsSelectedSupplierIds.has(Number(s.supplier_id))?'checked':''}> ${escapeHtml(s.supplier_name)}</label>`).join('')||'<p class="muted">No matching suppliers.</p>';
+    el('nemsTaskSupplierCount').textContent=`${nemsSelectedSupplierIds.size} selected · ${visible.length} matching · ${nemsTaskSuppliers.length} total`;
 }
- 
+
 function nemsTaskRowsRender() {
     const search = el('nemsTaskListSearch').value.trim().toLowerCase();
     const status = el('nemsTaskStatus').value;
@@ -3254,20 +3252,20 @@ async function nemsTaskLoad() {
  
 async function nemsTaskCreate(event) {
     event.preventDefault();
-    const supplierId = Number(el('nemsTaskSupplier').value);
-    if (!supplierId) return showMessage('Select a supplier.', true);
+    const supplierIds = [...nemsSelectedSupplierIds];
+    if (!supplierIds.length) return showMessage('Select at least one supplier.', true);
     if (!nemsSelectedStoreIds.size) return showMessage('Select at least one store.', true);
     let dueAt;
     try { dueAt = nemsTaskDeadline(); }
     catch (error) { return showMessage(error.message, true); }
-    if (!confirm(`Assign this supplier to ${nemsSelectedStoreIds.size} store(s)?`)) return;
+    if (!confirm(`Assign ${supplierIds.length} supplier(s) to ${nemsSelectedStoreIds.size} store(s)? Up to ${supplierIds.length*nemsSelectedStoreIds.size} tasks. Existing assignments will be skipped.`)) return;
     const btn = el('nemsTaskSave');
     btn.disabled = true;
     try {
         const result = await api('/api/admin/tasks', {
             method: 'POST',
             body: JSON.stringify({
-                supplier_id: supplierId,
+                supplier_ids: supplierIds,
                 store_ids: [...nemsSelectedStoreIds],
                 expiry_scope: el('nemsTaskScope').value,
                 due_at: dueAt
@@ -3275,6 +3273,7 @@ async function nemsTaskCreate(event) {
         });
         showMessage(result.message || 'Assignments created.');
         nemsSelectedStoreIds.clear();
+        nemsSelectedSupplierIds.clear();
         await nemsTaskLoad();
     } catch (error) {
         showMessage(error.message, true);
@@ -3303,7 +3302,7 @@ function nemsTaskSetup() {
             <p class="muted">Assign monitoring tasks by supplier to one or more stores. Existing assignments will not be overwritten.</p>
             <form id="nemsTaskForm">
                 <div class="nems-task-grid">
-                    <div><label>Find supplier</label><input id="nemsTaskSupplierSearch" placeholder="Search supplier name"><label>Supplier *</label><select id="nemsTaskSupplier" required><option value="">Select supplier</option></select></div>
+                    <div><label>Find supplier</label><input id="nemsTaskSupplierSearch" placeholder="Search supplier name"><label>Suppliers *</label><div class="nems-task-actions"><button type="button" id="nemsTaskSuppliersAll">Select all suppliers</button><button type="button" id="nemsTaskSuppliersMatching">Select matching</button><button type="button" id="nemsTaskSuppliersClear">Clear</button></div><p class="muted" id="nemsTaskSupplierCount"></p><div class="nems-task-store-list" style="max-height:220px;overflow:auto" id="nemsTaskSuppliersList">Loading...</div></div>
                     <div><label>Expiry scope</label><select id="nemsTaskScope"><option value="BOTH">Expired and Near Expiry</option><option value="EXPIRED">Expired only</option><option value="NEAR">Near Expiry (0–90 days)</option></select></div>
                     <div><label>Deadline</label><select id="nemsTaskDeadline"><option value="none">No deadline</option><option value="now">Immediately</option><option value="0">Today</option><option value="1">Tomorrow</option><option value="3">3 days</option><option value="7">7 days</option><option value="14">14 days</option><option value="30">30 days</option><option value="custom">Custom</option></select><div id="nemsTaskCustomBox" class="hidden"><label>Custom date and time</label><input id="nemsTaskCustomDeadline" type="datetime-local"></div></div>
                 </div>
@@ -3323,6 +3322,10 @@ function nemsTaskSetup() {
     el('application').appendChild(page);
     el('nemsTaskStoreSearch').addEventListener('input', nemsTaskStoresRender);
     el('nemsTaskSupplierSearch').addEventListener('input', nemsTaskSuppliersRender);
+    el('nemsTaskSuppliersList').addEventListener('change',event=>{const box=event.target.closest('[data-task-supplier]');if(!box)return;const id=Number(box.dataset.taskSupplier);box.checked?nemsSelectedSupplierIds.add(id):nemsSelectedSupplierIds.delete(id);nemsTaskSuppliersRender();});
+    el('nemsTaskSuppliersAll').addEventListener('click',()=>{nemsTaskSuppliers.forEach(s=>nemsSelectedSupplierIds.add(Number(s.supplier_id)));nemsTaskSuppliersRender();});
+    el('nemsTaskSuppliersMatching').addEventListener('click',()=>{const term=el('nemsTaskSupplierSearch').value.trim().toLowerCase();nemsTaskSuppliers.filter(s=>String(s.supplier_name||'').toLowerCase().includes(term)).forEach(s=>nemsSelectedSupplierIds.add(Number(s.supplier_id)));nemsTaskSuppliersRender();});
+    el('nemsTaskSuppliersClear').addEventListener('click',()=>{nemsSelectedSupplierIds.clear();nemsTaskSuppliersRender();});
     el('nemsTaskListSearch').addEventListener('input', ()=>{clearTimeout(nemsAdminTaskTimer);nemsAdminTaskPage=1;nemsAdminTaskTimer=setTimeout(()=>void nemsTaskLoad(),300);});
     el('nemsTaskStatus').addEventListener('change', ()=>{nemsAdminTaskPage=1;void nemsTaskLoad();});
     el('nemsTaskRows').addEventListener('click', event => {
@@ -4741,4 +4744,3 @@ nemsSearchObserver.observe(el('application'),{childList:true,subtree:true});
  
 </body>
 </html>
-
