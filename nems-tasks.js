@@ -4,7 +4,7 @@ module.exports = function registerTaskRoutes({
     app,
     pool,
     authenticate,
-    adminOnly, storeScope, lockProduct, assertDatesNotArchived, businessDate, scanOverdueTasks
+    adminOnly, getMonitoringStock, storeScope, lockProduct, assertDatesNotArchived, businessDate, scanOverdueTasks
 }) {
     if (!app || !pool || !authenticate || !adminOnly) {
         throw new Error('Missing NEMS task module dependencies');
@@ -619,7 +619,7 @@ module.exports = function registerTaskRoutes({
         if (!id) return fail(res, 400, 'Invalid task ID');
         try {
             const task = await pool.query(`
-                SELECT a.assignment_id, a.status, COALESCE(a.due_at, ((a.due_date+1)::timestamp AT TIME ZONE 'Asia/Manila')) AS due_at, sp.supplier_name,
+                SELECT a.assignment_id, a.status, a.expiry_scope, COALESCE(a.due_at, ((a.due_date+1)::timestamp AT TIME ZONE 'Asia/Manila')) AS due_at, sp.supplier_name,
                        EXISTS (
                          SELECT 1 FROM public.nems_monitoring_submissions sub
                          WHERE sub.assignment_id = a.assignment_id
@@ -650,50 +650,25 @@ module.exports = function registerTaskRoutes({
                   AND LOWER(TRIM(p.supplier_name)) = LOWER(TRIM($2))
                 ORDER BY p.product_name, p.product_id
             `, [id, a.supplier_name]);
-            // Read-only synchronization: show existing, non-expired Monitoring
-            // stock as a task draft when no task progress has been saved.
-            // Saving task progress is still an explicit STORE action.
-            const monitoring = await pool.query(`
-                SELECT m.product_id, m.expiration_1, m.qty_1,
-                       m.expiration_2, m.qty_2, m.expiration_3, m.qty_3,
-                       COALESCE(m.extra_expirations, '[]'::jsonb) AS extra_expirations
-                FROM public.monitoring m
-                JOIN public.stores s ON LOWER(TRIM(s.store_email)) = LOWER(TRIM(m.store_email))
-                WHERE LOWER(TRIM(s.store_name)) = LOWER(TRIM($1))
-                  AND LOWER(TRIM(m.store_email)) = LOWER(TRIM($2))
-                  AND LOWER(TRIM(m.supplier)) = LOWER(TRIM($3))
-            `, [getStoreName(req), getEmail(req), a.supplier_name]);
-            const monitoringByProduct = new Map(monitoring.rows.map(m => [Number(m.product_id), m]));
-            const today = businessDate();
-            const mergedProducts = products.rows.map(product => {
-                if (product.encoded) return product;
-                const m = monitoringByProduct.get(Number(product.product_id));
-                if (!m) return product;
-                const valid = [];
-                for (let i = 1; i <= 3; i++) {
-                    const date = m[`expiration_${i}`];
-                    const qty = m[`qty_${i}`];
-                    if (date && qty != null) {
-                        const iso = new Date(date).toISOString().slice(0, 10);
-                        if (iso >= today) valid.push({date: iso, qty: Number(qty)});
-                    }
-                }
-                for (const item of (Array.isArray(m.extra_expirations) ? m.extra_expirations : [])) {
-                    const rawDate = item.date || item.expiration_date;
-                    if (!rawDate) continue;
-                    const iso = String(rawDate).slice(0, 10);
-                    const qty = Number(item.qty ?? item.quantity);
-                    if (iso >= today && Number.isInteger(qty) && qty >= 0)
-                        valid.push({date: iso, qty});
-                }
-                if (!valid.length) return product;
-                const draft = {...product, monitoring_available: true};
-                for (let i = 1; i <= 3; i++) {
-                    draft[`expiration_${i}`] = valid[i-1]?.date || null;
-                    draft[`qty_${i}`] = valid[i-1]?.qty ?? null;
-                }
-                draft.extra_expirations = valid.slice(3);
-                return draft;
+            // Existing stock is a draft for confirmation, never automatic task completion.
+            const monitoringRows=getMonitoringStock?await getMonitoringStock(req.user,a.supplier_name):[];
+            const today=businessDate(),nearEnd=new Date(today+'T00:00:00Z');nearEnd.setUTCDate(nearEnd.getUTCDate()+90);
+            const end=nearEnd.toISOString().slice(0,10);
+            const byProduct=new Map();
+            for(const row of monitoringRows){
+                const date=row.expiration_date instanceof Date?row.expiration_date.toISOString().slice(0,10):String(row.expiration_date).slice(0,10);
+                const qty=Number(row.quantity);
+                const inScope=a.expiry_scope==='EXPIRED'?date<today:a.expiry_scope==='NEAR'?date>=today&&date<=end:date<=end;
+                if(!inScope||!Number.isInteger(qty)||qty<=0)continue;
+                const id=Number(row.product_id);if(!byProduct.has(id))byProduct.set(id,[]);
+                byProduct.get(id).push({date,qty});
+            }
+            const mergedProducts=products.rows.map(product=>{
+                if(product.encoded)return product;
+                const values=byProduct.get(Number(product.product_id));if(!values?.length)return product;
+                const draft={...product,monitoring_available:true};
+                for(let i=1;i<=3;i++){draft[`expiration_${i}`]=values[i-1]?.date||null;draft[`qty_${i}`]=values[i-1]?.qty??null;}
+                draft.extra_expirations=values.slice(3);return draft;
             });
             return res.json({task: a, locked: Boolean(locked), products: mergedProducts});
         } catch (error) { return handleError(res, error, 'Could not load task products'); }
