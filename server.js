@@ -2761,7 +2761,7 @@ app.get('/api/scale/task-tracker',authenticate,secureRoute(async(req,res)=>{
         COUNT(*) FILTER(WHERE display_status='SUBMITTED')::int AS submitted,COUNT(*) FILTER(WHERE display_status='PENDING')::int AS pending,
         COUNT(*) FILTER(WHERE display_status='OVERDUE')::int AS overdue,COUNT(*) FILTER(WHERE display_status IN ('CANCELLED','CLOSED'))::int AS closed FROM (${sql}) t`,args)).rows[0];
     const values=[...args];if(status)values.push(status);
-    const page=await scalePageQuery(pool,req.query,`SELECT * FROM (${sql}) t${status?' WHERE t.display_status=$'+values.length:''}`,values,'t.due_at NULLS LAST,t.assignment_id');res.json({...page,summary});
+    const page=await scalePageQuery(pool,req.query,`SELECT * FROM (${sql}) t${status?' WHERE t.display_status=$'+values.length:''}`,values,"CASE WHEN t.display_status IN ('PENDING','OVERDUE') THEN 0 WHEN t.display_status='SUBMITTED' THEN 1 ELSE 2 END,t.assigned_at DESC NULLS LAST,t.assignment_id DESC");res.json({...page,summary});
 }));
 app.get('/api/scale/notifications/count',authenticate,secureRoute(async(req,res)=>{
     const scope=notificationScope(req.user),args=[...scope.args,req.user.email];
@@ -2791,7 +2791,7 @@ app.get('/api/scale/archive',authenticate,secureRoute(async(req,res)=>{
 }));
 app.get('/api/scale/task-followup',authenticate,secureRoute(async(req,res)=>{
     const {sql,args}=taskTrackerSQL(req.user,req.query);res.json(await scalePageQuery(pool,req.query,`SELECT t.*,t.display_status='SUBMITTED' AS submitted,
-      COALESCE((SELECT jsonb_agg(to_jsonb(e) ORDER BY e.submitted_at DESC) FROM (SELECT * FROM public.nems_task_overdue_explanations e WHERE e.assignment_id=t.assignment_id ORDER BY e.submitted_at DESC LIMIT 5) e),'[]'::jsonb) AS explanations FROM (${sql}) t`,args,'t.due_at NULLS LAST,t.assignment_id'));
+      COALESCE((SELECT jsonb_agg(to_jsonb(e) ORDER BY e.submitted_at DESC) FROM (SELECT * FROM public.nems_task_overdue_explanations e WHERE e.assignment_id=t.assignment_id ORDER BY e.submitted_at DESC LIMIT 5) e),'[]'::jsonb) AS explanations FROM (${sql}) t`,args,"CASE WHEN t.display_status IN ('PENDING','OVERDUE') THEN 0 WHEN t.display_status='SUBMITTED' THEN 1 ELSE 2 END,t.assigned_at DESC NULLS LAST,t.assignment_id DESC"));
 }));
 app.get('/api/scale/messages/:storeId',authenticate,secureRoute(async(req,res)=>{
     await requireStore(pool,req.user,req.params.storeId);
@@ -2853,4 +2853,3 @@ app.listen(
         );
     }
 );
-

@@ -3575,6 +3575,7 @@ async function nemsStoreTaskSubmit(id) {
             method:'POST', body: JSON.stringify({employee_name:employeeName,remarks:remarks.trim()})
         });
         showMessage('Task submitted. Permanent snapshot saved.');
+        nemsStoreTaskPage=1;
         await nemsStoreTaskLoad();
         nemsStoreTasksBusy=false;await nemsOpenTaskProducts(id);
     } catch (error) {
