@@ -2401,7 +2401,7 @@ async function scanOverdueTasks() {
         const hour=Number(new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Manila',hour:'2-digit',hourCycle:'h23'}).format(new Date()));
         if(hour>=8){
             const subject='NEMS overdue task summary · '+businessDate();
-            const summaries=(await c.query(`SELECT e.recipient_email,jsonb_agg(jsonb_build_object('assignment_id',e.assignment_id,'store_name',e.store_name,'supplier_name',e.supplier_name,'due_at',e.due_at) ORDER BY e.store_name,e.assignment_id) AS tasks FROM (${eligible}) e WHERE NOT EXISTS(SELECT 1 FROM public.nems_email_notifications q WHERE LOWER(q.recipient_email)=e.recipient_email AND q.subject=$1) GROUP BY e.recipient_email`,[subject])).rows;
+            const summaries=(await c.query(`SELECT e.recipient_email,jsonb_agg(jsonb_build_object('assignment_id',e.assignment_id,'store_name',e.store_name,'supplier_name',e.supplier_name,'due_at',e.due_at) ORDER BY e.store_name,e.assignment_id) AS tasks FROM (${eligible}) e WHERE NOT EXISTS(SELECT 1 FROM public.nems_email_notifications q WHERE LOWER(q.recipient_email)=e.recipient_email AND (q.subject LIKE 'NEMS overdue task summary · %' OR q.subject='Overdue task — explanation required') AND POSITION(('Task #'||e.assignment_id::text||' ') IN q.message)>0) AND NOT EXISTS(SELECT 1 FROM public.nems_email_notifications q WHERE LOWER(q.recipient_email)=e.recipient_email AND q.subject=$1) GROUP BY e.recipient_email`,[subject])).rows;
             if(summaries.length)await c.query(`INSERT INTO public.nems_email_notifications(recipient_email,subject,message) SELECT x.recipient_email,$2,x.message FROM jsonb_to_recordset($1::jsonb) AS x(recipient_email text,message text) WHERE NOT EXISTS(SELECT 1 FROM public.nems_email_notifications q WHERE LOWER(q.recipient_email)=x.recipient_email AND q.subject=$2)`,[JSON.stringify(summaries.map(row=>({recipient_email:row.recipient_email,message:overdueSummaryText(row.tasks)}))),subject]);
         }
     });}catch(e){console.error('[NEMS overdue worker]',e.code||e.message);}finally{overdueBusy=false;}
@@ -2444,10 +2444,16 @@ async function processEmailQueue() {
                 const recipient=(await pool.query(`SELECT email,role,store_name FROM public.users WHERE LOWER(email)=LOWER($1) AND status='ACTIVE'`,[row.recipient_email])).rows[0];
                 if(!recipient)throw new Error('Recipient no longer has an active NEMS account');
                 if(String(row.subject).startsWith('NEMS overdue task summary · ')){
-                    if(row.subject!=='NEMS overdue task summary · '+businessDate())throw new Error('Expired daily summary; the current day gets a fresh summary');
-                    const tasks=await currentOverdueEmailTasks(recipient);
-                    if(!tasks.length)throw new Error('No authorized outstanding overdue tasks remain');
+                    // Keep only tasks originally queued here; never add all old overdue tasks again.
+                    const queuedIds=new Set([...String(row.message||'').matchAll(/Task #(\d+) \|/g)].map(m=>m[1]));
+                    const earlier=(await pool.query(`SELECT message FROM public.nems_email_notifications
+                        WHERE LOWER(recipient_email)=LOWER($1) AND email_id<$2
+                          AND subject LIKE 'NEMS overdue task summary · %' AND delivery_status<>'FAILED'`,[row.recipient_email,row.email_id])).rows;
+                    const notified=new Set(earlier.flatMap(q=>[...String(q.message||'').matchAll(/Task #(\d+) \|/g)].map(m=>m[1])));
+                    const tasks=(await currentOverdueEmailTasks(recipient)).filter(t=>queuedIds.has(String(t.assignment_id))&&!notified.has(String(t.assignment_id)));
+                    if(!tasks.length)throw new Error('No new authorized overdue tasks remain; duplicate reminder suppressed');
                     row.message=overdueSummaryText(tasks);
+                    await pool.query('UPDATE public.nems_email_notifications SET message=$2 WHERE email_id=$1',[row.email_id,row.message]);
                 }else{
                 const scope=notificationScope(recipient);
                 const access=await pool.query(`SELECT 1 FROM public.nems_notifications n WHERE ${scope.sql}

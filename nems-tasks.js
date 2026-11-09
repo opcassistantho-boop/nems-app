@@ -463,30 +463,6 @@ module.exports = function registerTaskRoutes({
                     return fail(res, 409, 'Task deadline has passed. Contact ADMIN.');
                 }
  
-                const prior = await client.query(
-                    `
-                    SELECT sub.submission_id
-                    FROM public.nems_monitoring_submissions sub
-                    WHERE sub.assignment_id = $1
-                      AND sub.submitted_at > COALESCE(
-                          (SELECT MAX(reopened_at)
-                           FROM public.nems_task_reopen_history
-                           WHERE assignment_id = $1),
-                          '-infinity'::timestamptz)
-                    LIMIT 1
-                    `,
-                    [assignmentId]
-                );
- 
-                if (prior.rowCount) {
-                    await client.query('ROLLBACK');
-                    return fail(
-                        res,
-                        409,
-                        'This task was already submitted'
-                    );
-                }
- 
                 const completeness = await client.query(`
                     SELECT COUNT(*)::int AS total,
                            COUNT(pr.product_id) FILTER (WHERE pr.no_stock = TRUE OR pr.expiration_1 IS NOT NULL OR pr.expiration_2 IS NOT NULL OR pr.expiration_3 IS NOT NULL OR jsonb_array_length(COALESCE(pr.extra_expirations, '[]'::jsonb)) > 0)::int AS encoded
@@ -595,7 +571,7 @@ module.exports = function registerTaskRoutes({
             `, [id, getStoreName(req), getEmail(req)]);
             if (!task.rowCount) return fail(res, 404, 'Task not found');
             const a = task.rows[0];
-            const locked = a.status !== 'ACTIVE' || a.submitted ||
+            const locked = a.status !== 'ACTIVE' ||
                 (a.due_at && new Date(a.due_at).getTime() <= Date.now());
             const products = await pool.query(`
                 SELECT p.product_id, p.sku, p.product_name, p.master_barcode, p.supplier_name,
@@ -692,17 +668,6 @@ module.exports = function registerTaskRoutes({
             if (a.status !== 'ACTIVE' ||
                 (a.due_at && new Date(a.due_at).getTime() <= Date.now())) {
                 await client.query('ROLLBACK'); return fail(res, 409, 'Task is locked or overdue');
-            }
-            const submitted = await client.query(`
-                SELECT 1 FROM public.nems_monitoring_submissions sub
-                WHERE sub.assignment_id = $1
-                  AND sub.submitted_at > COALESCE(
-                    (SELECT MAX(reopened_at) FROM public.nems_task_reopen_history
-                     WHERE assignment_id = $1), '-infinity'::timestamptz)
-                LIMIT 1
-            `, [id]);
-            if (submitted.rowCount) {
-                await client.query('ROLLBACK'); return fail(res, 409, 'Task already submitted');
             }
             const product = await client.query(`
                 SELECT product_id FROM public.products

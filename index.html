@@ -1165,10 +1165,12 @@ function showMessage(message, error = false) {
         error ? ' error' : ''
     );
  
-    box.scrollIntoView({
-        behavior:'smooth',
-        block:'nearest'
-    });
+    // All roles see a non-scrolling confirmation, including saves deep in a list.
+    box.setAttribute('role',error?'alert':'status');
+    Object.assign(box.style,{position:'fixed',top:'16px',right:'20px',left:'auto',maxWidth:'min(520px,90vw)',zIndex:'10000',boxShadow:'0 3px 16px #0002'});
+    clearTimeout(window.nemsNoticeTimer);
+    if(!error)window.nemsNoticeTimer=setTimeout(()=>box.classList.add('hidden'),4500);
+
 }
  
 function clearMessage() {
@@ -1764,10 +1766,22 @@ function renderMonitoring() {
         'Showing ' + rows.length + ' records';
 }
  
+function nemsSavePosition(anchor) {
+    const y=window.scrollY,x=window.scrollX,id=anchor?.id;
+    const product=anchor?.closest('[data-nems-product]')?.dataset.nemsProduct;
+    const target=anchor?.closest('[data-nems-product]')||anchor;
+    const top=target?.getBoundingClientRect().top;
+    return ()=>requestAnimationFrame(()=>{
+        const current=product?document.querySelector(`[data-nems-product="${product}"]`):id?el(id):null;
+        window.scrollTo({left:x,top:current&&Number.isFinite(top)?window.scrollY+current.getBoundingClientRect().top-top:y,behavior:'instant'});
+    });
+}
+
 async function saveMonitoringRemarks(id, date) {
     if (currentUser?.role !== 'ADMIN') return;
     const field = el('remarks-' + id + '-' + date);
     if (!field) return;
+    const restorePosition=nemsSavePosition(field);
     try {
         const result = await api('/api/admin/monitoring/action-remarks', {
             method: 'PUT',
@@ -1775,6 +1789,7 @@ async function saveMonitoringRemarks(id, date) {
         });
         showMessage(result.message || 'Remarks saved.');
         await loadMonitoring();
+        restorePosition();
     } catch (error) { showMessage(error.message || 'Could not save remarks', true); }
 }
  
@@ -1782,6 +1797,7 @@ async function saveTaskMonitoringRemarks(productId, encodedEmail, date) {
     if (currentUser?.role !== 'ADMIN') return;
     const field = el('remarks-task-' + productId + '-' + encodedEmail + '-' + date);
     if (!field) return;
+    const restorePosition=nemsSavePosition(field);
     try {
         const result = await api('/api/admin/monitoring/task-action-remarks', {
             method: 'PUT',
@@ -1790,6 +1806,7 @@ async function saveTaskMonitoringRemarks(productId, encodedEmail, date) {
         });
         showMessage(result.message || 'Remarks saved.');
         await loadMonitoring();
+        restorePosition();
     } catch (error) { showMessage(error.message || 'Could not save remarks', true); }
 }
  
@@ -3492,8 +3509,8 @@ async function nemsOpenTaskProducts(id) {
         nemsTaskLocked = Boolean(result.locked);
         el('nemsTaskProductHeading').textContent = `Task #${id} — ${result.task.supplier_name}`;
         el('nemsTaskLockNote').textContent = nemsTaskLocked
-            ? 'READ ONLY: Task submitted, overdue, or closed. Only ADMIN can reopen it.'
-            : 'Save each product before submitting. All active supplier products must be encoded.';
+            ? 'READ ONLY: Deadline passed or task closed. Ask ADMIN to reopen it.'
+            : 'Save each product. Saved and submitted entries stay editable until the deadline; click Submit again after corrections to save an updated submission snapshot.';
         el('nemsTaskProductSearch').value = '';
         nemsStopTaskCamera();
         nemsTaskProductRender();
@@ -3528,6 +3545,7 @@ async function nemsSaveTaskProduct(productId) {
         payload[`qty_${n}`] = rows[n-1]?.qty ?? null;
     }
     payload.extra_expirations = rows.slice(3).map(item => ({date:item.date, qty:Number(item.qty)}));
+    const restorePosition=nemsSavePosition(row);
     nemsStoreTasksBusy = true;
     try {
         const saved=await api(`/api/store/tasks/${nemsActiveTaskId}/products/${productId}`, {
@@ -3545,7 +3563,8 @@ async function nemsSaveTaskProduct(productId) {
             delete p._draftNoStock;
         }
         nemsTaskProductRender();
-        showMessage('Product progress saved.');
+        restorePosition();
+        showMessage('Saved.');
         nemsLoadStoreRemarks(productId);
     } catch (error) {
         showMessage(error.message, true);
@@ -3568,13 +3587,13 @@ async function nemsStoreTaskSubmit(id) {
     const remarks = window.prompt('Completion remarks (required, maximum 2000 characters):', el('nemsTaskRemark').value.trim());
     if (remarks === null) return;
     if (!remarks.trim() || remarks.trim().length > 2000) return showMessage('Remarks too long.', true);
-    if (!window.confirm('Submit this task permanently? The submitted values cannot be changed.')) return;
+    if (!window.confirm('Submit this task? You can still edit and submit corrections until the deadline. After the deadline it will be locked.')) return;
     nemsStoreTasksBusy = true;
     try {
         await api(`/api/store/tasks/${id}/submit`, {
             method:'POST', body: JSON.stringify({employee_name:employeeName,remarks:remarks.trim()})
         });
-        showMessage('Task submitted. Permanent snapshot saved.');
+        showMessage('Task submitted. You may edit and submit corrections until the deadline.');
         nemsStoreTaskPage=1;
         await nemsStoreTaskLoad();
         nemsStoreTasksBusy=false;await nemsOpenTaskProducts(id);
@@ -4681,7 +4700,7 @@ function nemsScaleSetup(){
     <details open><summary><strong>Store Encoding</strong></summary><p>Enter your actual full name and clear remarks. Find the exact product and pack. Record each expiration date and quantity separately, then Save Monitoring. Wait for the success message.</p></details>
     <details><summary><strong>Scanner or camera</strong></summary><p>Click the barcode field, scan with a scanner and select Find Barcode. Or use Use Camera and allow camera access. Verify the product and pack. Scanning alone does not save stock.</p></details>
     <details><summary><strong>Pieces and case packs</strong></summary><p>100ML and 100MLX24 identify different packs. Verify the selected product unit before entering quantity. Ask OPC if the pack or date is unclear. A manufacturing date is different from an expiration date.</p></details>
-    <details><summary><strong>My Tasks and submission</strong></summary><p>Check the supplier, scope and deadline. Save every required product. Use NO STOCK only when actually unavailable. The completion checklist shows remaining products and unsaved edits. Submit the completed task and confirm SUBMITTED. Saving a product is separate from final submission.</p></details>
+    <details><summary><strong>My Tasks and submission</strong></summary><p>Check the supplier, scope and deadline. Save every required product. Use NO STOCK only when actually unavailable. The completion checklist shows remaining products and unsaved edits. Submit the completed task and confirm SUBMITTED. You may edit saved or submitted entries until the deadline. After corrections, submit again to save an updated submission snapshot. Previous snapshots remain in history.</p></details>
     <details><summary><strong>Locked or overdue tasks</strong></summary><p>Provide your name and the actual reason for a missed deadline. An explanation does not unlock or submit a task. Ask ADMIN to reopen a locked task when needed.</p></details>
     <details><summary><strong>Messages and expired reports</strong></summary><p>Search for the correct store and recipients. Chat and replies stay in NEMS. For expired stock, choose the exact product/date and action, enter your name and remarks, then submit for AS review. Follow company approval procedures for disposal and transfer. Check the AS decision and remarks.</p></details>
     <details><summary><strong>Slow connection or uncertain save</strong></summary><p>Wait for the result. Avoid repeated clicks. If the result is uncertain, refresh the record and check whether it saved before attempting another change. Keep your original details until the saved values are verified.</p></details>
