@@ -186,7 +186,7 @@ async function buildMonitoringExport(req){
         function queueExport(user,scope,build){cleanup();if([...jobs.values()].some(j=>j.owner===user.email.toLowerCase()&&['QUEUED','RUNNING'].includes(j.state)))throw Object.assign(new Error('Your previous export is still running. Wait for it to finish.'),{status:409});if([...jobs.values()].filter(j=>['QUEUED','RUNNING'].includes(j.state)).length>=4)throw Object.assign(new Error('Export queue is busy. Please try again shortly.'),{status:429});
             const job={id:crypto.randomUUID(),owner:user.email.toLowerCase(),role:user.role,scope,state:'QUEUED',expires:Date.now()+10*60000,build};jobs.set(job.id,job);setImmediate(()=>void pump());return {job_id:job.id,state:job.state};}
         function getJob(user,id){cleanup();const j=jobs.get(String(id));if(!j||j.owner!==user.email.toLowerCase()||j.role!==user.role)throw Object.assign(new Error('Export expired or is unavailable. Generate it again.'),{status:404});return j;}
-        const protectedWrite=req=>['POST','PUT','PATCH','DELETE'].includes(req.method)&&/^\/api\/(?:store\/monitoring$|store\/tasks\/\d+\/(?:submit|explanation|products\/\d+)$|messages$|expired\/reports(?:\/\d+\/validate)?$|archive\/\d+\/restore$|admin\/import\/confirm$|admin\/tasks(?:\/\d+(?:\/reopen)?)?$)/.test(req.path||'');
+        const protectedWrite=req=>['POST','PUT','PATCH','DELETE'].includes(req.method)&&/^\/api\/(?:store\/monitoring$|store\/tasks\/\d+\/(?:submit|explanation|products\/\d+)$|messages$|expired\/reports(?:\/\d+\/validate)?$|archive\/\d+\/restore$|admin\/import\/confirm$|admin\/tasks(?:\/\d+(?:\/reopen)?)?$|admin\/task-groups\/\d+\/(?:reopen|cancel)$)/.test(req.path||'');
         async function idempotency(req,res,next){
             if(!protectedWrite(req))return next();
             const key=req.get('Idempotency-Key');if(!key)return next();
@@ -213,4 +213,3 @@ async function buildMonitoringExport(req){
     }
     module.exports={pagination,pageQuery,createServices};
 }
-

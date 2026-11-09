@@ -1098,11 +1098,13 @@ app.post(
             );
  
             for (const task of taskLocks.rows) {
-                if (task.status !== 'ACTIVE' || task.submitted ||
+                // Cancelling a task removes the assignment requirement, not Store Encoding access.
+                if (task.status === 'CANCELLED') continue;
+                if (task.status !== 'ACTIVE' ||
                     (task.due_at && new Date(task.due_at).getTime() <= Date.now())) {
                     await client.query('ROLLBACK');
                     return sendError(res, 409,
-                        'This supplier task is submitted, expired, or inactive. Only ADMIN can reopen it.');
+                        'This supplier task is past its deadline or closed. Ask ADMIN to reopen it.');
                 }
             }
  
@@ -2421,6 +2423,7 @@ async function currentOverdueEmailTasks(user) {
             AND sub.submitted_at>COALESCE((SELECT MAX(reopened_at) FROM public.nems_task_reopen_history h WHERE h.assignment_id=a.assignment_id),'-infinity'))
         ORDER BY s.store_name,a.assignment_id`,scope.args)).rows;
 }
+require('./nems-task-controls')({app,pool,authenticate,adminOnly,secureRoute,transaction,taskTrackerSQL,scalePageQuery,notify,accessibleStores});
 const meetingReports=require('./nems-reports').registerReports({app,pool,authenticate,adminOnly,secureRoute,transaction,accessibleStores,combinedMonitoringEntries,XLSX});
 // Brevo API acceptance is NOT delivery. SENT is recorded only for a verified delivery webhook.
 let emailBusy=false;

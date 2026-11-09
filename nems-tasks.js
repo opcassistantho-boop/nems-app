@@ -489,9 +489,10 @@ module.exports = function registerTaskRoutes({
                     INSERT INTO public.nems_monitoring_submissions (
                         assignment_id,
                         submitted_by,
-                        remarks
+                        remarks,
+                        submitted_at
                     )
-                    VALUES ($1, $2, $3)
+                    VALUES ($1, $2, $3, clock_timestamp())
                     RETURNING *
                     `,
                     [

@@ -1335,7 +1335,7 @@ async function nemsRawApi(url, options = {}) {
 const nemsWriteRequests=new Map();
 async function api(url,options={}){
     const method=(options.method||'GET').toUpperCase();
-    const protectedWrite=['POST','PUT','PATCH','DELETE'].includes(method)&&/^\/api\/(?:store\/monitoring$|store\/tasks\/\d+\/(?:submit|explanation|products\/\d+)$|messages$|expired\/reports(?:\/\d+\/validate)?$|archive\/\d+\/restore$|admin\/import\/confirm$|admin\/tasks(?:\/\d+(?:\/reopen)?)?$)/.test(url);
+    const protectedWrite=['POST','PUT','PATCH','DELETE'].includes(method)&&/^\/api\/(?:store\/monitoring$|store\/tasks\/\d+\/(?:submit|explanation|products\/\d+)$|messages$|expired\/reports(?:\/\d+\/validate)?$|archive\/\d+\/restore$|admin\/import\/confirm$|admin\/tasks(?:\/\d+(?:\/reopen)?)?$|admin\/task-groups\/\d+\/(?:reopen|cancel)$)/.test(url);
     if(!protectedWrite)return nemsRawApi(url,options);
     const fingerprint=(currentUser?.email||'')+' '+method+' '+url+' '+String(options.body||'');
     const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(fingerprint));
@@ -3096,29 +3096,64 @@ function nemsTaskSuppliersRender() {
     el('nemsTaskSupplierCount').textContent=`${nemsSelectedSupplierIds.size} selected · ${visible.length} matching · ${nemsTaskSuppliers.length} total`;
 }
 
-function nemsTaskRowsRender() {
-    const search = el('nemsTaskListSearch').value.trim().toLowerCase();
-    const status = el('nemsTaskStatus').value;
-    const filtered = nemsTaskRows.filter(t => {
-        const haystack = [t.assignment_id, t.store_name, t.supplier_name].join(' ').toLowerCase();
-        return haystack.includes(search) && (!status || t.display_status === status);
-    });
-    el('nemsTaskListCount').textContent = `${filtered.length} of ${nemsTaskRows.length} assignments`;
-    el('nemsTaskRows').innerHTML = filtered.map(t => `<tr>
-        <td>${escapeHtml(t.assignment_id)}</td>
-        <td>${escapeHtml(t.store_name)}</td>
-        <td>${escapeHtml(t.supplier_name)}</td>
-        <td>${escapeHtml(t.expiry_scope)}</td>
-        <td>${t.due_at ? escapeHtml(dateTimeText(t.due_at)) : 'None'}</td>
-        <td>${escapeHtml(t.display_status)}</td>
-        <td>${Number(t.submission_count) || 0}</td>
-        <td><button type="button" data-nems-visibility="${Number(t.supplier_id)}">Products</button> ${t.display_status === 'PENDING'
-            ? `<button type="button" data-nems-task-edit="${Number(t.assignment_id)}">Edit</button>` : ''} ${['OVERDUE', 'SUBMITTED'].includes(t.display_status)
-            ? `<button type="button" data-nems-task-reopen="${Number(t.assignment_id)}">Reopen</button>`
-            : ''}</td>
-    </tr>`).join('') || '<tr><td colspan="8">No assignments found.</td></tr>';
+let nemsTaskGroups=[];
+function nemsTaskRowsRender(){
+ el('nemsTaskListCount').textContent=`${nemsTaskGroups.length} suppliers on this page. View details to see every assigned store.`;
+ el('nemsTaskRows').innerHTML=nemsTaskGroups.map(g=>`<tr><td>${escapeHtml(g.supplier_name)}</td><td>${Number(g.stores)}</td><td>${Number(g.pending)}</td><td>${Number(g.overdue)}</td><td>${Number(g.submitted)}</td><td>${Number(g.cancelled)}</td><td>${Number(g.closed)}</td><td><button type="button" data-nems-task-group="${Number(g.supplier_id)}">View all details</button> <button type="button" data-nems-visibility="${Number(g.supplier_id)}">Products</button></td></tr>`).join('')||'<tr><td colspan="8">No matching supplier tasks.</td></tr>';
 }
- 
+async function nemsTaskGroupOpen(supplierId){
+ if(currentUser?.role!=='ADMIN')return;
+ const overlay=document.createElement('div');overlay.style.cssText='position:fixed;inset:0;z-index:99990;background:#0008;display:flex;align-items:center;justify-content:center;padding:16px';
+ const panel=document.createElement('section');panel.setAttribute('role','dialog');panel.setAttribute('aria-modal','true');panel.setAttribute('aria-label','Assigned stores and task controls');panel.style.cssText='background:white;color:#142b47;width:min(1250px,100%);max-height:92vh;overflow:auto;border-radius:12px;padding:22px';
+ panel.innerHTML=`<div class="row"><h2 data-group-title>Assigned stores</h2><button type="button" data-group-refresh>Refresh details</button><button type="button" data-group-close>Close</button></div><p>One row per assigned store. Reopening or cancelling changes only the selected stores. Encoded stock and previous submissions remain saved.</p><div class="nems-task-grid"><div><label>Search stores</label><input data-group-search type="search" placeholder="Store name, email or task ID"></div><div><label>Status</label><select data-group-status><option value="">All statuses</option><option>PENDING</option><option>OVERDUE</option><option>SUBMITTED</option><option>CLOSED</option><option>CANCELLED</option></select></div><div><label>Action</label><select data-group-action><option value="REOPEN">Reopen selected stores</option><option value="CANCEL">Cancel selected stores' tasks</option></select></div></div><p data-group-hint></p><div class="nems-task-actions"><button type="button" data-group-all>Select all eligible stores</button><button type="button" data-group-matching>Select matching eligible stores</button><button type="button" data-group-clear>Clear selection</button></div><p data-group-count></p><div class="tablewrap" style="max-height:42vh;overflow:auto"><table><thead><tr><th>Select</th><th>Store / Task</th><th>Scope</th><th>Deadline</th><th>Status</th><th>Submissions</th><th>Store explanation / Latest instruction</th><th>Edit</th></tr></thead><tbody data-group-rows><tr><td colspan="8">Loading...</td></tr></tbody></table></div><div data-group-deadline-box><label>New deadline *</label><input data-group-deadline type="datetime-local"></div><label>Explanation for the selected stores *</label><textarea data-group-reason maxlength="2000" placeholder="Explain why the task is reopened or cancelled. Only selected stores receive this inside NEMS."></textarea><p data-group-feedback role="status" aria-live="polite"></p><button type="button" data-group-apply>Reopen selected stores</button>`;
+ overlay.appendChild(panel);document.body.appendChild(overlay);
+ const q=s=>panel.querySelector(s),selected=new Set();let records=[],busy=false,closed=false;
+ const close=()=>{if(busy)return;closed=true;overlay.remove();document.removeEventListener('keydown',onKey);};
+ const onKey=e=>{if(e.key==='Escape')close();};document.addEventListener('keydown',onKey);q('[data-group-close]').onclick=close;
+ const can=(r)=>q('[data-group-action]').value==='CANCEL'?r.display_status!=='CANCELLED':['OVERDUE','SUBMITTED','CLOSED'].includes(r.display_status);
+ const matches=r=>{const term=q('[data-group-search]').value.trim().toLowerCase(),status=q('[data-group-status]').value;return [r.store_name,r.store_email,r.assignment_id].join(' ').toLowerCase().includes(term)&&(!status||r.display_status===status);};
+ const render=()=>{
+  for(const key of selected)if(!records.some(r=>Number(r.assignment_id)===key&&can(r)))selected.delete(key);
+  const visible=records.filter(matches),reopening=q('[data-group-action]').value==='REOPEN';
+  q('[data-group-deadline-box]').hidden=!reopening;
+  q('[data-group-hint]').textContent=reopening?'Reopen is available for overdue, submitted or closed tasks. For a pending task, use Edit. Cancelled tasks cannot be reopened.':'Cancel makes the selected assignments read-only. It does not delete their stock or history. Cancelled tasks cannot be reopened.';
+  q('[data-group-count]').textContent=`${selected.size} selected · ${visible.length} matching · ${records.length} assigned stores · ${records.filter(can).length} eligible`;
+  q('[data-group-apply]').textContent=reopening?'Reopen selected stores':'Cancel selected stores’ tasks';q('[data-group-apply]').disabled=busy||selected.size===0;
+  q('[data-group-rows]').innerHTML=visible.map(r=>`<tr><td><input type="checkbox" data-group-check="${Number(r.assignment_id)}" aria-label="Select ${escapeHtml(r.store_name)}" ${selected.has(Number(r.assignment_id))?'checked':''} ${!can(r)||busy?'disabled':''}></td><td>${escapeHtml(r.store_name)}<br><small>${escapeHtml(r.store_email||'')} · #${Number(r.assignment_id)}</small></td><td>${escapeHtml(r.expiry_scope)}</td><td>${r.due_at?escapeHtml(dateTimeText(r.due_at)):'None'}</td><td>${escapeHtml(r.display_status)}</td><td>${Number(r.submission_count||0)}</td><td>${r.explanation?'<strong>Store:</strong> '+escapeHtml(r.explanation.employee_name||'')+' — '+escapeHtml(r.explanation.explanation||'')+'<br>':''}${r.admin_note?'<strong>'+escapeHtml(r.admin_note.action_type)+':</strong> '+escapeHtml(r.admin_note.reason||''):'—'}</td><td>${r.display_status==='PENDING'?`<button type="button" data-group-edit="${Number(r.assignment_id)}" ${busy?'disabled':''}>Edit</button>`:'—'}</td></tr>`).join('')||'<tr><td colspan="8">No matching assigned stores.</td></tr>';
+ };
+ const load=async()=>{
+  const data=await api('/api/admin/task-groups/'+supplierId+'/stores');if(closed)return;
+  records=data.records||[];nemsTaskRows=records;q('[data-group-title]').textContent=data.supplier_name||'Assigned stores';selected.clear();render();
+ };
+ q('[data-group-refresh]').onclick=async()=>{if(busy)return;try{await load();q('[data-group-feedback]').textContent='Details refreshed. Select stores again.';}catch(e){q('[data-group-feedback]').textContent=e.message;}};
+ q('[data-group-search]').oninput=render;q('[data-group-status]').onchange=render;q('[data-group-action]').onchange=render;
+ q('[data-group-all]').onclick=()=>{if(busy)return;records.filter(can).forEach(r=>selected.add(Number(r.assignment_id)));render();};
+ q('[data-group-matching]').onclick=()=>{if(busy)return;records.filter(r=>can(r)&&matches(r)).forEach(r=>selected.add(Number(r.assignment_id)));render();};
+ q('[data-group-clear]').onclick=()=>{if(busy)return;selected.clear();render();};
+ q('[data-group-rows]').onchange=e=>{if(busy)return;const c=e.target.closest('[data-group-check]');if(!c)return;c.checked?selected.add(Number(c.dataset.groupCheck)):selected.delete(Number(c.dataset.groupCheck));render();};
+ q('[data-group-rows]').onclick=async e=>{const b=e.target.closest('[data-group-edit]');if(!b||busy)return;close();await nemsTaskEdit(Number(b.dataset.groupEdit));void nemsTaskGroupOpen(supplierId);};
+ q('[data-group-apply]').onclick=async()=>{
+  if(busy||!selected.size)return;
+  const action=q('[data-group-action]').value,reason=q('[data-group-reason]').value.trim();
+  if(!reason){q('[data-group-feedback]').textContent='Enter an explanation for the selected stores.';return;}
+  const due=action==='REOPEN'?new Date(q('[data-group-deadline]').value):null;
+  if(action==='REOPEN'&&(!Number.isFinite(due.getTime())||due.getTime()<=Date.now())){q('[data-group-feedback]').textContent='Choose a future deadline.';return;}
+  const chosen=records.filter(r=>selected.has(Number(r.assignment_id))&&can(r));
+  const shown=chosen.slice(0,8).map(r=>r.store_name).join('\n')+(chosen.length>8?'\n…and '+(chosen.length-8)+' more':'');
+  if(!confirm(`${action==='REOPEN'?'Reopen':'Cancel'} ${chosen.length} store assignment(s)?\n${shown}\n\nOther stores will not be changed. Previous stock and submissions will remain saved.`))return;
+  busy=true;panel.querySelectorAll('input,select,textarea,button').forEach(n=>n.disabled=true);
+  const payload={assignments:chosen.map(r=>({assignment_id:Number(r.assignment_id),revision:r.revision})),reason,...(due?{due_at:due.toISOString()}:{})};
+  try{
+   const result=await api('/api/admin/task-groups/'+supplierId+'/'+action.toLowerCase(),{method:'POST',body:JSON.stringify(payload)});
+   q('[data-group-feedback]').textContent=result.message;q('[data-group-reason]').value='';
+   await Promise.all([load(),nemsTaskLoad()]);
+  }catch(e){q('[data-group-feedback]').textContent=e.message+' Refresh details before changing your selection.';}
+  finally{busy=false;panel.querySelectorAll('input,select,textarea,button').forEach(n=>n.disabled=false);render();}
+ };
+ const suggested=new Date(Date.now()+86400000);q('[data-group-deadline]').value=new Date(suggested.getTime()-suggested.getTimezoneOffset()*60000).toISOString().slice(0,16);
+ try{await load();q('[data-group-search]').focus();}catch(e){q('[data-group-feedback]').textContent=e.message;}
+}
+
 async function nemsTaskEdit(assignmentId) {
     if (currentUser?.role !== 'ADMIN') return;
     const task = nemsTaskRows.find(t => Number(t.assignment_id) === Number(assignmentId));
@@ -3254,11 +3289,11 @@ async function nemsTaskLoad() {
         const [stores, suppliers, assignments] = await Promise.all([
             api('/api/admin/task-stores'),
             api('/api/admin/suppliers'),
-            api('/api/scale/task-tracker?'+new URLSearchParams({page:nemsAdminTaskPage,limit:50,search:el('nemsTaskListSearch').value,status:el('nemsTaskStatus').value}))
+            api('/api/admin/task-groups?'+new URLSearchParams({page:nemsAdminTaskPage,limit:50,search:el('nemsTaskListSearch').value,status:el('nemsTaskStatus').value}))
         ]);
         nemsTaskStores = Array.isArray(stores) ? stores : [];
         nemsTaskSuppliers = Array.isArray(suppliers) ? suppliers : [];
-        nemsTaskRows = assignments.records || [];
+        nemsTaskGroups = assignments.records || [];
         nemsTaskStoresRender();
         nemsTaskSuppliersRender();
         nemsTaskRowsRender();
@@ -3334,9 +3369,9 @@ function nemsTaskSetup() {
             </form>
         </div>
         <div class="panel"><h2>Assigned tasks</h2>
-            <div class="nems-task-grid"><input id="nemsTaskListSearch" placeholder="Search store, supplier, or task ID"><select id="nemsTaskStatus"><option value="">All statuses</option><option>PENDING</option><option>OVERDUE</option><option>SUBMITTED</option><option>CANCELLED</option></select></div>
+            <div class="nems-task-grid"><input id="nemsTaskListSearch" placeholder="Search supplier, store or task ID"><select id="nemsTaskStatus"><option value="">All statuses</option><option>PENDING</option><option>OVERDUE</option><option>SUBMITTED</option><option>CANCELLED</option><option>CLOSED</option></select></div>
             <p class="muted" id="nemsTaskListCount"></p>
-            <div class="tablewrap"><table><thead><tr><th>ID</th><th>Store</th><th>Supplier</th><th>Scope</th><th>Deadline</th><th>Status</th><th>Submissions</th><th>Action</th></tr></thead><tbody id="nemsTaskRows"></tbody></table></div>
+            <div class="tablewrap"><table><thead><tr><th>Supplier</th><th>Stores</th><th>Pending</th><th>Overdue</th><th>Submitted</th><th>Cancelled</th><th>Closed</th><th>Action</th></tr></thead><tbody id="nemsTaskRows"></tbody></table></div>
         </div>`;
     el('application').appendChild(page);
     el('nemsTaskStoreSearch').addEventListener('input', nemsTaskStoresRender);
@@ -3348,6 +3383,8 @@ function nemsTaskSetup() {
     el('nemsTaskListSearch').addEventListener('input', ()=>{clearTimeout(nemsAdminTaskTimer);nemsAdminTaskPage=1;nemsAdminTaskTimer=setTimeout(()=>void nemsTaskLoad(),300);});
     el('nemsTaskStatus').addEventListener('change', ()=>{nemsAdminTaskPage=1;void nemsTaskLoad();});
     el('nemsTaskRows').addEventListener('click', event => {
+        const group = event.target.closest('[data-nems-task-group]');
+        if(group) void nemsTaskGroupOpen(Number(group.dataset.nemsTaskGroup));
         const edit = event.target.closest('[data-nems-task-edit]');
         if (edit) nemsTaskEdit(Number(edit.dataset.nemsTaskEdit));
         const button = event.target.closest('[data-nems-task-reopen]');
@@ -3505,7 +3542,7 @@ async function nemsOpenTaskProducts(id) {
     el('nemsTaskProductPanel').scrollIntoView({behavior:'smooth', block:'start'});
     el('nemsTaskProductRows').innerHTML = '<tr><td colspan="5">Loading products...</td></tr>';
     try {
-        const result = await api(`/api/store/tasks/${id}/products`);
+        const [result,adminNote] = await Promise.all([api(`/api/store/tasks/${id}/products`),api(`/api/tasks/${id}/admin-note`)]);
         if (nemsActiveTaskId !== id) return;
         nemsTaskProducts = result.products || [];
         nemsTaskLocked = Boolean(result.locked);
@@ -3513,6 +3550,8 @@ async function nemsOpenTaskProducts(id) {
         el('nemsTaskLockNote').textContent = nemsTaskLocked
             ? 'READ ONLY: Deadline passed or task closed. Ask ADMIN to reopen it.'
             : 'Save each product. Saved and submitted entries stay editable until the deadline; click Submit again after corrections to save an updated submission snapshot.';
+        let instructions=el('nemsTaskAdminInstruction');if(!instructions){instructions=document.createElement('p');instructions.id='nemsTaskAdminInstruction';el('nemsTaskLockNote').after(instructions);}
+        instructions.textContent=adminNote.reason?(adminNote.action_type==='CANCEL'?'Task cancelled: ':'Reopening explanation: ')+adminNote.reason:'';
         el('nemsTaskProductSearch').value = '';
         nemsStopTaskCamera();
         nemsTaskProductRender();
