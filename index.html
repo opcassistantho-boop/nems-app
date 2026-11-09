@@ -1401,6 +1401,7 @@ el('loginForm').addEventListener(
                 currentUser.role === 'STORE';
  
             const canViewHistory = true;
+            document.querySelectorAll('.meetingReportsOnly').forEach(n=>n.classList.toggle('hidden',!['ADMIN','HEAD','AS','AOM'].includes(currentUser.role)));
  
             document.querySelectorAll(
                 '.adminOnly'
@@ -1552,6 +1553,7 @@ function showPage(page) {
  
     clearMessage();
  
+    if (page === 'meetingreports') nemsMeetingLoad();
     if (page === 'dashboard') {
         refreshDashboard();
     }
@@ -4766,6 +4768,27 @@ const nemsSearchObserver=new MutationObserver(()=>{clearTimeout(nemsSearchDiscov
     document.querySelectorAll('#nfPreviewBody table:not([data-search-ready])').forEach(nemsLocalTableSearch);
 },100);});
 nemsSearchObserver.observe(el('application'),{childList:true,subtree:true});
+
+// Monthly/yearly meeting reports use current authorized store access on every download.
+async function nemsMeetingLoad(){
+ if(!['ADMIN','HEAD','AS','AOM'].includes(currentUser?.role))return;
+ try{
+  const data=await api('/api/meeting-reports');
+  el('nemsMeetingCapture').textContent=data.current_snapshot?'Latest capture: '+dateTimeText(data.current_snapshot.captured_at)+' · First capture: '+dateTimeText(data.current_snapshot.first_captured_at):'No snapshot captured yet. ADMIN can check the report schedule.';
+  el('nemsMeetingRun').classList.toggle('hidden',currentUser.role!=='ADMIN');
+  el('nemsMeetingRows').innerHTML=data.reports.map(r=>`<tr><td>${escapeHtml(r.report_type)}</td><td>${escapeHtml(String(r.period_start).slice(0,10))}</td><td>${escapeHtml(dateTimeText(r.generated_at))}</td><td><button type="button" data-meeting-download="${Number(r.report_id)}">Download Excel</button></td></tr>`).join('')||'<tr><td colspan="4">No closed-period reports yet. Monthly reporting begins after this month ends; yearly reporting begins in January. Historical months without snapshots are not invented.</td></tr>';
+ }catch(e){showMessage(e.message,true);}
+}
+function nemsMeetingSetup(){
+ const nav=document.createElement('button');nav.type='button';nav.className='meetingReportsOnly hidden';nav.dataset.page='meetingreports';nav.textContent='Meeting Reports';nav.onclick=()=>showPage('meetingreports');el('navigation').appendChild(nav);
+ const page=document.createElement('section');page.id='page-meetingreports';page.className='page hidden';
+ page.innerHTML=`<div class="panel"><h2>Meeting Reports</h2><p>Monthly store compliance and stock review; yearly January–December review. Downloads include only stores you are currently authorized to access.</p><p>Saved is not submitted. Overdue figures exclude all deadlines before November 30, 2026. Unresolved concerns are marked carried over. Check the capture dates and coverage notes before comparing periods.</p><p id="nemsMeetingCapture"></p><button type="button" id="nemsMeetingRefresh">Refresh</button> <button type="button" id="nemsMeetingRun" class="hidden">Check report schedule</button><label for="nemsMeetingSearch">Search reports</label><input type="search" id="nemsMeetingSearch" placeholder="Monthly, yearly or period"><div class="tablewrap"><table><thead><tr><th>Report</th><th>Period starts</th><th>Generated</th><th>Download</th></tr></thead><tbody id="nemsMeetingRows"></tbody></table></div></div>`;
+ el('application').appendChild(page);el('nemsMeetingRefresh').onclick=nemsMeetingLoad;
+ el('nemsMeetingSearch').oninput=()=>{const q=el('nemsMeetingSearch').value.toLowerCase();el('nemsMeetingRows').querySelectorAll('tr').forEach(r=>r.hidden=!r.textContent.toLowerCase().includes(q));};
+ el('nemsMeetingRun').onclick=async()=>{const b=el('nemsMeetingRun');b.disabled=true;try{const r=await api('/api/admin/meeting-reports/run',{method:'POST',body:'{}'});showMessage(r.message);await nemsMeetingLoad();}catch(e){showMessage(e.message,true);}finally{b.disabled=false;}};
+ page.onclick=async e=>{const b=e.target.closest('[data-meeting-download]');if(!b)return;b.disabled=true;try{const response=await fetch('/api/meeting-reports/'+b.dataset.meetingDownload+'/download',{headers:{Authorization:'Bearer '+token}});if(!response.ok){const x=await response.json();throw new Error(x.error||'Download failed');}const blob=await response.blob(),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=(response.headers.get('Content-Disposition')||'').match(/filename="([^"]+)"/)?.[1]||'NEMS_Meeting_Report.xlsx';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);}catch(e){showMessage(e.message,true);}finally{b.disabled=false;}};
+}
+nemsMeetingSetup();
 
 </script>
  

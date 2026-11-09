@@ -2421,6 +2421,7 @@ async function currentOverdueEmailTasks(user) {
             AND sub.submitted_at>COALESCE((SELECT MAX(reopened_at) FROM public.nems_task_reopen_history h WHERE h.assignment_id=a.assignment_id),'-infinity'))
         ORDER BY s.store_name,a.assignment_id`,scope.args)).rows;
 }
+const meetingReports=require('./nems-reports').registerReports({app,pool,authenticate,adminOnly,secureRoute,transaction,accessibleStores,combinedMonitoringEntries,XLSX});
 // Brevo API acceptance is NOT delivery. SENT is recorded only for a verified delivery webhook.
 let emailBusy=false;
 async function processEmailQueue() {
@@ -2443,7 +2444,12 @@ async function processEmailQueue() {
                 }
                 const recipient=(await pool.query(`SELECT email,role,store_name FROM public.users WHERE LOWER(email)=LOWER($1) AND status='ACTIVE'`,[row.recipient_email])).rows[0];
                 if(!recipient)throw new Error('Recipient no longer has an active NEMS account');
-                if(String(row.subject).startsWith('NEMS overdue task summary · ')){
+                let meetingAttachment;
+                if(/^NEMS (monthly|yearly) meeting report · /.test(String(row.subject))){
+                    const meeting=await meetingReports.prepareEmail(row,recipient);
+                    row.message=meeting.message;meetingAttachment=meeting.attachment;
+                    await pool.query('UPDATE public.nems_email_notifications SET message=$2 WHERE email_id=$1',[row.email_id,row.message]);
+                }else if(String(row.subject).startsWith('NEMS overdue task summary · ')){
                     // Keep only tasks originally queued here; never add all old overdue tasks again.
                     const queuedIds=new Set([...String(row.message||'').matchAll(/Task #(\d+) \|/g)].map(m=>m[1]));
                     const earlier=(await pool.query(`SELECT message FROM public.nems_email_notifications
@@ -2462,7 +2468,7 @@ async function processEmailQueue() {
                     [...scope.args,row.recipient_email,row.subject,row.message,row.created_at_exact]);
                 if(!access.rowCount)throw new Error('Recipient no longer has access to this notification');
                 }
-                const response=await fetch('https://api.brevo.com/v3/smtp/email',{method:'POST',signal:AbortSignal.timeout(20000),headers:{'api-key':process.env.BREVO_API_KEY,'Content-Type':'application/json'},body:JSON.stringify({sender:{email:process.env.BREVO_SENDER_EMAIL,name:process.env.BREVO_SENDER_NAME||'CARD INDOGROSIR NEMS'},to:[{email:row.recipient_email}],subject:row.subject,textContent:row.message,tags:['nems-'+row.email_id]})});
+                const response=await fetch('https://api.brevo.com/v3/smtp/email',{method:'POST',signal:AbortSignal.timeout(20000),headers:{'api-key':process.env.BREVO_API_KEY,'Content-Type':'application/json'},body:JSON.stringify({sender:{email:process.env.BREVO_SENDER_EMAIL,name:process.env.BREVO_SENDER_NAME||'CARD INDOGROSIR NEMS'},to:[{email:row.recipient_email}],subject:row.subject,textContent:row.message,...(meetingAttachment?{attachment:meetingAttachment}:{}),tags:['nems-'+row.email_id]})});
                 const data=await response.json().catch(()=>({}));
                 if(!response.ok||!data.messageId)throw new Error('Brevo acceptance not confirmed: '+response.status);
                 await pool.query(`UPDATE public.nems_email_notifications SET error_message=$2 WHERE email_id=$1 AND delivery_status='PENDING'`,[row.email_id,JSON.stringify({state:'ACCEPTED_DELIVERY_UNCONFIRMED',messageId:data.messageId})]);
@@ -2488,8 +2494,9 @@ app.get('/api/admin/email-status',authenticate,adminOnly,secureRoute(async(req,r
 }));
 let lastRequestCleanup=0;
 async function cleanupRequestReceipts(){if(Date.now()-lastRequestCleanup<3600000)return;lastRequestCleanup=Date.now();try{await pool.query(`DELETE FROM public.nems_request_keys WHERE (owner_email,request_key) IN (SELECT owner_email,request_key FROM public.nems_request_keys WHERE state='COMPLETE' AND completed_at<NOW()-INTERVAL '30 days' LIMIT 1000)`);}catch(e){console.error('[NEMS receipt cleanup]',e.code||e.message);}}
-const maintenanceTimer=setInterval(()=>{void scanOverdueTasks();void processEmailQueue();void cleanupRequestReceipts();},60000);
+const maintenanceTimer=setInterval(()=>{void scanOverdueTasks();void processEmailQueue();void cleanupRequestReceipts();void meetingReports.tick();},60000);
 maintenanceTimer.unref();
+setImmediate(()=>void meetingReports.tick());
 
 // Separate Products/Suppliers imports: preview first, then an owner-bound one-use confirmation.
 const importPreviews=new Map();
