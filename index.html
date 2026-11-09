@@ -3714,6 +3714,13 @@ let nemsUsers = [];
 let nemsUserStores = [];
 let nemsEditingEmail = null;
  
+function nemsUserStoreAvailable(store, role, editingEmail) {
+    if (store.status !== 'ACTIVE') return false;
+    const owners = (role === 'AOM' ? store.assigned_aom_emails : store.assigned_as_emails) || [];
+    const email = String(editingEmail || '').toLowerCase();
+    return owners.length === 0 || (email && owners.some(owner => String(owner).toLowerCase() === email));
+}
+
 function nemsUserStorePicker() {
     const role = el('nemsUserRole').value;
     el('nemsUserStoreBox').classList.toggle('hidden', role !== 'STORE');
@@ -3726,7 +3733,7 @@ function nemsUserStorePicker() {
     }
     if (['AS','AOM'].includes(role)) {
         const checked = new Set([...el('nemsUserASStores').querySelectorAll('[data-nems-as-store]:checked')].map(c => Number(c.value)));
-        el('nemsUserASStores').innerHTML = nemsUserStores.filter(s => s.status === 'ACTIVE').map(s =>
+        el('nemsUserASStores').innerHTML = nemsUserStores.filter(s => nemsUserStoreAvailable(s, role, nemsEditingEmail)).map(s =>
             `<label class="nems-task-store"><input type="checkbox" value="${Number(s.store_id)}" data-nems-as-store ${checked.has(Number(s.store_id)) ? 'checked' : ''}> ${escapeHtml(s.store_name)} — ${escapeHtml(s.store_email || '')}</label>`
         ).join('');
         nemsFilterASStores();

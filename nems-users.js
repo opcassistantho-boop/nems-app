@@ -124,6 +124,24 @@ module.exports = function registerUserRoutes({ app, pool, authenticate, adminOnl
  
  
  
+    // Serialize assignment edits before checking availability, including concurrent ADMIN requests.
+    async function assertStoresAvailable(client, email, ids, role) {
+        const table = role === 'AOM' ? 'aom_store_assignments' : 'as_store_assignments';
+        const field = role === 'AOM' ? 'aom_email' : 'as_email';
+        const conflict = await client.query(`
+            SELECT s.store_name FROM public.${table} a
+            JOIN public.stores s ON s.store_id=a.store_id
+            WHERE a.store_id=ANY($1::bigint[]) AND LOWER(a.${field})<>$2
+              AND NOT EXISTS (SELECT 1 FROM public.${table} own
+                  WHERE own.store_id=a.store_id AND LOWER(own.${field})=$2)
+            ORDER BY s.store_name LIMIT 1`, [ids, email]);
+        if (conflict.rows.length) {
+            const err = new Error(conflict.rows[0].store_name + ' is already assigned to another ' + role + '. Refresh the store list.');
+            err.storeAssignmentConflict = true;
+            throw err;
+        }
+    }
+
     async function setASStores(client, email, ids, role = 'AS') {
  
         const table = role === 'AOM' ? 'aom_store_assignments' : 'as_store_assignments';
@@ -332,7 +350,10 @@ module.exports = function registerUserRoutes({ app, pool, authenticate, adminOnl
  
             const { rows } = await pool.query(
  
-                `SELECT store_id, store_name, store_email, status FROM public.stores ORDER BY store_name`
+                `SELECT s.store_id, s.store_name, s.store_email, s.status,
+                    ARRAY(SELECT LOWER(a.as_email) FROM public.as_store_assignments a WHERE a.store_id=s.store_id) AS assigned_as_emails,
+                    ARRAY(SELECT LOWER(a.aom_email) FROM public.aom_store_assignments a WHERE a.store_id=s.store_id) AS assigned_aom_emails
+                 FROM public.stores s ORDER BY s.store_name`
  
             );
  
@@ -419,6 +440,7 @@ module.exports = function registerUserRoutes({ app, pool, authenticate, adminOnl
         try {
  
             await client.query('BEGIN');
+            await client.query('LOCK TABLE public.as_store_assignments, public.aom_store_assignments IN SHARE ROW EXCLUSIVE MODE');
  
             const duplicate = await client.query('SELECT 1 FROM public.users WHERE LOWER(email) = $1', [email]);
  
@@ -467,6 +489,7 @@ module.exports = function registerUserRoutes({ app, pool, authenticate, adminOnl
                     return fail(res, 400, 'Assign at least one active store to AS or AOM');
  
                 }
+                await assertStoresAvailable(client, email, storeIds, role);
  
             }
  
@@ -534,6 +557,7 @@ module.exports = function registerUserRoutes({ app, pool, authenticate, adminOnl
  
             }
  
+            if (err.storeAssignmentConflict) return fail(res, 409, err.message);
             console.error('[NEMS USERS create]', err);
  
             return fail(res, err.status === 422 ? 409 : 500,
@@ -579,6 +603,7 @@ module.exports = function registerUserRoutes({ app, pool, authenticate, adminOnl
         try {
  
             await client.query('BEGIN');
+            await client.query('LOCK TABLE public.as_store_assignments, public.aom_store_assignments IN SHARE ROW EXCLUSIVE MODE');
  
             const existing = await client.query(
  
@@ -637,6 +662,7 @@ module.exports = function registerUserRoutes({ app, pool, authenticate, adminOnl
                     return fail(res, 400, 'Assign at least one active store to AS or AOM');
  
                 }
+                await assertStoresAvailable(client, email, storeIds, role);
  
             }
  
@@ -659,6 +685,7 @@ module.exports = function registerUserRoutes({ app, pool, authenticate, adminOnl
  
             await client.query('ROLLBACK').catch(() => {});
  
+            if (err.storeAssignmentConflict) return fail(res, 409, err.message);
             console.error('[NEMS USERS update]', err);
  
             return fail(res, 500, 'Unable to update user');
@@ -668,4 +695,3 @@ module.exports = function registerUserRoutes({ app, pool, authenticate, adminOnl
     });
  
 };
-
