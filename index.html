@@ -2500,7 +2500,7 @@ el('storeForm').addEventListener('submit', async event => {
         const saved=await api('/api/store/monitoring', {method:'POST', body:JSON.stringify(payload)});
         nemsEntryRevision=saved.revision;
         showMessage('Store monitoring saved successfully.');
-        nemsLoadStoreRemarks(payload.product_id);
+        // Remarks history is opened only when requested.
     } catch (error) {
         showMessage(error.message, true);
     } finally {
@@ -3565,7 +3565,7 @@ async function nemsSaveTaskProduct(productId) {
         nemsTaskProductRender();
         restorePosition();
         showMessage('Saved.');
-        nemsLoadStoreRemarks(productId);
+        // Remarks history is opened only when requested.
     } catch (error) {
         showMessage(error.message, true);
     } finally {
