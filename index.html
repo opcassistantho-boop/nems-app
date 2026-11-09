@@ -3304,6 +3304,29 @@ async function nemsTaskLoad() {
     }
 }
  
+async function nemsReviewTaskProducts(supplierIds,storeIds){
+ const data=await api('/api/admin/task-review/preview',{method:'POST',body:JSON.stringify({supplier_ids:supplierIds})});
+ if(!data.products.length)return confirm(`Assign ${supplierIds.length} supplier(s) to ${storeIds.length} store(s)? No pack or exact-duplicate candidates were found. Each store will receive one combined email for newly created tasks.`)?{token:data.token,decisions:[]}:null;
+ return new Promise(resolve=>{
+  const dialog=document.createElement('dialog');dialog.style.cssText='width:min(1100px,92vw);max-height:90vh;overflow:auto;border:0;border-radius:12px;padding:24px;color:#142b47';
+  dialog.innerHTML=`<h2>Review packs and duplicate products</h2><p>Only possible cases/packs (CS, BOX, X12, X24, X64, etc.) and exact duplicate candidates are shown. Other products are unchanged.</p><p><strong>Checked = visible in My Task. Unchecked = hidden.</strong> Keep packs visible when they are sold as packs. For the same product name and barcode within one supplier, choose at most one visible record. The suggested duplicate choice keeps the first currently visible record; you can change it.</p><p>These supplier visibility choices apply to all stores' existing and new tasks. Nothing changes until you confirm below. Product and stock records are not deleted. At least one active product must remain visible per selected supplier; otherwise remove that supplier from this assignment.</p><div class="nems-task-grid"><div><label>Supplier</label><select data-review-supplier></select></div><div><label>Search suggested products</label><input data-review-search type="search" placeholder="Product, SKU or barcode"></div></div><p data-review-count></p><div class="tablewrap" style="max-height:44vh;overflow:auto"><table><thead><tr><th>Show in My Task</th><th>Product / SKU / ID</th><th>Barcode</th><th>Landed cost</th><th>Why shown</th><th>Choice</th></tr></thead><tbody data-review-rows></tbody></table></div><p>${supplierIds.length} supplier(s) × ${storeIds.length} store(s). Existing assignments are skipped. Each store receives one combined email for the new tasks created in this batch.</p><button type="button" data-review-cancel>Cancel</button> <button type="button" data-review-confirm>Confirm choices and create tasks</button>`;
+  document.body.appendChild(dialog);const q=s=>dialog.querySelector(s),choices=new Map(data.products.map(p=>[Number(p.product_id),p.suggested_visible]));
+  const suppliers=[...new Map(data.products.map(p=>[String(p.supplier_id),p.supplier_name])).entries()];
+  q('[data-review-supplier]').innerHTML=suppliers.map(([id,name])=>`<option value="${Number(id)}">${escapeHtml(name)}</option>`).join('');
+  const finish=value=>{dialog.close();dialog.remove();resolve(value);};dialog.addEventListener('cancel',e=>{e.preventDefault();finish(null);});
+  const render=()=>{
+   const id=q('[data-review-supplier]').value,term=q('[data-review-search]').value.trim().toLowerCase(),all=data.products.filter(p=>String(p.supplier_id)===id);
+   const visible=all.filter(p=>[p.product_name,p.sku,p.master_barcode].join(' ').toLowerCase().includes(term));
+   q('[data-review-count]').textContent=`${visible.length} matching suggestions · ${all.length} suggestions for this supplier · ${data.products.filter(p=>!choices.get(Number(p.product_id))).length} hidden across the reviewed suppliers`;
+   q('[data-review-rows]').innerHTML=visible.map(p=>`<tr><td><input type="checkbox" data-review-product="${Number(p.product_id)}" aria-label="Show ${escapeHtml(p.product_name)} product ${Number(p.product_id)}" ${choices.get(Number(p.product_id))?'checked':''}></td><td>${escapeHtml(p.product_name)}<br><small>SKU ${escapeHtml(p.sku||'')} · ID ${Number(p.product_id)}</small></td><td>${escapeHtml(p.master_barcode||'—')}</td><td>${p.landed_cost==null?'Not recorded':escapeHtml(p.landed_cost)}</td><td>${[p.possible_pack?'Possible case / pack':'',p.duplicate_group?'Same name and barcode duplicate':''].filter(Boolean).join('; ')}</td><td>${choices.get(Number(p.product_id))?'VISIBLE':'HIDDEN'}</td></tr>`).join('')||'<tr><td colspan="6">No matching suggestions.</td></tr>';
+  };
+  q('[data-review-supplier]').onchange=()=>{q('[data-review-search]').value='';render();};q('[data-review-search]').oninput=render;
+  q('[data-review-rows]').onchange=e=>{const c=e.target.closest('[data-review-product]');if(!c)return;const id=Number(c.dataset.reviewProduct),p=data.products.find(p=>Number(p.product_id)===id);if(c.checked&&p.duplicate_group)for(const other of data.products)if(other.duplicate_group===p.duplicate_group)choices.set(Number(other.product_id),false);choices.set(id,c.checked);render();};
+  q('[data-review-cancel]').onclick=()=>finish(null);q('[data-review-confirm]').onclick=()=>finish({token:data.token,decisions:[...choices].map(([product_id,visible])=>({product_id,visible}))});
+  render();dialog.showModal();
+ });
+}
+
 async function nemsTaskCreate(event) {
     event.preventDefault();
     const supplierIds = [...nemsSelectedSupplierIds];
@@ -3312,17 +3335,21 @@ async function nemsTaskCreate(event) {
     let dueAt;
     try { dueAt = nemsTaskDeadline(); }
     catch (error) { return showMessage(error.message, true); }
-    if (!confirm(`Assign ${supplierIds.length} supplier(s) to ${nemsSelectedStoreIds.size} store(s)? Up to ${supplierIds.length*nemsSelectedStoreIds.size} tasks. Existing assignments will be skipped.`)) return;
+    const storeIds=[...nemsSelectedStoreIds];
+    const expiryScope=el('nemsTaskScope').value;
     const btn = el('nemsTaskSave');
     btn.disabled = true;
     try {
+        const productReview=await nemsReviewTaskProducts(supplierIds,storeIds);
+        if(!productReview)return;
         const result = await api('/api/admin/tasks', {
             method: 'POST',
             body: JSON.stringify({
                 supplier_ids: supplierIds,
-                store_ids: [...nemsSelectedStoreIds],
-                expiry_scope: el('nemsTaskScope').value,
-                due_at: dueAt
+                store_ids: storeIds,
+                expiry_scope: expiryScope,
+                due_at: dueAt,
+                product_review:productReview
             })
         });
         showMessage(result.message || 'Assignments created.');
@@ -4167,7 +4194,7 @@ async function nemsOpenProductVisibility(supplierId) {
           <p class="muted">Hide products from STORE task encoding without deleting them. Possible cases are suggestions only.</p>
           <div class="nems-task-grid">
             <input id="nemsVisibilitySearch" placeholder="Search SKU or product name">
-            <select id="nemsVisibilityFilter"><option value="all">All products</option><option value="visible">Visible only</option><option value="hidden">Hidden only</option><option value="possible">Possible cases (review)</option></select>
+            <select id="nemsVisibilityFilter"><option value="possible">Packs and duplicates (review)</option><option value="all">All products</option><option value="visible">Visible only</option><option value="hidden">Hidden only</option></select>
             <button type="button" id="nemsVisibilityHide">Hide selected</button>
             <button type="button" id="nemsVisibilityShow">Unhide selected</button>
             <button type="button" id="nemsVisibilityClose">Close</button>
@@ -4203,13 +4230,13 @@ function nemsRenderVisibility() {
         return match && (filter === 'all' ||
             (filter === 'visible' && p.store_task_visible) ||
             (filter === 'hidden' && !p.store_task_visible) ||
-            (filter === 'possible' && p.possible_case));
+            (filter === 'possible' && (p.possible_case || p.duplicate_group)));
     });
     document.getElementById('nemsVisibilityRows').innerHTML = items.map(p => `<tr>
       <td><input type="checkbox" data-nems-visible-product="${Number(p.product_id)}"></td>
       <td>${escapeHtml(p.sku || '')}</td><td>${escapeHtml(p.product_name)}</td>
       <td>${p.store_task_visible ? 'Visible' : 'Hidden'}</td>
-      <td>${p.possible_case ? 'Possible case — review' : '—'}</td></tr>`).join('') ||
+      <td>${[p.possible_case?'Possible case / pack':'',p.duplicate_group?'Same name and barcode duplicate':''].filter(Boolean).join('; ')||'—'}</td></tr>`).join('') ||
       '<tr><td colspan="5">No matching products.</td></tr>';
     document.getElementById('nemsVisibilitySelectAll').checked = false;
 }

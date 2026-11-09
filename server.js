@@ -2424,6 +2424,7 @@ async function currentOverdueEmailTasks(user) {
         ORDER BY s.store_name,a.assignment_id`,scope.args)).rows;
 }
 require('./nems-task-controls')({app,pool,authenticate,adminOnly,secureRoute,transaction,taskTrackerSQL,scalePageQuery,notify,accessibleStores});
+const taskBatchEmails=require('./nems-task-review').register({app,pool,authenticate,adminOnly,secureRoute,accessibleStores});
 const meetingReports=require('./nems-reports').registerReports({app,pool,authenticate,adminOnly,secureRoute,transaction,accessibleStores,combinedMonitoringEntries,XLSX});
 // Brevo API acceptance is NOT delivery. SENT is recorded only for a verified delivery webhook.
 let emailBusy=false;
@@ -2448,7 +2449,10 @@ async function processEmailQueue() {
                 const recipient=(await pool.query(`SELECT email,role,store_name FROM public.users WHERE LOWER(email)=LOWER($1) AND status='ACTIVE'`,[row.recipient_email])).rows[0];
                 if(!recipient)throw new Error('Recipient no longer has an active NEMS account');
                 let meetingAttachment;
-                if(/^NEMS (monthly|yearly) meeting report · /.test(String(row.subject))){
+                if(String(row.subject).startsWith('NEMS new task assignments · ')){
+                    row.message=await taskBatchEmails.prepareEmail(row,recipient);
+                    await pool.query('UPDATE public.nems_email_notifications SET message=$2 WHERE email_id=$1',[row.email_id,row.message]);
+                }else if(/^NEMS (monthly|yearly) meeting report · /.test(String(row.subject))){
                     const meeting=await meetingReports.prepareEmail(row,recipient);
                     row.message=meeting.message;meetingAttachment=meeting.attachment;
                     await pool.query('UPDATE public.nems_email_notifications SET message=$2 WHERE email_id=$1',[row.email_id,row.message]);

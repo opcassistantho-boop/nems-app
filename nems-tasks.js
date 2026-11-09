@@ -1,4 +1,5 @@
 'use strict';
+const taskReview=require('./nems-task-review');
  
 module.exports = function registerTaskRoutes({
     app,
@@ -195,6 +196,7 @@ module.exports = function registerTaskRoutes({
  
                 // Serialize task creation so concurrent admins cannot create duplicate pairs.
                 await client.query("SELECT pg_advisory_xact_lock(hashtextextended('nems-task-create',0))");
+                const visibilityReview=await taskReview.applyReview(client, body.product_review, supplierIds);
                 const result=await client.query(`
                     INSERT INTO public.nems_task_assignments
                     (store_id,supplier_id,assigned_by,expiry_scope,due_at,due_date,status)
@@ -206,11 +208,14 @@ module.exports = function registerTaskRoutes({
                     RETURNING *`,[storeIds,supplierIds,assignedBy,scope,dueAt]);
                 const created=result.rows;
                 const skipped=storeIds.length*supplierIds.length-created.length;
+                const emailBatch=await taskReview.queueBatch(client,created,assignedBy,body.product_review);
 
                 await client.query('COMMIT');
  
                 return res.status(201).json({
-                    message: `${created.length} task assignments created; ${skipped} existing assignments skipped.`,
+                    message: `${created.length} task assignments created; ${skipped} existing assignments skipped. ${emailBatch.emails} combined store email(s) queued. ${visibilityReview.reviewed} product choices saved (${visibilityReview.hidden} hidden).`,
+                    visibility_review:visibilityReview,
+                    email_batch:emailBatch,
                     skipped,
                     count: created.length,
                     tasks: created
@@ -835,7 +840,7 @@ module.exports = function registerTaskRoutes({
                 [supplierId]);
             if (!supplier.rowCount) return fail(res, 404, 'Supplier not found');
             const products = await pool.query(`
-                SELECT product_id, sku, product_name, supplier_name,
+                SELECT product_id, sku, product_name, supplier_name, master_barcode, landed_cost,
                        store_task_visible,
                        (product_name ~* '(^|[^[:alnum:]])(CS|CASE|BOX)([^[:alnum:]]|$)') AS possible_case
                 FROM public.products
@@ -843,7 +848,8 @@ module.exports = function registerTaskRoutes({
                   AND LOWER(TRIM(supplier_name)) = LOWER(TRIM($1))
                 ORDER BY product_name, product_id
             `, [supplier.rows[0].supplier_name]);
-            return res.json({supplier: supplier.rows[0], products: products.rows});
+            const flags=new Map(taskReview.analyze(products.rows,[supplierId]).products.map(p=>[Number(p.product_id),p]));
+            return res.json({supplier: supplier.rows[0], products: products.rows.map(p=>({...p,possible_case:taskReview.possiblePack(p.product_name),duplicate_group:flags.get(Number(p.product_id))?.duplicate_group||null}))});
         } catch (error) { return handleError(res, error, 'Could not load product visibility'); }
     });
  
@@ -866,6 +872,13 @@ module.exports = function registerTaskRoutes({
             if (!supplier.rowCount) {
                 await client.query('ROLLBACK');
                 return fail(res, 404, 'Supplier not found');
+            }
+            if(visible){
+                const rows=await client.query(`SELECT product_id,sku,product_name,supplier_name,master_barcode,store_task_visible FROM public.products WHERE status='ACTIVE' AND LOWER(TRIM(supplier_name))=LOWER(TRIM($1)) ORDER BY product_id FOR UPDATE`,[supplier.rows[0].supplier_name]);
+                const flagged=taskReview.analyze(rows.rows,[supplierId]).products;
+                const affected=new Set(flagged.filter(p=>uniqueIds.includes(Number(p.product_id))&&p.duplicate_group).map(p=>p.duplicate_group));
+                const counts=new Map();for(const p of flagged)if(affected.has(p.duplicate_group)&&(p.store_task_visible||uniqueIds.includes(Number(p.product_id))))counts.set(p.duplicate_group,(counts.get(p.duplicate_group)||0)+1);
+                if([...counts.values()].some(n=>n>1)){await client.query('ROLLBACK');return fail(res,409,'Another exact duplicate is already visible. Hide it first, then unhide the record to keep.');}
             }
             const result = await client.query(`
                 UPDATE public.products SET store_task_visible = $1
