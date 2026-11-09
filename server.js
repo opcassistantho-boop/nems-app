@@ -4,6 +4,7 @@ const express = require('express');
 const { Pool } = require('pg');
 const path = require('path');
 const XLSX = require('xlsx');
+const lateEncoding=require('./nems-late-encoding');
 const {pageQuery:scalePageQuery,createServices}=require('./nems-scale');
  
 const app = express();
@@ -1097,17 +1098,8 @@ app.post(
                 [user.email, user.store_name, product.supplier_name]
             );
  
-            for (const task of taskLocks.rows) {
-                // Cancelling a task removes the assignment requirement, not Store Encoding access.
-                if (task.status === 'CANCELLED') continue;
-                if (task.status !== 'ACTIVE' ||
-                    (task.due_at && new Date(task.due_at).getTime() <= Date.now())) {
-                    await client.query('ROLLBACK');
-                    return sendError(res, 409,
-                        'This supplier task is past its deadline or closed. Ask ADMIN to reopen it.');
-                }
-            }
- 
+            // Store Monitoring stays open; deadline locks apply only to My Task.
+
             await lockProduct(client, user.email, productId);
             const previous = await client.query(`SELECT m.*, xmin::text AS revision
                 FROM public.monitoring m WHERE store_email=$1 AND product_id=$2 FOR UPDATE`, [user.email, productId]);
@@ -1144,7 +1136,7 @@ app.post(
                     $1, $2, $3, $4, $5,
                     $6, $7, $8, $9, $10,
                     $11, $12, $13, $14,
-                    $16::jsonb, NOW(), $15
+                    $16::jsonb, clock_timestamp(), $15
                 )
                 ON CONFLICT (store_email, product_id)
                 DO UPDATE SET
@@ -1157,9 +1149,9 @@ app.post(
                     expiration_3 = EXCLUDED.expiration_3,
                     qty_3 = EXCLUDED.qty_3,
                     extra_expirations = EXCLUDED.extra_expirations,
-                    updated_at = NOW(),
+                    updated_at = clock_timestamp(),
                     updated_by = EXCLUDED.updated_by
-                RETURNING monitoring_id, xmin::text AS revision
+                RETURNING monitoring_id, updated_at, xmin::text AS revision
                 `,
                 [
                     user.email,
@@ -1183,14 +1175,17 @@ app.post(
                 ]
             );
  
+            const taskExclusions=lateEncoding.exclusions(taskLocks.rows,rows[0].updated_at?new Date(rows[0].updated_at).getTime():Date.now());
             await client.query(`INSERT INTO public.nems_store_remarks
-                (store_name, store_email, product_id, employee_name, remarks, source, account_email, details)
-                VALUES ($1,$2,$3,$4,$5,'STORE_ENCODING',$6,$7::jsonb)`,
+                (store_name, store_email, product_id, employee_name, remarks, source, account_email, details, created_at)
+                VALUES ($1,$2,$3,$4,$5,'STORE_ENCODING',$6,$7::jsonb,clock_timestamp())`,
                 [user.store_name,user.email,productId,employeeName,storeRemarks,user.email,
-                 JSON.stringify({expirations:entries,store_barcode:barcode,srp,before:previous.rows[0]||null,monitoring_id:rows[0].monitoring_id,revision:rows[0].revision})]);
+                 JSON.stringify({expirations:entries,store_barcode:barcode,srp,before:previous.rows[0]||null,monitoring_id:rows[0].monitoring_id,revision:rows[0].revision,task_exclusions:taskExclusions})]);
             await client.query('COMMIT');
             res.json({
                 message: 'Monitoring saved',
+                task_warning:lateEncoding.warningText(taskExclusions),
+                excluded_tasks:taskExclusions,
                 monitoring_id: rows[0].monitoring_id, revision: rows[0].revision
             });
  
@@ -1984,7 +1979,7 @@ app.get(
 require('./nems-tasks')({
     getMonitoringStock: async (user,supplier) => {
         const scope=storeScope(user);
-        return (await pool.query(`SELECT m.product_id,m.expiration_date,m.quantity FROM (${scopedMonitoringSQL(user)}) m WHERE ${scope.sql} AND LOWER(TRIM(m.supplier))=LOWER(TRIM($${scope.args.length+1}::text)) ORDER BY m.product_id,m.expiration_date`,[...scope.args,supplier])).rows;
+        return lateEncoding.enrich(pool,(await pool.query(`SELECT m.product_id,m.expiration_date,m.quantity,m.updated_at,m.monitoring_id FROM (${scopedMonitoringSQL(user)}) m WHERE ${scope.sql} AND LOWER(TRIM(m.supplier))=LOWER(TRIM($${scope.args.length+1}::text)) ORDER BY m.product_id,m.expiration_date`,[...scope.args,supplier])).rows);
     },
     app,
     pool,
@@ -2068,7 +2063,7 @@ async function enrichMonitoring(client,rows) {
             AND r.product_id=k.product_id AND r.expiration_date=k.date::date
             ORDER BY r.reported_at DESC,r.report_id DESC LIMIT 1) rp ON TRUE`,[JSON.stringify(keys)]);
     const map=new Map(result.rows.map(r=>[r.i,r]));
-    return rows.map((r,i)=>({...r,...map.get(i),days_remaining:expiryDays(r.expiration_date),days_overdue:Math.max(0,-expiryDays(r.expiration_date))}));
+    return lateEncoding.enrich(client,rows.map((r,i)=>({...r,...map.get(i),days_remaining:expiryDays(r.expiration_date),days_overdue:Math.max(0,-expiryDays(r.expiration_date))})));
 }
 
 app.get('/api/products/barcode',authenticate,secureRoute(async(req,res)=>{

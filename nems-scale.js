@@ -1,6 +1,7 @@
 'use strict';
 // No new npm packages. xlsx is already a NEMS dependency.
 const crypto=require('crypto');
+const lateEncoding=require('./nems-late-encoding');
 const {Worker,isMainThread,parentPort,workerData}=require('worker_threads');
 if(!isMainThread && workerData?.nemsExport){
     void (async()=>{
@@ -56,7 +57,7 @@ async function enrichMonitoring(client,rows) {
             AND r.product_id=k.product_id AND r.expiration_date=k.date::date
             ORDER BY r.reported_at DESC,r.report_id DESC LIMIT 1) rp ON TRUE`,[JSON.stringify(keys)]);
     const map=new Map(result.rows.map(r=>[r.i,r]));
-    return rows.map((r,i)=>({...r,...map.get(i),days_remaining:expiryDays(r.expiration_date),days_overdue:Math.max(0,-expiryDays(r.expiration_date))}));
+    return lateEncoding.enrich(client,rows.map((r,i)=>({...r,...map.get(i),days_remaining:expiryDays(r.expiration_date),days_overdue:Math.max(0,-expiryDays(r.expiration_date))})));
 }
 
 async function buildMonitoringExport(req){
@@ -99,6 +100,7 @@ async function buildMonitoringExport(req){
             const enrichedRows = await enrichMonitoring(pool, rows);
             const filteredRows = categories.length ? enrichedRows.filter(record => categories.includes(expiryCategory(record.expiration_date))) : enrichedRows;
             const records = filteredRows.map(record => ({
+                ...lateEncoding.columns(record),
                 Store: record.store_name,
                 Supplier: record.supplier,
                 SKU: record.sku,
@@ -138,6 +140,7 @@ async function buildMonitoringExport(req){
                 WHERE ${archiveScope.sql}${archiveConditions} ORDER BY ar.archived_at DESC LIMIT 50001`,archiveArgs)).rows;
             if(archiveRows.length>50000)throw appError(400,'Export exceeds 50,000 archive rows. Contact ADMIN for a separate archive export.');
             const archiveExport=archiveRows.filter(r=>(!suppliers.length||suppliers.includes(r.product_snapshot.supplier_name))&&(!categories.length||categories.includes(expiryCategory(r.monitoring_snapshot.expiration_date)))).map(r=>({
+                ...lateEncoding.archiveColumns(r),
                 Store:r.store_name,Supplier:r.product_snapshot.supplier_name,SKU:r.product_snapshot.sku,Product:r.product_snapshot.product_name,
                 Barcode:r.product_snapshot.master_barcode,'Retail Price':r.product_snapshot.master_srp,
                 'Expiration Date':r.monitoring_snapshot.expiration_date,'Quantity (Pieces)':r.monitoring_snapshot.quantity,
@@ -151,7 +154,7 @@ async function buildMonitoringExport(req){
                 'Archived At':r.archived_at,'Restored At':r.restored_at||'','Restored By':r.restored_by||'','Restoration Remarks':r.restore_remarks||''
             }));
 
-    return [{name:'Monitoring',rows:records},{name:'Permanent Archive',rows:archiveExport}];
+    return [{name:'Monitoring',rows:records},{name:'Late or Locked Task Entries',rows:records.filter(r=>r['Excluded Task IDs'])},{name:'Permanent Archive',rows:archiveExport}];
 }
 
 

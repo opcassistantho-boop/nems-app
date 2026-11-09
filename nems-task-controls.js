@@ -15,7 +15,7 @@ module.exports=function registerTaskControls({app,pool,authenticate,adminOnly,se
   const status=String(req.query.status||'');
   if(status&&!['PENDING','OVERDUE','SUBMITTED','CANCELLED','CLOSED'].includes(status))throw fault(400,'Invalid status');
   const values=[...args];if(status)values.push(status);
-  const group=`SELECT supplier_id,supplier_name,COUNT(*)::int AS stores,
+  const group=`SELECT supplier_id,supplier_name,COUNT(DISTINCT store_id)::int AS stores,
    COUNT(*) FILTER(WHERE display_status='PENDING')::int AS pending,
    COUNT(*) FILTER(WHERE display_status='OVERDUE')::int AS overdue,
    COUNT(*) FILTER(WHERE display_status='SUBMITTED')::int AS submitted,
@@ -29,13 +29,17 @@ module.exports=function registerTaskControls({app,pool,authenticate,adminOnly,se
  }));
  app.get('/api/admin/task-groups/:supplierId/stores',...route,secureRoute(async(req,res)=>{
   const supplierId=id(req.params.supplierId);if(!supplierId)throw fault(400,'Invalid supplier');
+  const rounds=(await pool.query(`SELECT COALESCE(assignment_batch::text,'legacy') AS round_key,MAX(assigned_at) AS assigned_at,COUNT(*)::int AS stores FROM public.nems_task_assignments WHERE supplier_id=$1 GROUP BY assignment_batch ORDER BY MAX(assigned_at) DESC NULLS LAST,COALESCE(assignment_batch::text,'legacy')`,[supplierId])).rows;
+  const round=String(req.query.round||rounds[0]?.round_key||'legacy');
+  if(rounds.length&&!rounds.some(r=>r.round_key===round))throw fault(400,'Choose a valid assignment round');
   const {sql,args}=taskTrackerSQL(req.user,{supplier:supplierId});
+  args.push(round);
   const rows=(await pool.query(`SELECT t.*,a.xmin::text AS revision,
     (SELECT to_jsonb(x) FROM (SELECT employee_name,explanation,submitted_at FROM public.nems_task_overdue_explanations e WHERE e.assignment_id=t.assignment_id ORDER BY submitted_at DESC LIMIT 1) x) AS explanation,
     (SELECT to_jsonb(x) FROM (SELECT action_type,reason,actor_email,new_due_at,created_at FROM public.nems_task_admin_actions h WHERE h.assignment_id=t.assignment_id ORDER BY created_at DESC,action_id DESC LIMIT 1) x) AS admin_note
-    FROM (${sql}) t JOIN public.nems_task_assignments a ON a.assignment_id=t.assignment_id ORDER BY t.store_name,t.assignment_id LIMIT 1001`,args)).rows;
+    FROM (${sql}) t JOIN public.nems_task_assignments a ON a.assignment_id=t.assignment_id WHERE COALESCE(a.assignment_batch::text,'legacy')=$${args.length} ORDER BY t.store_name,t.assignment_id LIMIT 1001`,args)).rows;
   if(rows.length>1000)throw fault(409,'More than 1000 stores are assigned. Contact ADMIN before changing this supplier.');
-  res.json({supplier_id:supplierId,supplier_name:rows[0]?.supplier_name||'',records:rows});
+  res.json({supplier_id:supplierId,supplier_name:rows[0]?.supplier_name||'',rounds,current_round:round,records:rows});
  }));
  for(const action of ['REOPEN','CANCEL'])app.post('/api/admin/task-groups/:supplierId/'+action.toLowerCase(),...route,secureRoute(async(req,res)=>{
   const supplierId=id(req.params.supplierId),chosen=selection(req.body||{});

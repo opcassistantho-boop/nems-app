@@ -1725,6 +1725,7 @@ function renderMonitoring() {
                     <div>
                         ${escapeHtml(item.product_name)}
                     </div>
+                    ${item.task_reminder?`<p><strong>Task reminder:</strong> ${escapeHtml(item.task_reminder)}</p>`:''}
                 </td>
  
                 <td class="${nemsMonitoringExpiryClass(item.expiration_date)}">
@@ -2501,7 +2502,9 @@ el('storeForm').addEventListener('submit', async event => {
     try {
         const saved=await api('/api/store/monitoring', {method:'POST', body:JSON.stringify(payload)});
         nemsEntryRevision=saved.revision;
-        showMessage('Store monitoring saved successfully.');
+        showMessage(saved.task_warning?'Saved. '+saved.task_warning:'Store monitoring saved successfully.');
+        let reminder=el('nemsStoreTaskReminder');if(!reminder){reminder=document.createElement('p');reminder.id='nemsStoreTaskReminder';reminder.setAttribute('role','status');el('storeSaveBtn').after(reminder);}
+        reminder.textContent=saved.task_warning?'Last save: '+saved.task_warning:'';
         // Remarks history is opened only when requested.
     } catch (error) {
         showMessage(error.message, true);
@@ -3098,14 +3101,14 @@ function nemsTaskSuppliersRender() {
 
 let nemsTaskGroups=[];
 function nemsTaskRowsRender(){
- el('nemsTaskListCount').textContent=`${nemsTaskGroups.length} suppliers on this page. View details to see every assigned store.`;
+ el('nemsTaskListCount').textContent=`${nemsTaskGroups.length} suppliers on this page. Status totals cover all rounds; View details lets you choose a round.`;
  el('nemsTaskRows').innerHTML=nemsTaskGroups.map(g=>`<tr><td>${escapeHtml(g.supplier_name)}</td><td>${Number(g.stores)}</td><td>${Number(g.pending)}</td><td>${Number(g.overdue)}</td><td>${Number(g.submitted)}</td><td>${Number(g.cancelled)}</td><td>${Number(g.closed)}</td><td><button type="button" data-nems-task-group="${Number(g.supplier_id)}">View all details</button> <button type="button" data-nems-visibility="${Number(g.supplier_id)}">Products</button></td></tr>`).join('')||'<tr><td colspan="8">No matching supplier tasks.</td></tr>';
 }
-async function nemsTaskGroupOpen(supplierId){
+async function nemsTaskGroupOpen(supplierId,initialRound=null){
  if(currentUser?.role!=='ADMIN')return;
  const overlay=document.createElement('div');overlay.style.cssText='position:fixed;inset:0;z-index:99990;background:#0008;display:flex;align-items:center;justify-content:center;padding:16px';
  const panel=document.createElement('section');panel.setAttribute('role','dialog');panel.setAttribute('aria-modal','true');panel.setAttribute('aria-label','Assigned stores and task controls');panel.style.cssText='background:white;color:#142b47;width:min(1250px,100%);max-height:92vh;overflow:auto;border-radius:12px;padding:22px';
- panel.innerHTML=`<div class="row"><h2 data-group-title>Assigned stores</h2><button type="button" data-group-refresh>Refresh details</button><button type="button" data-group-close>Close</button></div><p>One row per assigned store. Reopening or cancelling changes only the selected stores. Encoded stock and previous submissions remain saved.</p><div class="nems-task-grid"><div><label>Search stores</label><input data-group-search type="search" placeholder="Store name, email or task ID"></div><div><label>Status</label><select data-group-status><option value="">All statuses</option><option>PENDING</option><option>OVERDUE</option><option>SUBMITTED</option><option>CLOSED</option><option>CANCELLED</option></select></div><div><label>Action</label><select data-group-action><option value="REOPEN">Reopen selected stores</option><option value="CANCEL">Cancel selected stores' tasks</option></select></div></div><p data-group-hint></p><div class="nems-task-actions"><button type="button" data-group-all>Select all eligible stores</button><button type="button" data-group-matching>Select matching eligible stores</button><button type="button" data-group-clear>Clear selection</button></div><p data-group-count></p><div class="tablewrap" style="max-height:42vh;overflow:auto"><table><thead><tr><th>Select</th><th>Store / Task</th><th>Scope</th><th>Deadline</th><th>Status</th><th>Submissions</th><th>Store explanation / Latest instruction</th><th>Edit</th></tr></thead><tbody data-group-rows><tr><td colspan="8">Loading...</td></tr></tbody></table></div><div data-group-deadline-box><label>New deadline *</label><input data-group-deadline type="datetime-local"></div><label>Explanation for the selected stores *</label><textarea data-group-reason maxlength="2000" placeholder="Explain why the task is reopened or cancelled. Only selected stores receive this inside NEMS."></textarea><p data-group-feedback role="status" aria-live="polite"></p><button type="button" data-group-apply>Reopen selected stores</button>`;
+ panel.innerHTML=`<div class="row"><h2 data-group-title>Assigned stores</h2><button type="button" data-group-refresh>Refresh details</button><button type="button" data-group-close>Close</button></div><label>Assignment round</label><select data-group-round></select><p>Each round has its own task IDs and deadlines. One row per store in the selected round. Reopening or cancelling changes only the selected stores. Encoded stock and previous submissions remain saved.</p><div class="nems-task-grid"><div><label>Search stores</label><input data-group-search type="search" placeholder="Store name, email or task ID"></div><div><label>Status</label><select data-group-status><option value="">All statuses</option><option>PENDING</option><option>OVERDUE</option><option>SUBMITTED</option><option>CLOSED</option><option>CANCELLED</option></select></div><div><label>Action</label><select data-group-action><option value="REOPEN">Reopen selected stores</option><option value="CANCEL">Cancel selected stores' tasks</option></select></div></div><p data-group-hint></p><div class="nems-task-actions"><button type="button" data-group-all>Select all eligible stores</button><button type="button" data-group-matching>Select matching eligible stores</button><button type="button" data-group-clear>Clear selection</button></div><p data-group-count></p><div class="tablewrap" style="max-height:42vh;overflow:auto"><table><thead><tr><th>Select</th><th>Store / Task</th><th>Scope</th><th>Deadline</th><th>Status</th><th>Submissions</th><th>Store explanation / Latest instruction</th><th>Edit</th></tr></thead><tbody data-group-rows><tr><td colspan="8">Loading...</td></tr></tbody></table></div><div data-group-deadline-box><label>New deadline *</label><input data-group-deadline type="datetime-local"></div><label>Explanation for the selected stores *</label><textarea data-group-reason maxlength="2000" placeholder="Explain why the task is reopened or cancelled. Only selected stores receive this inside NEMS."></textarea><p data-group-feedback role="status" aria-live="polite"></p><button type="button" data-group-apply>Reopen selected stores</button>`;
  overlay.appendChild(panel);document.body.appendChild(overlay);
  const q=s=>panel.querySelector(s),selected=new Set();let records=[],busy=false,closed=false;
  const close=()=>{if(busy)return;closed=true;overlay.remove();document.removeEventListener('keydown',onKey);};
@@ -3121,17 +3124,19 @@ async function nemsTaskGroupOpen(supplierId){
   q('[data-group-apply]').textContent=reopening?'Reopen selected stores':'Cancel selected stores’ tasks';q('[data-group-apply]').disabled=busy||selected.size===0;
   q('[data-group-rows]').innerHTML=visible.map(r=>`<tr><td><input type="checkbox" data-group-check="${Number(r.assignment_id)}" aria-label="Select ${escapeHtml(r.store_name)}" ${selected.has(Number(r.assignment_id))?'checked':''} ${!can(r)||busy?'disabled':''}></td><td>${escapeHtml(r.store_name)}<br><small>${escapeHtml(r.store_email||'')} · #${Number(r.assignment_id)}</small></td><td>${escapeHtml(r.expiry_scope)}</td><td>${r.due_at?escapeHtml(dateTimeText(r.due_at)):'None'}</td><td>${escapeHtml(r.display_status)}</td><td>${Number(r.submission_count||0)}</td><td>${r.explanation?'<strong>Store:</strong> '+escapeHtml(r.explanation.employee_name||'')+' — '+escapeHtml(r.explanation.explanation||'')+'<br>':''}${r.admin_note?'<strong>'+escapeHtml(r.admin_note.action_type)+':</strong> '+escapeHtml(r.admin_note.reason||''):'—'}</td><td>${r.display_status==='PENDING'?`<button type="button" data-group-edit="${Number(r.assignment_id)}" ${busy?'disabled':''}>Edit</button>`:'—'}</td></tr>`).join('')||'<tr><td colspan="8">No matching assigned stores.</td></tr>';
  };
- const load=async()=>{
-  const data=await api('/api/admin/task-groups/'+supplierId+'/stores');if(closed)return;
+ const load=async(round=null)=>{
+  const data=await api('/api/admin/task-groups/'+supplierId+'/stores'+(round?'?round='+encodeURIComponent(round):''));if(closed)return;
+  q('[data-group-round]').innerHTML=(data.rounds||[]).map(r=>`<option value="${escapeHtml(r.round_key)}" ${r.round_key===data.current_round?'selected':''}>${r.round_key==='legacy'?'Previous assignments':dateTimeText(r.assigned_at)} · ${Number(r.stores)} stores</option>`).join('');
   records=data.records||[];nemsTaskRows=records;q('[data-group-title]').textContent=data.supplier_name||'Assigned stores';selected.clear();render();
  };
- q('[data-group-refresh]').onclick=async()=>{if(busy)return;try{await load();q('[data-group-feedback]').textContent='Details refreshed. Select stores again.';}catch(e){q('[data-group-feedback]').textContent=e.message;}};
+ q('[data-group-round]').onchange=async()=>{if(busy)return;try{await load(q('[data-group-round]').value);}catch(e){q('[data-group-feedback]').textContent=e.message;}};
+ q('[data-group-refresh]').onclick=async()=>{if(busy)return;try{await load(q('[data-group-round]').value);q('[data-group-feedback]').textContent='Details refreshed. Select stores again.';}catch(e){q('[data-group-feedback]').textContent=e.message;}};
  q('[data-group-search]').oninput=render;q('[data-group-status]').onchange=render;q('[data-group-action]').onchange=render;
  q('[data-group-all]').onclick=()=>{if(busy)return;records.filter(can).forEach(r=>selected.add(Number(r.assignment_id)));render();};
  q('[data-group-matching]').onclick=()=>{if(busy)return;records.filter(r=>can(r)&&matches(r)).forEach(r=>selected.add(Number(r.assignment_id)));render();};
  q('[data-group-clear]').onclick=()=>{if(busy)return;selected.clear();render();};
  q('[data-group-rows]').onchange=e=>{if(busy)return;const c=e.target.closest('[data-group-check]');if(!c)return;c.checked?selected.add(Number(c.dataset.groupCheck)):selected.delete(Number(c.dataset.groupCheck));render();};
- q('[data-group-rows]').onclick=async e=>{const b=e.target.closest('[data-group-edit]');if(!b||busy)return;close();await nemsTaskEdit(Number(b.dataset.groupEdit));void nemsTaskGroupOpen(supplierId);};
+ q('[data-group-rows]').onclick=async e=>{const b=e.target.closest('[data-group-edit]');if(!b||busy)return;const round=q('[data-group-round]').value;close();await nemsTaskEdit(Number(b.dataset.groupEdit));void nemsTaskGroupOpen(supplierId,round);};
  q('[data-group-apply]').onclick=async()=>{
   if(busy||!selected.size)return;
   const action=q('[data-group-action]').value,reason=q('[data-group-reason]').value.trim();
@@ -3146,12 +3151,12 @@ async function nemsTaskGroupOpen(supplierId){
   try{
    const result=await api('/api/admin/task-groups/'+supplierId+'/'+action.toLowerCase(),{method:'POST',body:JSON.stringify(payload)});
    q('[data-group-feedback]').textContent=result.message;q('[data-group-reason]').value='';
-   await Promise.all([load(),nemsTaskLoad()]);
+   await Promise.all([load(q('[data-group-round]').value),nemsTaskLoad()]);
   }catch(e){q('[data-group-feedback]').textContent=e.message+' Refresh details before changing your selection.';}
   finally{busy=false;panel.querySelectorAll('input,select,textarea,button').forEach(n=>n.disabled=false);render();}
  };
  const suggested=new Date(Date.now()+86400000);q('[data-group-deadline]').value=new Date(suggested.getTime()-suggested.getTimezoneOffset()*60000).toISOString().slice(0,16);
- try{await load();q('[data-group-search]').focus();}catch(e){q('[data-group-feedback]').textContent=e.message;}
+ try{await load(initialRound);q('[data-group-search]').focus();}catch(e){q('[data-group-feedback]').textContent=e.message;}
 }
 
 async function nemsTaskEdit(assignmentId) {
@@ -3309,7 +3314,7 @@ async function nemsReviewTaskProducts(supplierIds,storeIds){
  if(!data.products.length)return confirm(`Assign ${supplierIds.length} supplier(s) to ${storeIds.length} store(s)? No pack or exact-duplicate candidates were found. Each store will receive one combined email for newly created tasks.`)?{token:data.token,decisions:[]}:null;
  return new Promise(resolve=>{
   const dialog=document.createElement('dialog');dialog.style.cssText='width:min(1100px,92vw);max-height:90vh;overflow:auto;border:0;border-radius:12px;padding:24px;color:#142b47';
-  dialog.innerHTML=`<h2>Review packs and duplicate products</h2><p>Only possible cases/packs (CS, BOX, X12, X24, X64, etc.) and exact duplicate candidates are shown. Other products are unchanged.</p><p><strong>Checked = visible in My Task. Unchecked = hidden.</strong> Keep packs visible when they are sold as packs. For the same product name and barcode within one supplier, choose at most one visible record. The suggested duplicate choice keeps the first currently visible record; you can change it.</p><p>These supplier visibility choices apply to all stores' existing and new tasks. Nothing changes until you confirm below. Product and stock records are not deleted. At least one active product must remain visible per selected supplier; otherwise remove that supplier from this assignment.</p><div class="nems-task-grid"><div><label>Supplier</label><select data-review-supplier></select></div><div><label>Search suggested products</label><input data-review-search type="search" placeholder="Product, SKU or barcode"></div></div><p data-review-count></p><div class="tablewrap" style="max-height:44vh;overflow:auto"><table><thead><tr><th>Show in My Task</th><th>Product / SKU / ID</th><th>Barcode</th><th>Landed cost</th><th>Why shown</th><th>Choice</th></tr></thead><tbody data-review-rows></tbody></table></div><p>${supplierIds.length} supplier(s) × ${storeIds.length} store(s). Existing assignments are skipped. Each store receives one combined email for the new tasks created in this batch.</p><button type="button" data-review-cancel>Cancel</button> <button type="button" data-review-confirm>Confirm choices and create tasks</button>`;
+  dialog.innerHTML=`<h2>Review packs and duplicate products</h2><p>Only possible cases/packs (CS, BOX, X12, X24, X64, etc.) and exact duplicate candidates are shown. Other products are unchanged.</p><p><strong>Checked = visible in My Task. Unchecked = hidden.</strong> Keep packs visible when they are sold as packs. For the same product name and barcode within one supplier, choose at most one visible record. The suggested duplicate choice keeps the first currently visible record; you can change it.</p><p>These supplier visibility choices apply to all stores' existing and new tasks. Nothing changes until you confirm below. Product and stock records are not deleted. At least one active product must remain visible per selected supplier; otherwise remove that supplier from this assignment.</p><div class="nems-task-grid"><div><label>Supplier</label><select data-review-supplier></select></div><div><label>Search suggested products</label><input data-review-search type="search" placeholder="Product, SKU or barcode"></div></div><p data-review-count></p><div class="tablewrap" style="max-height:44vh;overflow:auto"><table><thead><tr><th>Show in My Task</th><th>Product / SKU / ID</th><th>Barcode</th><th>Landed cost</th><th>Why shown</th><th>Choice</th></tr></thead><tbody data-review-rows></tbody></table></div><p>${supplierIds.length} supplier(s) × ${storeIds.length} store(s). Previous assignments stay separate; new task IDs are created for this round. Each store receives one combined email for the new tasks created in this batch.</p><button type="button" data-review-cancel>Cancel</button> <button type="button" data-review-confirm>Confirm choices and create tasks</button>`;
   document.body.appendChild(dialog);const q=s=>dialog.querySelector(s),choices=new Map(data.products.map(p=>[Number(p.product_id),p.suggested_visible]));
   const suppliers=[...new Map(data.products.map(p=>[String(p.supplier_id),p.supplier_name])).entries()];
   q('[data-review-supplier]').innerHTML=suppliers.map(([id,name])=>`<option value="${Number(id)}">${escapeHtml(name)}</option>`).join('');
@@ -3380,7 +3385,7 @@ function nemsTaskSetup() {
     page.innerHTML = `
         <div class="panel">
             <h2>Task Assignment</h2>
-            <p class="muted">Assign monitoring tasks by supplier to one or more stores. Existing assignments will not be overwritten.</p>
+            <p class="muted">Assign monitoring tasks by supplier to one or more stores. Each creation makes a new assignment round. Previous tasks and submissions are preserved.</p>
             <form id="nemsTaskForm">
                 <div class="nems-task-grid">
                     <div><label>Find supplier</label><input id="nemsTaskSupplierSearch" placeholder="Search supplier name"><label>Suppliers *</label><div class="nems-task-actions"><button type="button" id="nemsTaskSuppliersAll">Select all suppliers</button><button type="button" id="nemsTaskSuppliersMatching">Select matching</button><button type="button" id="nemsTaskSuppliersClear">Clear</button></div><p class="muted" id="nemsTaskSupplierCount"></p><div class="nems-task-store-list" style="max-height:220px;overflow:auto" id="nemsTaskSuppliersList">Loading...</div></div>

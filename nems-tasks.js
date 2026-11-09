@@ -1,5 +1,6 @@
 'use strict';
 const taskReview=require('./nems-task-review');
+const {randomUUID}=require('crypto');
  
 module.exports = function registerTaskRoutes({
     app,
@@ -197,15 +198,16 @@ module.exports = function registerTaskRoutes({
                 // Serialize task creation so concurrent admins cannot create duplicate pairs.
                 await client.query("SELECT pg_advisory_xact_lock(hashtextextended('nems-task-create',0))");
                 const visibilityReview=await taskReview.applyReview(client, body.product_review, supplierIds);
+                const assignmentBatch=randomUUID();
                 const result=await client.query(`
                     INSERT INTO public.nems_task_assignments
-                    (store_id,supplier_id,assigned_by,expiry_scope,due_at,due_date,status)
-                    SELECT st.store_id,sp.supplier_id,$3,$4,$5::timestamptz,$5::timestamptz::date,'ACTIVE'
+                    (store_id,supplier_id,assigned_by,expiry_scope,due_at,due_date,status,assignment_batch)
+                    SELECT st.store_id,sp.supplier_id,$3,$4,$5::timestamptz,$5::timestamptz::date,'ACTIVE',$6::uuid
                     FROM unnest($1::bigint[]) AS st(store_id)
                     CROSS JOIN unnest($2::bigint[]) AS sp(supplier_id)
                     WHERE NOT EXISTS (SELECT 1 FROM public.nems_task_assignments a
-                        WHERE a.store_id=st.store_id AND a.supplier_id=sp.supplier_id)
-                    RETURNING *`,[storeIds,supplierIds,assignedBy,scope,dueAt]);
+                        WHERE a.store_id=st.store_id AND a.supplier_id=sp.supplier_id AND a.assignment_batch=$6::uuid)
+                    RETURNING *`,[storeIds,supplierIds,assignedBy,scope,dueAt,assignmentBatch]);
                 const created=result.rows;
                 const skipped=storeIds.length*supplierIds.length-created.length;
                 const emailBatch=await taskReview.queueBatch(client,created,assignedBy,body.product_review);
@@ -213,9 +215,10 @@ module.exports = function registerTaskRoutes({
                 await client.query('COMMIT');
  
                 return res.status(201).json({
-                    message: `${created.length} task assignments created; ${skipped} existing assignments skipped. ${emailBatch.emails} combined store email(s) queued. ${visibilityReview.reviewed} product choices saved (${visibilityReview.hidden} hidden).`,
+                    message: `${created.length} new-round task assignments created; ${skipped} duplicates within this round skipped. ${emailBatch.emails} combined store email(s) queued. ${visibilityReview.reviewed} product choices saved (${visibilityReview.hidden} hidden).`,
                     visibility_review:visibilityReview,
                     email_batch:emailBatch,
+                    assignment_batch:assignmentBatch,
                     skipped,
                     count: created.length,
                     tasks: created
@@ -598,6 +601,8 @@ module.exports = function registerTaskRoutes({
             const end=nearEnd.toISOString().slice(0,10);
             const byProduct=new Map();
             for(const row of monitoringRows){
+                // Never prefill a locked task with stock encoded after its deadline.
+                if(locked && ((String(row.excluded_task_ids||'').split(',').map(x=>x.trim()).includes(String(a.assignment_id)))||a.status!=='ACTIVE'||!a.due_at||!row.updated_at||new Date(row.updated_at).getTime()>=new Date(a.due_at).getTime()))continue;
                 const date=row.expiration_date instanceof Date?row.expiration_date.toISOString().slice(0,10):String(row.expiration_date).slice(0,10);
                 const qty=Number(row.quantity);
                 const inScope=a.expiry_scope==='EXPIRED'?date<today:a.expiry_scope==='NEAR'?date>=today&&date<=end:date<=end;
