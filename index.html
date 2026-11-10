@@ -311,6 +311,16 @@ td button { margin:2px; }
 .nems-exp-entry input[type=date] {min-width:135px;flex:2}
 .nems-exp-entry input[type=number] {min-width:75px;max-width:105px;flex:1}
 .nems-exp-entry button {white-space:nowrap}
+
+.nems-password-wrap{position:relative;width:100%}
+.nems-password-wrap>input{width:100%;padding-right:52px;box-sizing:border-box}
+.nems-password-toggle{position:absolute;right:4px;top:50%;transform:translateY(-50%);width:42px;height:38px;margin:0;padding:8px;display:flex;align-items:center;justify-content:center;background:transparent;color:#173b65;border:0;border-radius:5px;cursor:pointer}
+#loginPanel .nems-password-toggle{width:42px}
+#loginPanel .nems-password-wrap>input{margin-bottom:0}
+#loginPanel .nems-password-wrap{margin-bottom:13px}
+.nems-password-toggle:hover{background:#e7eef7;color:#173b65}
+.nems-password-toggle:focus-visible{outline:2px solid #245ca6;outline-offset:1px}
+.nems-password-toggle svg{width:24px;height:24px;pointer-events:none}
 </style>
 </head>
  
@@ -4883,5 +4893,42 @@ nemsMeetingSetup();
 
 </script>
  
+
+<script>
+// Password visibility affects only the value currently typed in this field.
+(function(){
+ const eye='<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>';
+ const eyeClosed='<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m3 3 18 18M10.6 5.1 12 5c6.5 0 10 7 10 7a20 20 0 0 1-3.1 3.9M6.1 6.1A20 20 0 0 0 2 12s3.5 7 10 7a11 11 0 0 0 5.9-1.9M10 10a3 3 0 0 0 4 4"/></svg>';
+ function setVisible(input,button,visible){
+  const start=input.selectionStart,end=input.selectionEnd;
+  input.type=visible?'text':'password';
+  button.setAttribute('aria-label',visible?'Hide password':'Show password');
+  button.title=visible?'Hide password':'Show password';
+  button.setAttribute('aria-pressed',String(visible));
+  button.innerHTML=visible?eyeClosed:eye;
+  try{input.setSelectionRange(start,end);}catch(_){}
+ }
+ function enhance(){document.querySelectorAll('input[type="password"]').forEach(input=>{
+  if(input.dataset.nemsPasswordEye)return;
+  input.dataset.nemsPasswordEye='true';
+  const wrap=document.createElement('div');wrap.className='nems-password-wrap';
+  input.before(wrap);wrap.appendChild(input);
+  const button=document.createElement('button');button.type='button';button.className='nems-password-toggle';
+  if(input.id)button.setAttribute('aria-controls',input.id);
+  setVisible(input,button,false);
+  button.addEventListener('click',()=>setVisible(input,button,input.type==='password'));
+  wrap.appendChild(button);
+ });}
+ function hideAll(){document.querySelectorAll('input[data-nems-password-eye]').forEach(input=>{
+  const button=input.parentElement.querySelector('.nems-password-toggle');
+  if(button&&input.type!=='password')setVisible(input,button,false);
+ });}
+ enhance();
+ new MutationObserver(records=>{if(records.some(r=>Array.from(r.addedNodes).some(n=>n.nodeType===1&&(n.matches?.('input[type="password"]')||n.querySelector?.('input[type="password"]')))))enhance();}).observe(document.body,{childList:true,subtree:true});
+ document.addEventListener('visibilitychange',()=>{if(document.hidden)hideAll();});
+ document.addEventListener('reset',hideAll,true);
+ document.addEventListener('submit',hideAll,true);
+})();
+</script>
 </body>
 </html>
