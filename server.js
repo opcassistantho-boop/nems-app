@@ -1175,12 +1175,19 @@ app.post(
                 ]
             );
  
+            // The trigger writes history in this transaction. Link its immutable IDs
+            // directly; clock timestamps need not be equal to the trigger timestamp.
+            const savedHistory = await client.query(`
+                SELECT history_id FROM public.nems_monitoring_history
+                WHERE monitoring_id=$1 AND xmin::text=$2
+                  AND LOWER(changed_by)=LOWER($3)
+                ORDER BY history_id`, [rows[0].monitoring_id, rows[0].revision, user.email]);
             const taskExclusions=lateEncoding.exclusions(taskLocks.rows,rows[0].updated_at?new Date(rows[0].updated_at).getTime():Date.now());
             await client.query(`INSERT INTO public.nems_store_remarks
                 (store_name, store_email, product_id, employee_name, remarks, source, account_email, details, created_at)
                 VALUES ($1,$2,$3,$4,$5,'STORE_ENCODING',$6,$7::jsonb,clock_timestamp())`,
                 [user.store_name,user.email,productId,employeeName,storeRemarks,user.email,
-                 JSON.stringify({expirations:entries,store_barcode:barcode,srp,before:previous.rows[0]||null,monitoring_id:rows[0].monitoring_id,revision:rows[0].revision,task_exclusions:taskExclusions})]);
+                 JSON.stringify({expirations:entries,store_barcode:barcode,srp,before:previous.rows[0]||null,monitoring_id:rows[0].monitoring_id,revision:rows[0].revision,history_ids:savedHistory.rows.map(h=>String(h.history_id)),task_exclusions:taskExclusions})]);
             await client.query('COMMIT');
             res.json({
                 message: 'Monitoring saved',
@@ -1869,8 +1876,14 @@ app.get(
                       AND LOWER(r.store_email) = LOWER(h.store_email)
                       AND r.source = 'STORE_ENCODING'
                       AND LOWER(r.account_email) = LOWER(h.changed_by)
-                      AND r.created_at = h.changed_at
-                      AND (r.details->>'monitoring_id')::bigint = h.monitoring_id
+                      AND r.details->>'monitoring_id' = h.monitoring_id::text
+                      AND (
+                        COALESCE(r.details->'history_ids','[]'::jsonb) @> jsonb_build_array(h.history_id::text)
+                        OR (NOT (r.details ? 'history_ids') AND (
+                            r.details->>'revision' = h.xmin::text
+                            OR r.created_at = h.changed_at
+                        ))
+                      )
                     ORDER BY ABS(EXTRACT(EPOCH FROM (r.created_at - h.changed_at))), r.remark_id DESC
                     LIMIT 1
                 ) sr ON TRUE
@@ -1946,8 +1959,14 @@ app.get(
                       AND LOWER(r.store_email) = LOWER(h.store_email)
                       AND r.source = 'STORE_ENCODING'
                       AND LOWER(r.account_email) = LOWER(h.changed_by)
-                      AND r.created_at = h.changed_at
-                      AND (r.details->>'monitoring_id')::bigint = h.monitoring_id
+                      AND r.details->>'monitoring_id' = h.monitoring_id::text
+                      AND (
+                        COALESCE(r.details->'history_ids','[]'::jsonb) @> jsonb_build_array(h.history_id::text)
+                        OR (NOT (r.details ? 'history_ids') AND (
+                            r.details->>'revision' = h.xmin::text
+                            OR r.created_at = h.changed_at
+                        ))
+                      )
                     ORDER BY ABS(EXTRACT(EPOCH FROM (r.created_at - h.changed_at))), r.remark_id DESC
                     LIMIT 1
                 ) sr ON TRUE

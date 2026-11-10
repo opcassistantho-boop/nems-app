@@ -1,7 +1,7 @@
 'use strict';
 const warningText=flags=>flags.length?'Not included in My Task for '+flags.map(t=>'task #'+t.assignment_id+(t.due_at?' (deadline '+new Date(t.due_at).toLocaleString('en-GB',{timeZone:'Asia/Manila'})+' Philippine time)':'')+' — '+(t.reason||'task closed')).join('; ')+'. Saved in Store Monitoring only. This does not complete or reopen the task.':'';
 function exclusions(tasks,when=Date.now()){
- return tasks.filter(t=>t.status!=='ACTIVE'||(t.due_at&&new Date(t.due_at).getTime()<=when)).map(t=>({assignment_id:t.assignment_id,status:t.status,due_at:t.due_at||null,reason:t.status!=='ACTIVE'?'task '+String(t.status||'closed').toLowerCase():'saved after task deadline'}));
+ return tasks.filter(t=>t.submitted||t.status!=='ACTIVE'||(t.due_at&&new Date(t.due_at).getTime()<=when)).map(t=>({assignment_id:t.assignment_id,status:t.status,due_at:t.due_at||null,reason:t.submitted?'task already submitted':t.status!=='ACTIVE'?'task '+String(t.status||'closed').toLowerCase():'saved after task deadline'}));
 }
 function annotate(row,flags=[]){
  const source=row.monitoring_id==null?'MY TASK':'STORE ENCODING';

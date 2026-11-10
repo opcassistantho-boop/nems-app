@@ -2597,7 +2597,7 @@ async function loadRecentActivities() {
  
                     <div class="activitymeta">
                         <b>Changed by:</b>
-                        ${escapeHtml(record.employee_name || record.changed_by || '—')}
+                        ${escapeHtml(record.employee_name || 'Name not recorded')}<br><span class="muted">${escapeHtml(record.store_account_email || record.changed_by || '—')}</span>
                         &nbsp; · &nbsp;
                         <b>Store Remarks:</b>
                         ${escapeHtml(record.store_remarks ?? '—')}
@@ -2854,7 +2854,7 @@ function renderHistory() {
                     </td>
  
                     <td>
-                        ${escapeHtml(record.employee_name || record.changed_by || '—')}
+                        ${escapeHtml(record.employee_name || 'Name not recorded')}<br><span class="muted">${escapeHtml(record.store_account_email || record.changed_by || '—')}</span>
                     </td>
  
                     <td>
@@ -3600,8 +3600,8 @@ async function nemsOpenTaskProducts(id) {
         nemsTaskLocked = Boolean(result.locked);
         el('nemsTaskProductHeading').textContent = `Task #${id} — ${result.task.supplier_name}`;
         el('nemsTaskLockNote').textContent = nemsTaskLocked
-            ? 'READ ONLY: Deadline passed or task closed. Ask ADMIN to reopen it.'
-            : 'Save each product. Saved and submitted entries stay editable until the deadline; click Submit again after corrections to save an updated submission snapshot.';
+            ? 'READ ONLY in My Task: Submitted, overdue or closed. Ask ADMIN to reopen this task. Store Encoding remains available and does not change this task submission.'
+            : 'Save each product to keep an editable draft before the deadline. Submit locks this task. Store Encoding remains available separately.';
         let instructions=el('nemsTaskAdminInstruction');if(!instructions){instructions=document.createElement('p');instructions.id='nemsTaskAdminInstruction';el('nemsTaskLockNote').after(instructions);}
         instructions.textContent=adminNote.reason?(adminNote.action_type==='CANCEL'?'Task cancelled: ':'Reopening explanation: ')+adminNote.reason:'';
         el('nemsTaskProductSearch').value = '';
@@ -3680,13 +3680,13 @@ async function nemsStoreTaskSubmit(id) {
     const remarks = window.prompt('Completion remarks (required, maximum 2000 characters):', el('nemsTaskRemark').value.trim());
     if (remarks === null) return;
     if (!remarks.trim() || remarks.trim().length > 2000) return showMessage('Remarks too long.', true);
-    if (!window.confirm('Submit this task? You can still edit and submit corrections until the deadline. After the deadline it will be locked.')) return;
+    if (!window.confirm('Submit this task? This is your final confirmation and will lock My Task immediately. Store Encoding will remain available separately.')) return;
     nemsStoreTasksBusy = true;
     try {
         await api(`/api/store/tasks/${id}/submit`, {
             method:'POST', body: JSON.stringify({employee_name:employeeName,remarks:remarks.trim()})
         });
-        showMessage('Task submitted. You may edit and submit corrections until the deadline.');
+        showMessage('Task submitted and locked in My Task. Store Encoding remains available; it will not change this submission.');
         nemsStoreTaskPage=1;
         await nemsStoreTaskLoad();
         nemsStoreTasksBusy=false;await nemsOpenTaskProducts(id);
@@ -4800,7 +4800,7 @@ function nemsScaleSetup(){
     <details open><summary><strong>Store Encoding</strong></summary><p>Enter your actual full name and clear remarks. Find the exact product and pack. Record each expiration date and quantity separately, then Save Monitoring. Wait for the success message.</p></details>
     <details><summary><strong>Scanner or camera</strong></summary><p>Click the barcode field, scan with a scanner and select Find Barcode. Or use Use Camera and allow camera access. Verify the product and pack. Scanning alone does not save stock.</p></details>
     <details><summary><strong>Pieces and case packs</strong></summary><p>100ML and 100MLX24 identify different packs. Verify the selected product unit before entering quantity. Ask OPC if the pack or date is unclear. A manufacturing date is different from an expiration date.</p></details>
-    <details><summary><strong>My Tasks and submission</strong></summary><p>Check the supplier, scope and deadline. Save every required product. Use NO STOCK only when actually unavailable. The completion checklist shows remaining products and unsaved edits. Submit the completed task and confirm SUBMITTED. You may edit saved or submitted entries until the deadline. After corrections, submit again to save an updated submission snapshot. Previous snapshots remain in history.</p></details>
+    <details><summary><strong>My Tasks and submission</strong></summary><p>Check the supplier, scope and deadline. Save every required product. Use NO STOCK only when actually unavailable. The completion checklist shows remaining products and unsaved edits. Submit the completed task and confirm SUBMITTED. Saved drafts are editable before the deadline. Submit locks My Task immediately. Unsubmitted overdue tasks also lock. Only ADMIN can reopen a task. Store Encoding always remains available; later stock changes do not change previous submissions.</p></details>
     <details><summary><strong>Locked or overdue tasks</strong></summary><p>Provide your name and the actual reason for a missed deadline. An explanation does not unlock or submit a task. Ask ADMIN to reopen a locked task when needed.</p></details>
     <details><summary><strong>Messages and expired reports</strong></summary><p>Search for the correct store and recipients. Chat and replies stay in NEMS. For expired stock, choose the exact product/date and action, enter your name and remarks, then submit for AS review. Follow company approval procedures for disposal and transfer. Check the AS decision and remarks.</p></details>
     <details><summary><strong>Slow connection or uncertain save</strong></summary><p>Wait for the result. Avoid repeated clicks. If the result is uncertain, refresh the record and check whether it saved before attempting another change. Keep your original details until the saved values are verified.</p></details>

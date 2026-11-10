@@ -438,7 +438,11 @@ module.exports = function registerTaskRoutes({
  
                 const assignment = await client.query(
                     `
-                    SELECT a.assignment_id, a.status, COALESCE(a.due_at, ((a.due_date+1)::timestamp AT TIME ZONE 'Asia/Manila')) AS due_at
+                    SELECT a.assignment_id, a.status, COALESCE(a.due_at, ((a.due_date+1)::timestamp AT TIME ZONE 'Asia/Manila')) AS due_at, EXISTS (SELECT 1 FROM public.nems_monitoring_submissions sub
+                    WHERE sub.assignment_id=a.assignment_id
+                      AND sub.submitted_at > COALESCE(
+                        (SELECT MAX(rh.reopened_at) FROM public.nems_task_reopen_history rh
+                         WHERE rh.assignment_id=a.assignment_id), '-infinity'::timestamptz)) AS submitted
                     FROM public.nems_task_assignments a
                     JOIN public.stores s
                         ON s.store_id = a.store_id
@@ -456,6 +460,11 @@ module.exports = function registerTaskRoutes({
                     return fail(res, 404, 'Task not found');
                 }
  
+                if (assignment.rows[0].submitted) {
+                    await client.query('ROLLBACK');
+                    return fail(res,409,'Task already submitted. Ask ADMIN to reopen this task. Store Encoding is still available.');
+                }
+
                 if (assignment.rows[0].status !== 'ACTIVE') {
                     await client.query('ROLLBACK');
                     return fail(
@@ -580,7 +589,7 @@ module.exports = function registerTaskRoutes({
             `, [id, getStoreName(req), getEmail(req)]);
             if (!task.rowCount) return fail(res, 404, 'Task not found');
             const a = task.rows[0];
-            const locked = a.status !== 'ACTIVE' ||
+            const locked = Boolean(a.submitted) || a.status !== 'ACTIVE' ||
                 (a.due_at && new Date(a.due_at).getTime() <= Date.now());
             const products = await pool.query(`
                 SELECT p.product_id, p.sku, p.product_name, p.master_barcode, p.supplier_name,
@@ -602,7 +611,7 @@ module.exports = function registerTaskRoutes({
             const byProduct=new Map();
             for(const row of monitoringRows){
                 // Never prefill a locked task with stock encoded after its deadline.
-                if(locked && ((String(row.excluded_task_ids||'').split(',').map(x=>x.trim()).includes(String(a.assignment_id)))||a.status!=='ACTIVE'||!a.due_at||!row.updated_at||new Date(row.updated_at).getTime()>=new Date(a.due_at).getTime()))continue;
+                if(locked && (a.submitted || (String(row.excluded_task_ids||'').split(',').map(x=>x.trim()).includes(String(a.assignment_id)))||a.status!=='ACTIVE'||!a.due_at||!row.updated_at||new Date(row.updated_at).getTime()>=new Date(a.due_at).getTime()))continue;
                 const date=row.expiration_date instanceof Date?row.expiration_date.toISOString().slice(0,10):String(row.expiration_date).slice(0,10);
                 const qty=Number(row.quantity);
                 const inScope=a.expiry_scope==='EXPIRED'?date<today:a.expiry_scope==='NEAR'?date>=today&&date<=end:date<=end;
@@ -666,7 +675,11 @@ module.exports = function registerTaskRoutes({
             client = await pool.connect();
             await client.query('BEGIN');
             const task = await client.query(`
-                SELECT a.assignment_id, a.status, COALESCE(a.due_at, ((a.due_date+1)::timestamp AT TIME ZONE 'Asia/Manila')) AS due_at, sp.supplier_name
+                SELECT a.assignment_id, a.status, COALESCE(a.due_at, ((a.due_date+1)::timestamp AT TIME ZONE 'Asia/Manila')) AS due_at, sp.supplier_name, EXISTS (SELECT 1 FROM public.nems_monitoring_submissions sub
+                    WHERE sub.assignment_id=a.assignment_id
+                      AND sub.submitted_at > COALESCE(
+                        (SELECT MAX(rh.reopened_at) FROM public.nems_task_reopen_history rh
+                         WHERE rh.assignment_id=a.assignment_id), '-infinity'::timestamptz)) AS submitted
                 FROM public.nems_task_assignments a
                 JOIN public.stores s ON s.store_id = a.store_id
                 JOIN public.suppliers sp ON sp.supplier_id = a.supplier_id
@@ -676,9 +689,9 @@ module.exports = function registerTaskRoutes({
             `, [id, getStoreName(req), getEmail(req)]);
             if (!task.rowCount) { await client.query('ROLLBACK'); return fail(res, 404, 'Task not found'); }
             const a = task.rows[0];
-            if (a.status !== 'ACTIVE' ||
+            if (a.submitted || a.status !== 'ACTIVE' ||
                 (a.due_at && new Date(a.due_at).getTime() <= Date.now())) {
-                await client.query('ROLLBACK'); return fail(res, 409, 'Task is locked or overdue');
+                await client.query('ROLLBACK'); return fail(res, 409, 'Task is submitted, closed or overdue. Ask ADMIN to reopen this task. Store Encoding is still available.');
             }
             const product = await client.query(`
                 SELECT product_id FROM public.products
