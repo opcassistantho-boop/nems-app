@@ -2281,6 +2281,7 @@ app.get('/api/alerts/unread',authenticate,secureRoute(async(req,res)=>{
     if(before||after){args.push(before||after);cursor=` AND n.notification_id ${before?'<':'>'} $${args.length}`;}
     const result=await pool.query(`SELECT n.notification_id,n.notification_type,n.title,n.message,
         n.sender_email,n.reference_type,n.reference_id,n.created_at,
+        (SELECT c.store_id FROM public.nems_messages m JOIN public.nems_conversations c ON c.conversation_id=m.conversation_id WHERE n.reference_type='MESSAGE' AND m.message_id=n.reference_id) AS store_id,
         COALESCE(NULLIF(u.full_name,''),n.sender_email,'NEMS') AS sender_name
         FROM public.nems_notifications n
         LEFT JOIN LATERAL(SELECT full_name FROM public.users WHERE LOWER(email)=LOWER(n.sender_email) LIMIT 1) u ON TRUE
