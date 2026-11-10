@@ -567,6 +567,20 @@ td button { margin:2px; }
             >
         </div>
  
+        <div style="margin-bottom:14px">
+            <strong>Download across all suppliers</strong>
+            <p class="muted">Choose a color below to download every matching product across all suppliers and stores you can access. Supplier selections and search do not limit these buttons.</p>
+            <div class="row">
+                <button type="button" data-color-export onclick="downloadMonitoring('RED')">Download RED</button>
+                <button type="button" data-color-export onclick="downloadMonitoring('BLUE')">Download BLUE</button>
+                <button type="button" data-color-export onclick="downloadMonitoring('GREEN')">Download GREEN</button>
+                <button type="button" data-color-export onclick="downloadMonitoring('ORANGE')">Download ORANGE</button>
+                <button type="button" data-color-export onclick="downloadMonitoring('EXPIRED')">Download EXPIRED</button>
+                <button type="button" data-color-export onclick="downloadMonitoring('LATER')">Download LATER</button>
+                <button type="button" data-color-export onclick="downloadMonitoring('ALL')">Download All Colors</button>
+            </div>
+        </div>
+
         <details id="monitorExportOptions" style="margin:0 0 14px;padding:12px;border:1px solid #d7e0eb;border-radius:7px">
             <summary style="cursor:pointer;font-weight:bold">Excel Download Options — suppliers and expiration category</summary>
             <p class="muted">Choose suppliers and expiration categories for Excel. If none are selected in either group, all accessible records in that group are included.</p>
@@ -1883,17 +1897,23 @@ function setMonitoringExportCategories(checked) {
     });
 }
  
-async function downloadMonitoring() {
+async function downloadMonitoring(allSupplierCategory = null) {
     const button=document.querySelector('[onclick="downloadMonitoring()"]');
     if(button?.disabled)return;if(button)button.disabled=true;
+    const quickButtons=document.querySelectorAll('[data-color-export]');quickButtons.forEach(b=>b.disabled=true);
     const owner=currentUser?.email;
     try {
         const params = new URLSearchParams();
-        el('monitorExportCategories').querySelectorAll('input.monitor-export-category:checked').forEach(input => {
-            params.append('category', input.value);
-        });
-        const suppliers = Array.from(el('monitorExportSuppliers').querySelectorAll('input.monitor-export-supplier:checked'));
-        suppliers.forEach(input => params.append('supplier', input.value));
+        if (allSupplierCategory !== null) {
+            if (!['RED','BLUE','GREEN','ORANGE','EXPIRED','LATER','ALL'].includes(allSupplierCategory)) throw new Error('Select a valid color.');
+            if (allSupplierCategory !== 'ALL') params.append('category', allSupplierCategory);
+        } else {
+            el('monitorExportCategories').querySelectorAll('input.monitor-export-category:checked').forEach(input => {
+                params.append('category', input.value);
+            });
+            const suppliers = Array.from(el('monitorExportSuppliers').querySelectorAll('input.monitor-export-supplier:checked'));
+            suppliers.forEach(input => params.append('supplier', input.value));
+        }
         const job = await api('/api/export/monitoring' + (params.toString() ? '?' + params.toString() : ''));
         showMessage('Excel export queued. You can continue working while it is prepared.');
         const deadline=Date.now()+10*60000;let status;
@@ -1914,7 +1934,7 @@ async function downloadMonitoring() {
         const link = document.createElement('a');
  
         link.href = url;
-        link.download = 'NEMS_Monitoring.xlsx';
+        link.download = allSupplierCategory ? 'NEMS_All_Suppliers_' + allSupplierCategory + '.xlsx' : 'NEMS_Monitoring.xlsx';
  
         document.body.appendChild(link);
         link.click();
@@ -1927,7 +1947,7 @@ async function downloadMonitoring() {
  
     } catch (error) {
         showMessage(error.message, true);
-    } finally {if(button)button.disabled=false;}
+    } finally {if(button)button.disabled=false;quickButtons.forEach(b=>b.disabled=false);}
 }
  
 // ==========================================
@@ -4851,9 +4871,9 @@ async function nemsMeetingLoad(){
  }catch(e){showMessage(e.message,true);}
 }
 function nemsMeetingSetup(){
- const nav=document.createElement('button');nav.type='button';nav.className='meetingReportsOnly hidden';nav.dataset.page='meetingreports';nav.textContent='Meeting Reports';nav.onclick=()=>showPage('meetingreports');el('navigation').appendChild(nav);
+ const nav=document.createElement('button');nav.type='button';nav.className='meetingReportsOnly hidden';nav.dataset.page='meetingreports';nav.textContent='Monthly Report';nav.onclick=()=>showPage('meetingreports');el('navigation').appendChild(nav);
  const page=document.createElement('section');page.id='page-meetingreports';page.className='page hidden';
- page.innerHTML=`<div class="panel"><h2>Meeting Reports</h2><p>Monthly store compliance and stock review; yearly January–December review. Downloads include only stores you are currently authorized to access.</p><p>Saved is not submitted. Overdue figures exclude all deadlines before November 30, 2026. Unresolved concerns are marked carried over. Check the capture dates and coverage notes before comparing periods.</p><p id="nemsMeetingCapture"></p><button type="button" id="nemsMeetingRefresh">Refresh</button> <button type="button" id="nemsMeetingRun" class="hidden">Check report schedule</button><label for="nemsMeetingSearch">Search reports</label><input type="search" id="nemsMeetingSearch" placeholder="Monthly, yearly or period"><div class="tablewrap"><table><thead><tr><th>Report</th><th>Period starts</th><th>Generated</th><th>Download</th></tr></thead><tbody id="nemsMeetingRows"></tbody></table></div></div>`;
+ page.innerHTML=`<div class="panel"><h2>Monthly Report</h2><p>Monthly store compliance and stock review; yearly January–December review. Downloads include only stores you are currently authorized to access.</p><p>Saved is not submitted. Overdue figures exclude all deadlines before November 30, 2026. Unresolved concerns are marked carried over. Check the capture dates and coverage notes before comparing periods.</p><p id="nemsMeetingCapture"></p><button type="button" id="nemsMeetingRefresh">Refresh</button> <button type="button" id="nemsMeetingRun" class="hidden">Check report schedule</button><label for="nemsMeetingSearch">Search reports</label><input type="search" id="nemsMeetingSearch" placeholder="Monthly, yearly or period"><div class="tablewrap"><table><thead><tr><th>Report</th><th>Period starts</th><th>Generated</th><th>Download</th></tr></thead><tbody id="nemsMeetingRows"></tbody></table></div></div>`;
  el('application').appendChild(page);el('nemsMeetingRefresh').onclick=nemsMeetingLoad;
  el('nemsMeetingSearch').oninput=()=>{const q=el('nemsMeetingSearch').value.toLowerCase();el('nemsMeetingRows').querySelectorAll('tr').forEach(r=>r.hidden=!r.textContent.toLowerCase().includes(q));};
  el('nemsMeetingRun').onclick=async()=>{const b=el('nemsMeetingRun');b.disabled=true;try{const r=await api('/api/admin/meeting-reports/run',{method:'POST',body:'{}'});showMessage(r.message);await nemsMeetingLoad();}catch(e){showMessage(e.message,true);}finally{b.disabled=false;}};
