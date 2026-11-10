@@ -3857,7 +3857,7 @@ function nemsUserRender() {
     el('nemsUserRows').innerHTML = filtered.length ? filtered.map(u => `
         <tr><td>${escapeHtml(u.full_name || '—')}</td><td>${escapeHtml(u.email)}</td>
         <td>${escapeHtml(u.role)}</td><td>${escapeHtml(u.store_name || (['AS','AOM'].includes(u.role) ? (u.assigned_store_ids || []).length + ' assigned stores' : '—'))}</td>
-        <td>${escapeHtml(u.status)}</td><td><button type="button" class="small" data-nems-user-edit="${escapeHtml(u.email)}">Edit / Approve</button> <button type="button" class="small secondary" data-nems-password-link="${escapeHtml(u.email)}">Send Invitation</button></td></tr>
+        <td>${escapeHtml(u.status)}</td><td><button type="button" class="small" data-nems-user-edit="${escapeHtml(u.email)}">Edit / Approve</button> <button type="button" class="small secondary" data-nems-password-link="${escapeHtml(u.email)}">Send Invitation</button> <button type="button" class="small secondary" data-nems-temp-password="${escapeHtml(u.email)}">Set Temporary Password</button></td></tr>
     `).join('') : '<tr><td colspan="6">No matching accounts.</td></tr>';
 }
  
@@ -3938,6 +3938,43 @@ async function nemsUserSave(event) {
     finally { button.disabled = false; }
 }
  
+let nemsTempPasswordBusy=false;
+function nemsOpenTemporaryPassword(email){
+    if(currentUser?.role!=='ADMIN'||nemsTempPasswordBusy)return;
+    const user=nemsUsers.find(u=>u.email===email);
+    if(!user)return showMessage('Account not found. Refresh User Management.',true);
+    let dialog=el('nemsTemporaryPasswordDialog');
+    if(!dialog){
+        dialog=document.createElement('dialog');dialog.id='nemsTemporaryPasswordDialog';
+        dialog.style.cssText='width:min(500px,90vw);border:1px solid #ccd6e5;border-radius:12px;padding:24px;color:#173452';
+        dialog.innerHTML='<form id="nemsTemporaryPasswordForm"><h2>Set Temporary Password</h2><p id="nemsTemporaryPasswordTarget"></p><p>No reset email is required. Share the temporary password privately. The user can sign in and select Change Password.</p><p id="nemsTemporaryPasswordStatus"></p><label for="nemsTemporaryPassword">Temporary password (12–128 characters)</label><input type="password" id="nemsTemporaryPassword" required minlength="12" maxlength="128" autocomplete="new-password"><label for="nemsTemporaryPasswordConfirm">Confirm temporary password</label><input type="password" id="nemsTemporaryPasswordConfirm" required minlength="12" maxlength="128" autocomplete="new-password"><p id="nemsTemporaryPasswordError" role="status"></p><div class="row"><button type="submit" id="nemsTemporaryPasswordSave">Set Password</button><button type="button" class="secondary" id="nemsTemporaryPasswordCancel">Cancel</button></div></form>';
+        document.body.append(dialog);
+        const clear=()=>{el('nemsTemporaryPassword').value='';el('nemsTemporaryPasswordConfirm').value='';dialog.dataset.email='';};
+        dialog.addEventListener('close',clear);
+        dialog.addEventListener('cancel',e=>{if(nemsTempPasswordBusy)e.preventDefault();});
+        el('nemsTemporaryPasswordCancel').onclick=()=>{if(!nemsTempPasswordBusy)dialog.close();};
+        el('nemsTemporaryPasswordForm').onsubmit=async event=>{
+            event.preventDefault();if(nemsTempPasswordBusy||currentUser?.role!=='ADMIN')return;
+            const target=dialog.dataset.email,owner=currentUser.email,password=el('nemsTemporaryPassword').value;
+            const error=el('nemsTemporaryPasswordError');error.textContent='';
+            if(password.length<12||password.length>128||password!==el('nemsTemporaryPasswordConfirm').value){error.textContent='Enter matching passwords of 12–128 characters.';return;}
+            if(!confirm('Set a new temporary password for '+target+'? The existing password will be replaced.'))return;
+            nemsTempPasswordBusy=true;el('nemsTemporaryPasswordSave').disabled=true;el('nemsTemporaryPasswordCancel').disabled=true;
+            try{
+                const result=await api('/api/admin/users/temporary-password',{method:'POST',body:JSON.stringify({email:target,password})});
+                if(currentUser?.email!==owner){dialog.close();return;}
+                dialog.close();showMessage(result.message);
+            }catch(e){if(currentUser?.email===owner)error.textContent=e.message;else dialog.close();}
+            finally{nemsTempPasswordBusy=false;el('nemsTemporaryPasswordSave').disabled=false;el('nemsTemporaryPasswordCancel').disabled=false;el('nemsTemporaryPassword').value='';el('nemsTemporaryPasswordConfirm').value='';}
+        };
+    }
+    el('nemsTemporaryPasswordForm').reset();dialog.dataset.email=email;
+    el('nemsTemporaryPasswordError').textContent='';
+    el('nemsTemporaryPasswordTarget').textContent=(user.full_name||user.store_name||'Account')+' — '+email;
+    el('nemsTemporaryPasswordStatus').textContent=user.status==='ACTIVE'?'Account is ACTIVE.':'Account remains '+user.status+'. Password change does not activate it.';
+    dialog.showModal();
+}
+
 function nemsUserSetup() {
     if (el('page-users')) return;
     const nav = el('navigation');
@@ -3997,6 +4034,8 @@ function nemsUserSetup() {
         finally { button.disabled = false; }
     });
     el('nemsUserRows').addEventListener('click', event => {
+        const passwordButton=event.target.closest('[data-nems-temp-password]');
+        if(passwordButton){nemsOpenTemporaryPassword(passwordButton.dataset.nemsTempPassword);return;}
         const target = event.target.closest('[data-nems-user-edit]');
         if (target) nemsUserOpen(target.dataset.nemsUserEdit);
     });
@@ -4504,11 +4543,11 @@ el('entryProduct').addEventListener('change',async()=>{
 function nemsPagerHTML(name,page,more){return '<div class="row" style="margin-top:12px"><button type="button" data-page-back '+(page<=1?'disabled':'')+'>Previous</button><span>Page '+page+'</span><button type="button" data-page-next '+(!more?'disabled':'')+'>Next</button></div>';}
 function nemsBindPager(host,previous,next,load){const back=host.querySelector('[data-page-back]'),forward=host.querySelector('[data-page-next]');back.onclick=()=>{previous();void load();};forward.onclick=()=>{next();void load();};}
 let nemsFeatureGeneration=0,nemsEmployeePage=1,nemsEmployeeGeneration=0;
-const nemsFeaturePages={notifications:1,expired:1,archive:1,tasks:1,email:1,passwordhistory:1};
+const nemsFeaturePages={notifications:1,expired:1,archive:1,tasks:1,email:1,passwordhistory:1,passwordchanges:1};
 const nemsFeatureSearch={};
 async function nemsFeatureData(tab){
-    const endpoint={expired:'reports',archive:'archive',tasks:'task-followup',notifications:'notifications',email:'email-status',passwordhistory:'password-reset-history'}[tab];
-    return endpoint?api((tab==='passwordhistory'?'/api/admin/':'/api/scale/')+endpoint+'?'+new URLSearchParams({page:nemsFeaturePages[tab]||1,limit:50,search:nemsFeatureSearch[tab]||''})):null;
+    const endpoint={expired:'reports',archive:'archive',tasks:'task-followup',notifications:'notifications',email:'email-status',passwordhistory:'password-reset-history',passwordchanges:'password-change-history'}[tab];
+    return endpoint?api((['passwordhistory','passwordchanges'].includes(tab)?'/api/admin/':'/api/scale/')+endpoint+'?'+new URLSearchParams({page:nemsFeaturePages[tab]||1,limit:50,search:nemsFeatureSearch[tab]||''})):null;
 }
 const nemsFeatures={stores:[],messages:[],reports:[],archive:[],stock:[],tasks:[],preview:null};
 function nemsFeatureSetup(){
@@ -4561,7 +4600,7 @@ async function nemsFeatureLoad(){
     try{
         if(!currentUser)return;
         const tabs=[['notifications','Notifications'],['messages','Messages'],['expired','Expired Reports'],['archive','Permanent Archive'],['tasks','Task Follow-up']];
-        if(currentUser.role==='ADMIN')tabs.push(['imports','Products / Suppliers Import'],['barcodes','Register Barcode'],['email','Email Status'],['passwordhistory','Password Reset History']);
+        if(currentUser.role==='ADMIN')tabs.push(['imports','Products / Suppliers Import'],['barcodes','Register Barcode'],['email','Email Status'],['passwordhistory','Password Reset History'],['passwordchanges','Password Changes']);
         el('nfTabs').innerHTML=tabs.map(([id,title])=>`<button type="button" data-nf-tab="${id}">${title}</button>`).join('');
         el('nfTabs').onclick=e=>{const b=e.target.closest('[data-nf-tab]');if(b){nemsFeatureTab=b.dataset.nfTab;nemsFeatureRender();}};
         el('nfState').textContent='';await nemsFeatureRender();
@@ -4754,6 +4793,8 @@ async function nemsFeatureRender(){
             el('nfBarcodeSave').onclick=async()=>{const id=Number(el('nfBarcodeProduct').value),barcode=el('nfBarcodeValue').value.trim();if(!id||!barcode)return showMessage('Product ID and barcode required.',true);if(!confirm(`Register exact barcode ${barcode} to product ID ${id}?`))return;
                 try{await api('/api/admin/products/'+id+'/barcodes',{method:'POST',body:JSON.stringify({barcode})});showMessage('Additional barcode registered.');}catch(e){showMessage(e.message,true);}
             };
+        }else if(nemsFeatureTab==='passwordchanges'&&currentUser.role==='ADMIN'){
+            body.innerHTML='<h3>ADMIN Password Changes</h3><p>Records temporary passwords set through User Management. Passwords are never shown or stored in this history. CHANGED means Supabase confirmed the update. UNKNOWN means the outcome needs checking before another reset.</p>'+nfTable(['Requested','Account','ADMIN','Result','Details'],paged.records.map(r=>'<tr>'+nfCell(dateTimeText(r.requested_at))+nfCell(r.recipient_email)+nfCell(r.changed_by)+nfCell(r.change_status)+nfCell(r.result_code)+'</tr>'));
         }else if(nemsFeatureTab==='passwordhistory'&&currentUser.role==='ADMIN'){
             const sources={FORGOT_PASSWORD:'Forgot Password',ADMIN_PASSWORD_LINK:'ADMIN sends/resends link',NEW_ACCOUNT_INVITATION:'New account invitation'};
             const statuses={REQUESTED:'Request started — result not recorded',ACCEPTED:'Provider accepted request — delivery unconfirmed',FAILED:'Request failed',UNKNOWN:'Outcome unconfirmed — check provider logs',THROTTLED:'Cooldown — no additional request sent'};

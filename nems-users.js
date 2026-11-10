@@ -96,6 +96,7 @@ module.exports = function registerUserRoutes({ app, pool, authenticate, adminOnl
         const response = await fetch(`${base}/auth/v1/admin/${path}`, {
  
             method,
+            signal: AbortSignal.timeout(20000),
  
             headers: { apikey: secret, Authorization: `Bearer ${secret}`, 'Content-Type': 'application/json' },
  
@@ -250,6 +251,7 @@ module.exports = function registerUserRoutes({ app, pool, authenticate, adminOnl
                 );
             }
             await client.query('COMMIT');
+            return authUser;
         } catch (error) {
             await client.query('ROLLBACK').catch(() => {});
             throw error;
@@ -298,6 +300,65 @@ module.exports = function registerUserRoutes({ app, pool, authenticate, adminOnl
  
  
  
+    // ADMIN fallback: set one selected account's temporary password without email.
+    // The password is sent only to Supabase Auth, never to audit tables or responses.
+    app.post('/api/admin/users/temporary-password', ...route, async(req,res)=>{
+        if(req.user?.role!=='ADMIN')return fail(res,403,'ADMIN access required');
+        const email=emailOf(req.body?.email),password=req.body?.password;
+        if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)||email.length>255||
+           typeof password!=='string'||password.length<12||password.length>128)
+            return fail(res,400,'Select an account and enter a temporary password of 12–128 characters');
+        let id=null,client=null,attempted=false,confirmed=false;
+        try{
+            const target=await pool.query('SELECT 1 FROM public.users WHERE LOWER(email)=$1',[email]);
+            if(!target.rowCount)return fail(res,404,'NEMS account not found');
+            id=crypto.randomUUID();
+            // Durable audit before any external update, so interrupted requests remain visible.
+            await pool.query(`INSERT INTO public.nems_admin_password_changes(change_id,recipient_email,changed_by)
+                VALUES($1::uuid,$2,$3)`,[id,email,emailOf(req.user.email)]);
+            const authUser=await ensureInvitationAuthUser(email);
+            client=await pool.connect();await client.query('BEGIN');
+            const linked=await client.query('SELECT email,auth_user_id,status FROM public.users WHERE LOWER(email)=$1 FOR UPDATE',[email]);
+            if(!linked.rowCount||String(linked.rows[0].auth_user_id)!==String(authUser.id)||emailOf(authUser.email)!==email){
+                const error=new Error('Identity changed');error.safeCode='AUTH_IDENTITY_CHANGED';throw error;
+            }
+            attempted=true;
+            const updated=await authAdmin('users/'+encodeURIComponent(authUser.id),'PUT',{password});
+            const identity=updated.user||updated;
+            if(String(identity.id)!==String(authUser.id)||emailOf(identity.email)!==email){
+                const error=new Error('Unconfirmed Auth response');error.safeCode='AUTH_RESPONSE_UNCONFIRMED';throw error;
+            }
+            confirmed=true;
+            await client.query('COMMIT');client.release();client=null;
+            await pool.query(`UPDATE public.nems_admin_password_changes SET change_status='CHANGED',
+                result_code='PASSWORD_UPDATED',completed_at=clock_timestamp() WHERE change_id=$1::uuid`,[id]);
+            res.set('Cache-Control','no-store');
+            return res.json({email,changed:true,message:'Temporary password set. No reset email is required. Share it privately; the user can sign in and use Change Password. Account activation status is unchanged.'});
+        }catch(error){
+            if(client){await client.query('ROLLBACK').catch(()=>{});client.release();client=null;}
+            const unknown=attempted&&!Number.isInteger(error.status);
+            if(id)try{await pool.query(`UPDATE public.nems_admin_password_changes SET change_status=$2,
+                result_code=$3,completed_at=clock_timestamp() WHERE change_id=$1::uuid`,
+                [id,confirmed?'CHANGED':unknown?'UNKNOWN':'FAILED',confirmed?'PASSWORD_UPDATED':error.safeCode||(Number.isInteger(error.status)?'AUTH_REJECTED_'+error.status:unknown?'OUTCOME_UNCONFIRMED':'PASSWORD_NOT_UPDATED')]);}
+                catch(_){console.error('[NEMS admin password] AUDIT_WRITE_FAILED');}
+            console.error('[NEMS admin password]',error.code||'PASSWORD_UPDATE_ERROR');
+            if(confirmed){res.set('Cache-Control','no-store');return res.json({email,changed:true,message:'Password changed, but the final audit update could not be confirmed. Share it privately and ask the user to use Change Password.'});}
+            return fail(res,unknown?503:502,unknown?'Password update outcome is unconfirmed. Check whether the user can sign in with the temporary password before trying again.':'Unable to set password. Check Supabase account settings and that nems-admin-password.sql was installed.');
+        }
+    });
+    app.get('/api/admin/password-change-history',...route,async(req,res)=>{
+        if(req.user?.role!=='ADMIN')return fail(res,403,'ADMIN access required');
+        try{
+            const page=Math.max(1,Math.min(1000000,parseInt(req.query.page,10)||1)),term=String(req.query.search||'').trim().slice(0,100);
+            const args=[term,51,(page-1)*50];
+            const result=await pool.query(`SELECT change_id,recipient_email,changed_by,change_status,result_code,requested_at,completed_at
+                FROM public.nems_admin_password_changes
+                WHERE ($1::text='' OR POSITION(LOWER($1) IN LOWER(CONCAT_WS(' ',recipient_email,changed_by,change_status,result_code,requested_at::text)))>0)
+                ORDER BY requested_at DESC,change_id DESC LIMIT $2 OFFSET $3`,args);
+            res.set('Cache-Control','no-store');return res.json({records:result.rows.slice(0,50),page,has_more:result.rows.length>50});
+        }catch(_){return fail(res,503,'Password Change History unavailable. Check nems-admin-password.sql.');}
+    });
+
     // A recovery token changes only the authenticated Supabase user's password.
  
     // This does not approve/activate the corresponding NEMS account.
