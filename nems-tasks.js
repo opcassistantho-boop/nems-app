@@ -2,6 +2,34 @@
 const taskReview=require('./nems-task-review');
 const {randomUUID}=require('crypto');
  
+// One in-app alert per store for this creation batch, committed with the tasks.
+async function queueTaskAssignmentAlerts(client,created,actor){
+    if(!created.length)return 0;
+    const ids=created.map(a=>a.assignment_id);
+    const result=await client.query(`
+        WITH batches AS (
+            SELECT s.store_id,LOWER(s.store_email) AS recipient,MIN(a.assignment_id) AS reference_id,
+                COUNT(*)::integer AS task_count,
+                'Store: '||s.store_name||E'\nNew monitoring tasks:\n'||
+                string_agg(sp.supplier_name||' · '||a.expiry_scope||' · Deadline: '||
+                    to_char(a.due_at AT TIME ZONE 'Asia/Manila','Mon DD, YYYY HH12:MI AM')||' (Philippine time)',E'\n' ORDER BY sp.supplier_name,a.assignment_id)||
+                E'\nOpen My Tasks to review and encode. Save each product, then submit the completed task.' AS message
+            FROM public.nems_task_assignments a
+            JOIN public.stores s ON s.store_id=a.store_id
+            JOIN public.suppliers sp ON sp.supplier_id=a.supplier_id
+            WHERE a.assignment_id=ANY($1::bigint[]) AND NULLIF(TRIM(s.store_email),'') IS NOT NULL
+            GROUP BY s.store_id,s.store_email,s.store_name
+        )
+        INSERT INTO public.nems_notifications(recipient_email,sender_email,notification_type,title,message,reference_type,reference_id)
+        SELECT b.recipient,$2,'TASK_ASSIGNED','New tasks assigned ('||b.task_count||')',b.message,'TASK',b.reference_id
+        FROM batches b
+        WHERE NOT EXISTS(SELECT 1 FROM public.nems_notifications n
+            WHERE LOWER(n.recipient_email)=b.recipient AND n.reference_type='TASK'
+              AND n.reference_id=b.reference_id AND n.notification_type='TASK_ASSIGNED')
+        RETURNING notification_id`,[ids,actor]);
+    return result.rowCount;
+}
+
 module.exports = function registerTaskRoutes({
     app,
     pool,
@@ -211,11 +239,13 @@ module.exports = function registerTaskRoutes({
                 const created=result.rows;
                 const skipped=storeIds.length*supplierIds.length-created.length;
                 const emailBatch=await taskReview.queueBatch(client,created,assignedBy,body.product_review);
+                const popupNotifications=await queueTaskAssignmentAlerts(client,created,assignedBy);
 
                 await client.query('COMMIT');
  
                 return res.status(201).json({
                     message: `${created.length} new-round task assignments created; ${skipped} duplicates within this round skipped. ${emailBatch.emails} combined store email(s) queued. ${visibilityReview.reviewed} product choices saved (${visibilityReview.hidden} hidden).`,
+                    popup_notifications:popupNotifications,
                     visibility_review:visibilityReview,
                     email_batch:emailBatch,
                     assignment_batch:assignmentBatch,

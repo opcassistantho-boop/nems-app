@@ -2372,7 +2372,7 @@ app.post('/api/expired/reports',authenticate,secureRoute(async(req,res)=>{
             VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,[rows[0].monitoring_id,req.user.store_name,req.user.email,id,date,qty,status,employee,remarks,req.user.email])).rows[0];
         const managers=await c.query(`SELECT a.as_email FROM public.as_store_assignments a JOIN public.stores s ON s.store_id=a.store_id
             JOIN public.users u ON LOWER(u.email)=LOWER(a.as_email) AND u.status='ACTIVE' AND u.role='AS' WHERE LOWER(s.store_email)=LOWER($1)`,[req.user.email]);
-        for(const manager of managers.rows)await notify(c,manager.as_email,req.user.email,'EXPIRED_REPORT','Expired report awaiting AS review',`${req.user.store_name}: ${status}. ${remarks}`,'REPORT',r.report_id);
+        for(const manager of managers.rows)await notify(c,manager.as_email,req.user.email,'EXPIRED_REPORT','Expired report awaiting AS review',`Store: ${req.user.store_name}\nReport #${r.report_id} · Product ID: ${id}\nExpiration: ${date} · Quantity: ${qty} pcs\nAction: ${status}\nReported by: ${employee}\nStore remarks: ${remarks}\nOpen Expired Reports to review.`,'REPORT',r.report_id);
         return r;
     });res.status(201).json(saved);
 }));
@@ -2389,7 +2389,7 @@ app.post('/api/expired/reports/:id/validate',authenticate,secureRoute(async(req,
         if(r.validation_status!=='PENDING')throw appError(409,'Report was already validated');
         if(decision==='APPROVED'&&r.product_status!=='ON STORE')await archiveEntry(c,r,req.user.email,r.product_status,id);
         const updated=(await c.query(`UPDATE public.nems_expired_status_reports SET validation_status=$2,validated_by=$3,validated_at=NOW(),validation_remarks=$4 WHERE report_id=$1 RETURNING *`,[id,decision,req.user.email,remarks])).rows[0];
-        await notify(c,r.store_email,req.user.email,'VALIDATION','Expired report '+decision,`${r.product_status}: ${remarks}`,'REPORT',id);
+        await notify(c,r.store_email,req.user.email,'VALIDATION','Expired report '+decision,`Report #${id} · Product ID: ${r.product_id}\nExpiration: ${dateKey(r.expiration_date)} · Quantity: ${r.quantity} pcs\nAction: ${r.product_status}\nDecision: ${decision}\nAS remarks: ${remarks}\nOpen Expired Reports to view the result.`,'REPORT',id);
         return updated;
     });res.json(result);
 }));
