@@ -2177,7 +2177,13 @@ app.post('/api/store/tasks/:id/explanation',authenticate,secureRoute(async(req,r
 }));
 
 // Scoped conversations preserve the existing one-conversation-per-store model.
-app.get('/api/messages/stores',authenticate,secureRoute(async(req,res)=>res.json(await accessibleStores(pool,req.user))));
+app.get('/api/messages/stores',authenticate,secureRoute(async(req,res)=>{
+    const stores=await accessibleStores(pool,req.user);
+    if(!stores.length)return res.json([]);
+    const counts=await pool.query(`SELECT c.store_id,COUNT(*)::integer AS unread_count FROM public.nems_notifications n JOIN public.nems_messages m ON n.reference_type='MESSAGE' AND n.reference_id=m.message_id JOIN public.nems_conversations c ON c.conversation_id=m.conversation_id WHERE LOWER(n.recipient_email)=LOWER($1) AND n.read_at IS NULL AND c.store_id=ANY($2::bigint[]) GROUP BY c.store_id`,[req.user.email,stores.map(s=>s.store_id)]);
+    const unread=new Map(counts.rows.map(r=>[String(r.store_id),Number(r.unread_count)]));
+    res.set('Cache-Control','no-store');res.json(stores.map(s=>({...s,unread_count:unread.get(String(s.store_id))||0})));
+}));
 // Direct recipients are active users authorized for the same store. No new schema is required.
 async function messageContacts(client,storeId,senderEmail) {
     return (await client.query(`SELECT DISTINCT u.email,u.full_name,u.role FROM public.users u
@@ -2265,6 +2271,24 @@ const notificationAccess=`(
 function notificationScope(user) {
     const s=storeScope(user,'s');return {sql:notificationAccess.replaceAll('SCOPE',s.sql),args:s.args};
 }
+// Bounded unread alerts: only the recipient's records and currently authorized stores.
+app.get('/api/alerts/unread',authenticate,secureRoute(async(req,res)=>{
+    const before=req.query.before===undefined?null:validId(req.query.before);
+    const after=req.query.after===undefined?null:validId(req.query.after);
+    if((req.query.before!==undefined&&!before)||(req.query.after!==undefined&&!after)||(before&&after))throw appError(400,'Invalid alert cursor');
+    const scope=notificationScope(req.user),args=[...scope.args,req.user.email];
+    const recipient=args.length;let cursor='';
+    if(before||after){args.push(before||after);cursor=` AND n.notification_id ${before?'<':'>'} $${args.length}`;}
+    const result=await pool.query(`SELECT n.notification_id,n.notification_type,n.title,n.message,
+        n.sender_email,n.reference_type,n.reference_id,n.created_at,
+        COALESCE(NULLIF(u.full_name,''),n.sender_email,'NEMS') AS sender_name
+        FROM public.nems_notifications n
+        LEFT JOIN LATERAL(SELECT full_name FROM public.users WHERE LOWER(email)=LOWER(n.sender_email) LIMIT 1) u ON TRUE
+        WHERE n.read_at IS NULL AND LOWER(n.recipient_email)=LOWER($${recipient}) AND ${scope.sql}${cursor}
+        ORDER BY n.notification_id DESC LIMIT 21`,args);
+    res.set('Cache-Control','no-store');res.json({records:result.rows.slice(0,20),has_more:result.rows.length>20});
+}));
+
 app.get('/api/notifications',authenticate,secureRoute(async(req,res)=>{
     const scope=notificationScope(req.user),args=[...scope.args,req.user.email];
     res.json((await pool.query(`SELECT n.* FROM public.nems_notifications n WHERE ${scope.sql}
@@ -2816,7 +2840,7 @@ app.get('/api/scale/task-tracker',authenticate,secureRoute(async(req,res)=>{
 }));
 app.get('/api/scale/notifications/count',authenticate,secureRoute(async(req,res)=>{
     const scope=notificationScope(req.user),args=[...scope.args,req.user.email];
-    const r=await pool.query(`SELECT COUNT(*)::int AS unread FROM public.nems_notifications n WHERE n.read_at IS NULL AND ${scope.sql} AND LOWER(n.recipient_email)=LOWER($${args.length})`,args);res.json(r.rows[0]);
+    const r=await pool.query(`SELECT COUNT(*)::int AS unread,MAX(n.notification_id)::text AS latest_unread_id FROM public.nems_notifications n WHERE n.read_at IS NULL AND ${scope.sql} AND LOWER(n.recipient_email)=LOWER($${args.length})`,args);res.json(r.rows[0]);
 }));
 // Literal, bounded search is applied inside the authorized query before pagination.
 function nemsRecordSearch(query,args,fields){

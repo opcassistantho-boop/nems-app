@@ -578,16 +578,16 @@ td button { margin:2px; }
         </div>
  
         <div style="margin-bottom:14px">
-            <strong>Download across all suppliers</strong>
-            <p class="muted">Choose a color below to download every matching product across all suppliers and stores you can access. Supplier selections and search do not limit these buttons.</p>
+            <strong>Download by expiration period — all suppliers</strong>
+            <p class="muted">Choose an expiration period to download every matching product across all suppliers and stores you can access. The 1–30 Days download also includes items expiring today. Supplier selections and search do not limit these buttons.</p>
             <div class="row">
-                <button type="button" data-color-export onclick="downloadMonitoring('RED')">Download RED</button>
-                <button type="button" data-color-export onclick="downloadMonitoring('BLUE')">Download BLUE</button>
-                <button type="button" data-color-export onclick="downloadMonitoring('GREEN')">Download GREEN</button>
-                <button type="button" data-color-export onclick="downloadMonitoring('ORANGE')">Download ORANGE</button>
-                <button type="button" data-color-export onclick="downloadMonitoring('EXPIRED')">Download EXPIRED</button>
-                <button type="button" data-color-export onclick="downloadMonitoring('LATER')">Download LATER</button>
-                <button type="button" data-color-export onclick="downloadMonitoring('ALL')">Download All Colors</button>
+                <button type="button" data-color-export onclick="downloadMonitoring('RED')">Download 1–30 Days</button>
+                <button type="button" data-color-export onclick="downloadMonitoring('BLUE')">Download 31–60 Days</button>
+                <button type="button" data-color-export onclick="downloadMonitoring('GREEN')">Download 61–90 Days</button>
+                <button type="button" data-color-export onclick="downloadMonitoring('ORANGE')">Download 91 Days–6 Months</button>
+                <button type="button" data-color-export onclick="downloadMonitoring('EXPIRED')">Download Expired</button>
+                <button type="button" data-color-export onclick="downloadMonitoring('LATER')">Download Over 6 Months</button>
+                <button type="button" data-color-export onclick="downloadMonitoring('ALL')">Download All Products</button>
             </div>
         </div>
 
@@ -1491,6 +1491,7 @@ el('loginForm').addEventListener(
 // ==========================================
  
 function logout() {
+    nemsResetAlerts();
     nemsUnreadGeneration++;nemsFeatureGeneration++;nemsMonitoringGeneration++;nemsEmployeeGeneration++;nemsTrackerGeneration++;
     nemsBadgeLastAt=0;nemsBadgeOwner='';nemsMonitoringPage=1;nemsEmployeePage=1;nemsTrackerPage=1;nemsAdminTaskPage=1;nemsStoreTaskPage=1;
     for(const tab of Object.keys(nemsFeaturePages)){nemsFeaturePages[tab]=1;delete nemsFeatureSearch[tab];}
@@ -4581,9 +4582,84 @@ async function nemsRefreshUnreadBadge(force=false){
     if(!force&&nemsBadgeOwner===email&&Date.now()-nemsBadgeLastAt<30000)return null;
     nemsBadgeOwner=email;const generation=nemsUnreadGeneration;
     const pending=api('/api/scale/notifications/count',{cache:'no-store'}).then(data=>{
-        if(currentUser?.email===email&&generation===nemsUnreadGeneration){const count=Number(data.unread)||0;const button=el('nemsFeaturesNav');if(button)button.textContent='Messages and Follow-up'+(count?' ('+count+' unread)':'');nemsBadgeLastAt=Date.now();}return data;
+        if(currentUser?.email===email&&generation===nemsUnreadGeneration){const count=Number(data.unread)||0;const button=el('nemsFeaturesNav');if(button)button.textContent='Messages and Follow-up'+(count?' ('+count+' unread)':'');nemsBadgeLastAt=Date.now();if(count>0)void nemsCheckAlerts(data.latest_unread_id);}return data;
     }).finally(()=>{if(nemsBadgeBusy===pending)nemsBadgeBusy=null;});nemsBadgeBusy=pending;return pending;
 }
+// One shared alert queue; message alerts use the same recipient read state as chat.
+let nemsAlertsOwner='',nemsAlertsHigh=0,nemsAlertsBusy=false,nemsAlertsLast=0,nemsAlertsPending=null,nemsAlertsTimer=null,nemsAlertsGeneration=0;
+function nemsResetAlerts(){
+    nemsAlertsGeneration++;nemsAlertsOwner='';nemsAlertsHigh=0;nemsAlertsBusy=false;nemsAlertsLast=0;nemsAlertsPending=null;
+    clearTimeout(nemsAlertsTimer);nemsAlertsTimer=null;
+    const d=el('nemsUnreadAlerts');if(d){d.close();d.remove();}
+}
+async function nemsCheckAlerts(latestId=null){
+    if(!currentUser||document.hidden)return;
+    const owner=currentUser.email;
+    if(nemsAlertsOwner!==owner){nemsResetAlerts();nemsAlertsOwner=owner;}
+    if(latestId&&Number(latestId)<=nemsAlertsHigh)return;
+    if(nemsAlertsBusy||nemsAlertsPending||el('nemsUnreadAlerts')?.open||Date.now()-nemsAlertsLast<30000)return;
+    const generation=nemsAlertsGeneration;nemsAlertsBusy=true;nemsAlertsLast=Date.now();
+    try{
+        const data=await api('/api/alerts/unread'+(nemsAlertsHigh?'?after='+nemsAlertsHigh:''),{cache:'no-store'});
+        if(currentUser?.email!==owner||generation!==nemsAlertsGeneration)return;
+        if(data.records?.length){
+            nemsAlertsHigh=Math.max(nemsAlertsHigh,...data.records.map(r=>Number(r.notification_id)));
+            nemsAlertsPending={...data,owner,generation};nemsTryShowAlerts();
+        }
+    }catch(_){/* Existing badge remains available; retry on the next normal check. */}
+    finally{if(generation===nemsAlertsGeneration)nemsAlertsBusy=false;}
+}
+function nemsTryShowAlerts(){
+    clearTimeout(nemsAlertsTimer);nemsAlertsTimer=null;
+    const data=nemsAlertsPending;
+    if(!data||currentUser?.email!==data.owner||data.generation!==nemsAlertsGeneration)return;
+    const active=document.activeElement;
+    if(document.hidden||document.querySelector('dialog[open]')||(active&&el('application').contains(active)&&active.matches('input,textarea,select,[contenteditable="true"]'))){
+        nemsAlertsTimer=setTimeout(nemsTryShowAlerts,3000);return;
+    }
+    nemsAlertsPending=null;nemsShowAlerts(data);
+}
+function nemsShowAlerts(data){
+    if(currentUser?.email!==data.owner||data.generation!==nemsAlertsGeneration)return;
+    let dialog=el('nemsUnreadAlerts');if(dialog)dialog.remove();
+    dialog=document.createElement('dialog');dialog.id='nemsUnreadAlerts';dialog.setAttribute('aria-labelledby','nemsUnreadAlertsTitle');
+    dialog.style.cssText='width:min(720px,92vw);max-height:85vh;overflow:auto;border:1px solid #c9d7e8;border-radius:12px;padding:22px;color:#173452';
+    dialog.innerHTML='<h2 id="nemsUnreadAlertsTitle">Unread Messages and Notifications</h2><p>Read the items below. Mark as read to acknowledge them. Close leaves unread items for your next login.</p><div data-alert-list></div><p data-alert-error role="status"></p><div class="row" style="margin-top:15px"><button type="button" data-alert-older>Older unread</button><button type="button" class="secondary" data-alert-close>Close</button></div>';
+    document.body.append(dialog);
+    let rows=data.records,more=data.has_more,busy=false;
+    const valid=()=>currentUser?.email===data.owner&&nemsAlertsGeneration===data.generation&&dialog.isConnected;
+    const render=()=>{
+        dialog.querySelector('[data-alert-list]').innerHTML=rows.map(r=>'<article style="border-bottom:1px solid #dae2ec;padding:14px 0"><strong>'+escapeHtml(r.reference_type==='MESSAGE'?'Message':r.title||'Notification')+'</strong><p><b>From:</b> '+escapeHtml(r.sender_name||r.sender_email||'NEMS')+(r.sender_email&&r.sender_name!==r.sender_email?' · '+escapeHtml(r.sender_email):'')+'<br><span class="muted">'+escapeHtml(dateTimeText(r.created_at))+'</span></p>'+(r.reference_type==='MESSAGE'?'<p>'+escapeHtml(r.title)+'</p>':'')+'<p style="white-space:pre-wrap;overflow-wrap:anywhere">'+escapeHtml(r.message)+'</p><button type="button" data-alert-read="'+Number(r.notification_id)+'">Mark as read</button></article>').join('')||'<p>All items on this page have been marked read.</p>';
+        dialog.querySelector('[data-alert-older]').hidden=!more;
+    };
+    dialog.addEventListener('cancel',e=>{if(busy)e.preventDefault();});
+    dialog.addEventListener('close',()=>{dialog.remove();});
+    dialog.querySelector('[data-alert-close]').onclick=()=>{if(!busy)dialog.close();};
+    dialog.onclick=async e=>{
+        const read=e.target.closest('[data-alert-read]'),older=e.target.closest('[data-alert-older]');
+        if((!read&&!older)||busy||!valid())return;
+        const cursor=rows.length?Math.min(...rows.map(r=>Number(r.notification_id))):Number(dialog.dataset.before||0);
+        busy=true;dialog.querySelectorAll('button').forEach(b=>b.disabled=true);
+        dialog.querySelector('[data-alert-error]').textContent='';
+        try{
+            if(read){
+                const id=Number(read.dataset.alertRead);nemsUnreadGeneration++;
+                await api('/api/notifications/'+id+'/read',{method:'POST',body:'{}'});
+                if(!valid())return;
+                rows=rows.filter(r=>Number(r.notification_id)!==id);if(cursor)dialog.dataset.before=String(cursor);
+                nemsUnreadGeneration++;await nemsRefreshUnreadBadge(true);
+            }else{
+                const result=await api('/api/alerts/unread?before='+cursor,{cache:'no-store'});
+                if(!valid())return;rows=result.records;more=result.has_more;
+                if(rows.length)dialog.dataset.before=String(Math.min(...rows.map(r=>Number(r.notification_id))));
+            }
+            if(valid())render();
+        }catch(err){if(valid())dialog.querySelector('[data-alert-error]').textContent=err.message;}
+        finally{busy=false;if(valid())dialog.querySelectorAll('button').forEach(b=>b.disabled=false);}
+    };
+    render();dialog.showModal();
+}
+
 let nemsFeatureTab='notifications';
 let nemsMessageTimer=null;
 const nemsFeatureShowPage=showPage;
@@ -4625,90 +4701,41 @@ async function nemsFeatureRender(){
             body.innerHTML=nfTable(['Date','Title','Message','Status'],rows.map(r=>'<tr>'+nfCell(dateTimeText(r.created_at))+nfCell(r.title)+nfCell(r.message)+`<td>${r.read_at?'Read':`<button type="button" data-nf-read="${Number(r.notification_id)}">Mark read</button>`}</td></tr>`));
             body.onclick=async e=>{const b=e.target.closest('[data-nf-read]');if(b)try{b.disabled=true;nemsUnreadGeneration++;await api('/api/notifications/'+b.dataset.nfRead+'/read',{method:'POST',body:'{}'});nemsUnreadGeneration++;await nemsRefreshUnreadBadge(true);await nemsFeatureRender();}catch(err){showMessage(err.message,true);}};
         }else if(nemsFeatureTab==='messages'){
-            const owner=currentUser.email;
-            body.innerHTML=`<h3>Send message</h3><p>Chat is delivered inside NEMS. No email is sent for chat messages. Management retains oversight of store conversations.</p>
-              <label>Send to</label><select id="nfMessageMode"><option value="PEOPLE">Choose people for one store</option><option value="STORES">${currentUser.role==='STORE'?'My assigned management team':'One, multiple, or all authorized stores'}</option></select>
-              <label for="nfStoreSearch">Search stores</label><input id="nfStoreSearch" type="search" placeholder="Type a store name" autocomplete="off">
-              <label>Store</label><select id="nfMessageStores" multiple size="6">${nemsFeatures.stores.map(s=>`<option value="${Number(s.store_id)}">${escapeHtml(s.store_name)}</option>`).join('')}</select><p id="nfStoreSearchHint" aria-live="polite"></p>
-              <div id="nfAllStoresWrap"><label><input id="nfAllStores" type="checkbox" style="width:auto"> All stores I am authorized to access</label></div>
-              <div id="nfPeopleWrap"><label for="nfPeopleSearch">Search recipients</label><input id="nfPeopleSearch" type="search" placeholder="Type a name or email" autocomplete="off"><label>Recipients</label><select id="nfMessagePeople" multiple size="6"></select><p id="nfPeopleSearchHint" aria-live="polite"></p><p id="nfContactHint">Choose one store to load its available recipients.</p></div>
-              <label>Message</label><textarea id="nfMessageText" maxlength="5000"></textarea><button type="button" id="nfSendMessage">Send message</button>
-              <h3>Message History</h3><label for="nfMessageSearch">Search messages</label><input id="nfMessageSearch" type="search" maxlength="100" placeholder="Search message text or sender"><select id="nfConversation"><option value="">Choose store</option>${nemsFeatures.stores.map(s=>`<option value="${Number(s.store_id)}">${escapeHtml(s.store_name)}</option>`).join('')}</select><button type="button" id="nfRefreshMessages">Refresh messages</button><div id="nfMessages"></div><div id="nfMessagePager"></div>`;
-            const storeSelect=el('nfMessageStores'),peopleSelect=el('nfMessagePeople'),historySelect=el('nfConversation');
-            let contactGeneration=0,historyGeneration=0,historyBusy=false,historyRows=[],historyPage=1,historyVersion='';
-            // Keep selected options visible when searching so recipients are never silently lost.
-            const filterChoices=(select,choices,query,hint)=>{
-                const selected=new Set([...select.selectedOptions].map(o=>o.value));
-                const term=query.trim().toLocaleLowerCase();
-                const matches=choices.filter(o=>o.text.toLocaleLowerCase().includes(term));
-                select.replaceChildren(...choices.filter(o=>selected.has(o.value)||o.text.toLocaleLowerCase().includes(term)).map(o=>new Option(o.text,o.value,false,selected.has(o.value))));
-                hint.textContent=(matches.length?matches.length+' matching option(s).':'No matches.')+(selected.size?' Selected options stay visible.':'');
+            const owner=currentUser.email,stores=nemsFeatures.stores;
+            body.innerHTML=`<style>
+            .nm-layout{display:grid;grid-template-columns:minmax(220px,30%) 1fr;gap:16px}.nm-list{max-height:540px;overflow:auto}.nm-store{display:flex;align-items:center;gap:8px;border-bottom:1px solid #dde5ef;padding:8px}.nm-store button{flex:1;text-align:left;background:#edf2f8;color:#15345c}.nm-store button[aria-pressed=true]{background:#173b68;color:white}.nm-bubble{max-width:85%;padding:12px;margin:10px 0;border-radius:12px;background:#edf2f8;white-space:pre-wrap;overflow-wrap:anywhere}.nm-bubble.mine{margin-left:auto;background:#dcecff}.nm-meta{font-size:12px;color:#52647a}.nm-thread{height:360px;overflow:auto;padding:8px;border:1px solid #dde5ef}.nm-person{display:inline-flex;align-items:center;gap:6px;padding:6px;margin:3px;border:1px solid #d6e0ec;border-radius:8px}.nm-person input,.nm-store input{width:auto!important}.nm-composer textarea{min-height:90px}@media(max-width:700px){.nm-layout{grid-template-columns:1fr}.nm-list{max-height:220px}}
+            </style><h3>Messages</h3><p>Click a store to open its conversation. Select stores to send the same message individually. Replies stay in each store’s conversation. Authorized management can review messages.</p>
+            <div class="nm-layout"><aside><label for="nmFind">Search stores</label><input id="nmFind" type="search" placeholder="Store name or email"><button id="nmAll" type="button">Select all stores</button> <button id="nmClear" type="button">Clear selection</button><p id="nmCount" aria-live="polite"></p><div id="nmList" class="nm-list"></div></aside>
+            <section><h3 id="nmTitle">Choose a store</h3><label for="nmSearch">Search this conversation</label><input id="nmSearch" type="search" maxlength="100" placeholder="Message or sender"><button type="button" id="nmRefresh">Refresh</button><div id="nmPager"></div><div id="nmThread" class="nm-thread" aria-live="polite"></div>
+            <div class="nm-composer"><p id="nmTarget" role="status"></p><details id="nmContacts"><summary>Choose specific people in this store</summary><input id="nmPeopleSearch" type="search" placeholder="Name or email"><div id="nmPeople"></div><p>Leave people unselected to message the store or its assigned management team.</p></details><label for="nmText">Message</label><textarea id="nmText" maxlength="5000" placeholder="Type your message"></textarea><button type="button" id="nmSend">Send message</button><p id="nmStatus" role="status"></p></div></section></div>`;
+            const root=el('nmList'),selected=new Set(),people=new Set();let storeId='',contacts=[],page=1,version='',generation=0,busy=false,sending=false;
+            const active=()=>currentUser?.email===owner&&el('nmList')===root&&nemsFeatureTab==='messages'&&!el('page-followup')?.classList.contains('hidden');
+            const targets=()=>selected.size?[...selected]:storeId?[storeId]:[];
+            const targetText=()=>{el('nmCount').textContent=selected.size+' store(s) selected';el('nmTarget').textContent=selected.size?'Send individually to '+selected.size+' selected store(s).':storeId?'Send to '+(stores.find(s=>String(s.store_id)===storeId)?.store_name||'this store')+(people.size?' · '+people.size+' selected person(s)':'')+'.':'Choose a store or select recipients.';el('nmContacts').hidden=!!selected.size||!storeId;};
+            const drawStores=()=>{const term=el('nmFind').value.trim().toLowerCase();root.innerHTML=stores.filter(s=>(s.store_name+' '+s.store_email).toLowerCase().includes(term)).map(s=>`<div class="nm-store"><input aria-label="Select ${escapeHtml(s.store_name)}" type="checkbox" data-select="${Number(s.store_id)}" ${selected.has(String(s.store_id))?'checked':''}><button type="button" data-open="${Number(s.store_id)}" aria-pressed="${String(s.store_id)===storeId}">${escapeHtml(s.store_name)}${Number(s.unread_count)?' <strong>('+Number(s.unread_count)+' unread)</strong>':''}</button></div>`).join('')||'<p>No matching stores.</p>';targetText();};
+            const drawPeople=()=>{const term=el('nmPeopleSearch').value.trim().toLowerCase();el('nmPeople').innerHTML=contacts.filter(c=>(c.full_name+' '+c.email).toLowerCase().includes(term)).map(c=>`<label class="nm-person"><input type="checkbox" data-person="${escapeHtml(c.email)}" ${people.has(c.email)?'checked':''}>${escapeHtml(c.full_name||c.email)} (${escapeHtml(c.email)})</label>`).join('')||'<p>No matching contacts.</p>';};
+            const load=async(quiet=false)=>{
+                if(!active()||busy||!storeId)return;const id=storeId,g= generation,search=el('nmSearch').value,p=page;busy=true;
+                try{const data=await api('/api/scale/messages/'+id+'?'+new URLSearchParams({page:p,limit:50,search,...(quiet&&version?{version}:{})}),{cache:'no-store'});if(!active()||g!==generation)return;if(data.unchanged)return;version=data.version||'';
+                    const thread=el('nmThread'),atBottom=thread.scrollHeight-thread.scrollTop-thread.clientHeight<60,oldTop=thread.scrollTop;
+                    const rows=data.records||[];
+                    thread.innerHTML=rows.slice().reverse().map(r=>{const mine=r.sender_email.toLowerCase()===owner.toLowerCase();return `<article class="nm-bubble ${mine?'mine':''}"><div class="nm-meta">${escapeHtml(r.sender_email)} · ${escapeHtml(dateTimeText(r.created_at))}</div><div>${escapeHtml(r.message_text)}</div><div class="nm-meta">${escapeHtml((r.recipients||[]).map(n=>n.email+': '+(n.read_at?'Read':'Unread')).join(' · '))}</div>${!mine?`<button type="button" data-reply="${escapeHtml(r.sender_email)}">Reply to sender</button>`:''}</article>`;}).join('')||'<p>No messages yet.</p>';
+                    thread.scrollTop=!quiet||atBottom?thread.scrollHeight:oldTop;
+                    el('nmPager').innerHTML=nemsPagerHTML('messages',page,data.has_more);nemsBindPager(el('nmPager'),()=>{page--;version='';},()=>{page++;version='';},load);
+                    const ids=rows.filter(r=>(r.recipients||[]).some(n=>n.email.toLowerCase()===owner.toLowerCase()&&!n.read_at)).map(r=>r.message_id);
+                    if(ids.length){nemsUnreadGeneration++;await api('/api/scale/messages/'+id+'/read',{method:'POST',body:JSON.stringify({message_ids:ids})});nemsUnreadGeneration++;if(!active()||g!==generation)return;version='';void nemsRefreshUnreadBadge(true);void refreshStores();}
+                }catch(e){if(active()&&g===generation&&!quiet)el('nmStatus').textContent=e.message;}finally{busy=false;if(active()&&(g!==generation||p!==page||search!==el('nmSearch').value))void load();}
             };
-            const storeChoices=[...storeSelect.options].map(o=>({value:o.value,text:o.text}));
-            let peopleChoices=[];
-            const filterStores=()=>filterChoices(storeSelect,storeChoices,el('nfStoreSearch').value,el('nfStoreSearchHint'));
-            const filterPeople=()=>filterChoices(peopleSelect,peopleChoices,el('nfPeopleSearch').value,el('nfPeopleSearchHint'));
-            el('nfStoreSearch').oninput=filterStores;el('nfPeopleSearch').oninput=filterPeople;
-            const active=()=>currentUser?.email===owner&&el('nfMessageStores')===storeSelect&&nemsFeatureTab==='messages'&&!el('page-followup')?.classList.contains('hidden');
-            const loadContacts=async()=>{
-                const generation=++contactGeneration;peopleSelect.innerHTML='';peopleChoices=[];el('nfPeopleSearch').value='';el('nfPeopleSearchHint').textContent='';
-                const direct=el('nfMessageMode').value==='PEOPLE';
-                el('nfPeopleWrap').classList.toggle('hidden',!direct);el('nfAllStoresWrap').classList.toggle('hidden',direct);
-                const ids=[...storeSelect.selectedOptions].map(o=>o.value);
-                if(!direct||ids.length!==1){el('nfContactHint').textContent='Choose exactly one store to select people.';return;}
-                el('nfContactHint').textContent='Loading contacts…';
-                try{const contacts=await api('/api/messages/contacts/'+ids[0]);if(!active()||generation!==contactGeneration)return;
-                    peopleSelect.innerHTML=contacts.map(u=>`<option value="${escapeHtml(u.email)}">${escapeHtml((currentUser.role==='ADMIN'&&u.role?u.role+' · ':'')+(u.full_name||u.email)+' · '+u.email)}</option>`).join('');
-                    peopleChoices=[...peopleSelect.options].map(o=>({value:o.value,text:o.text}));
-                    el('nfContactHint').textContent=contacts.length?'Select one or more recipients. On a computer, hold Ctrl to select several.':'No active recipients are available. Contact your ADMIN to check assignments.';
-                }catch(e){if(active()&&generation===contactGeneration)el('nfContactHint').textContent=e.message;}
-            };
-            const loadHistory=async(quiet=false)=>{
-                if(!active()||historyBusy)return;
-                const id=historySelect.value;if(!id){el('nfMessages').innerHTML='';return;}
-                const generation=++historyGeneration,searchTerm=el('nfMessageSearch').value;historyBusy=true;
-                try{
-                    const data=await api('/api/scale/messages/'+id+'?'+new URLSearchParams({page:historyPage,limit:50,search:el('nfMessageSearch').value,...(quiet&&historyVersion?{version:historyVersion}:{})}),{cache:'no-store'});
-                    if(!active()||historySelect.value!==id||generation!==historyGeneration)return;
-                    if(data.unchanged)return;historyVersion=data.version||'';
-                    const rows=data.records;
-                    const unreadIds=rows.filter(r=>(r.recipients||[]).some(n=>n.email.toLowerCase()===owner.toLowerCase()&&!n.read_at)).map(r=>r.message_id);
-                    if(unreadIds.length){nemsUnreadGeneration++;const read=await api('/api/scale/messages/'+id+'/read',{method:'POST',body:JSON.stringify({message_ids:unreadIds})});nemsUnreadGeneration++;for(const row of rows)for(const recipient of row.recipients||[])if(recipient.email.toLowerCase()===owner.toLowerCase())recipient.read_at=recipient.read_at||read.read_at;}
-                    if(!active()||historySelect.value!==id||generation!==historyGeneration)return;
-                    el('nfMessagePager').innerHTML=nemsPagerHTML('messages',historyPage,data.has_more);
-                    nemsBindPager(el('nfMessagePager'),()=>{if(!historyBusy)historyPage--;},()=>{if(!historyBusy)historyPage++;},loadHistory);
-                    historyRows=rows;
-                    el('nfMessages').innerHTML=rows.length?nfTable(['Date','Sender',...(currentUser.role==='ADMIN'?['Role']:[]),'Message','Recipients / Read status','Reply'],rows.map((r,i)=>'<tr>'+nfCell(dateTimeText(r.created_at))+nfCell(r.sender_email)+(currentUser.role==='ADMIN'?nfCell(r.sender_role):'')+nfCell(r.message_text)+nfCell((r.recipients||[]).map(n=>n.email+': '+(n.read_at?'Read '+dateTimeText(n.read_at):'Unread')).join('; ')||'Legacy message')+`<td>${r.sender_email.toLowerCase()!==owner.toLowerCase()?'<button type="button" data-nf-reply="'+i+'">Reply to sender</button>':''}</td></tr>`)):'<p>No messages to show for this store.</p>';
-                    await nemsRefreshUnreadBadge(true);
-                }catch(e){if(active()&&!quiet)showMessage(e.message,true);}finally{historyBusy=false;if(active()&&(historySelect.value!==id||el('nfMessageSearch').value!==searchTerm))void loadHistory();}
-            };
-            let messageSearchTimer;el('nfMessageSearch').oninput=()=>{historyPage=1;historyVersion='';historyGeneration++;clearTimeout(messageSearchTimer);messageSearchTimer=setTimeout(()=>void loadHistory(),350);};
-            storeSelect.onchange=loadContacts;el('nfMessageMode').onchange=loadContacts;
-            historySelect.onchange=()=>{historyPage=1;historyVersion='';historyGeneration++;if(!historyBusy)void loadHistory();};
-            el('nfRefreshMessages').onclick=()=>loadHistory();
-            el('nfSendMessage').onclick=async()=>{
-                const direct=el('nfMessageMode').value==='PEOPLE';
-                const payload={store_ids:[...storeSelect.selectedOptions].map(o=>Number(o.value)),all:!direct&&el('nfAllStores').checked,message:el('nfMessageText').value.trim()};
-                if(direct){payload.recipient_emails=[...peopleSelect.selectedOptions].map(o=>o.value);if(payload.store_ids.length!==1||!payload.recipient_emails.length)return showMessage('Choose one store and at least one recipient.',true);}
-                if(!payload.message)return showMessage('Enter a message.',true);
-                const draft=el('nfMessageText').value,b=el('nfSendMessage');b.disabled=true;
-                try{const r=await api('/api/messages',{method:'POST',body:JSON.stringify(payload)});if(!active())return;
-                    if(el('nfMessageText').value===draft)el('nfMessageText').value='';
-                    showMessage(`Message saved for ${r.stores} store(s). In-app only; no email requested.`);
-                    if(payload.store_ids.length===1){historySelect.value=String(payload.store_ids[0]);historyPage=1;await loadHistory();}
-                }catch(e){if(active())showMessage(e.message,true);}finally{b.disabled=false;}
-            };
-            body.onclick=async e=>{const button=e.target.closest('[data-nf-reply]');if(!button)return;
-                const message=historyRows[Number(button.dataset.nfReply)];if(!message)return;
-                el('nfStoreSearch').value='';filterStores();
-                el('nfMessageMode').value='PEOPLE';for(const option of storeSelect.options)option.selected=option.value===historySelect.value;
-                await loadContacts();if(!active())return;
-                const option=[...peopleSelect.options].find(o=>o.value.toLowerCase()===message.sender_email.toLowerCase());
-                if(!option)return showMessage('This sender is no longer an active authorized contact.',true);
-                option.selected=true;el('nfMessageText').focus();
-            };
-            if(nemsFeatures.stores.length===1){storeSelect.options[0].selected=true;historySelect.value=storeSelect.options[0].value;await loadContacts();await loadHistory();}
-            if(active())nemsMessageTimer=setInterval(()=>{if(active()&&!document.hidden&&historyPage===1)void loadHistory(true);},30000);
+            const refreshStores=async()=>{try{const rows=await api('/api/messages/stores',{cache:'no-store'});if(!active())return;for(const s of stores)s.unread_count=rows.find(r=>String(r.store_id)===String(s.store_id))?.unread_count||0;drawStores();}catch(_){}};
+            const openStore=async id=>{storeId=id;generation++;const g=generation;page=1;version='';people.clear();contacts=[];el('nmPeopleSearch').value='';el('nmSearch').value='';el('nmTitle').textContent=stores.find(s=>String(s.store_id)===id)?.store_name||'Conversation';el('nmThread').innerHTML='<p>Loading…</p>';drawPeople();drawStores();void load();try{const rows=await api('/api/messages/contacts/'+id);if(!active()||g!==generation)return;contacts=rows;drawPeople();}catch(e){if(active()&&g===generation)el('nmPeople').textContent=e.message;}};
+            root.onclick=e=>{const b=e.target.closest('[data-open]');if(b)void openStore(b.dataset.open);};root.onchange=e=>{const id=e.target.dataset.select;if(!id)return;e.target.checked?selected.add(id):selected.delete(id);people.clear();drawPeople();targetText();};
+            el('nmFind').oninput=drawStores;el('nmAll').onclick=()=>{stores.forEach(s=>selected.add(String(s.store_id)));people.clear();drawPeople();drawStores();};el('nmClear').onclick=()=>{selected.clear();drawStores();};
+            el('nmPeopleSearch').oninput=drawPeople;el('nmPeople').onchange=e=>{const email=e.target.dataset.person;if(!email)return;e.target.checked?people.add(email):people.delete(email);targetText();};
+            el('nmThread').onclick=e=>{const b=e.target.closest('[data-reply]');if(!b)return;const contact=contacts.find(c=>c.email.toLowerCase()===b.dataset.reply.toLowerCase());if(!contact)return showMessage('This sender is no longer an available contact.',true);selected.clear();people.clear();people.add(contact.email);drawStores();drawPeople();el('nmContacts').open=true;el('nmText').focus();};
+            let searchTimer;el('nmSearch').oninput=()=>{page=1;version='';generation++;clearTimeout(searchTimer);searchTimer=setTimeout(()=>void load(),400);};el('nmRefresh').onclick=()=>{version='';void load();void refreshStores();};
+            el('nmSend').onclick=async()=>{if(sending)return;const ids=targets(),draft=el('nmText').value,message=draft.trim();if(!ids.length||!message)return showMessage('Choose recipients and enter a message.',true);const payload={store_ids:ids.map(Number),message};if(!selected.size&&people.size)payload.recipient_emails=[...people];sending=true;el('nmSend').disabled=true;el('nmStatus').textContent='Sending…';try{const result=await api('/api/messages',{method:'POST',body:JSON.stringify(payload)});if(!active())return;if(el('nmText').value===draft)el('nmText').value='';el('nmStatus').textContent='Sent individually to '+result.stores+' store(s).';page=1;version='';generation++;void load();}catch(e){if(active())el('nmStatus').textContent=e.message;}finally{sending=false;if(active())el('nmSend').disabled=false;}};
+            drawStores();if(stores.length===1)await openStore(String(stores[0].store_id));
+            if(active())nemsMessageTimer=setInterval(()=>{if(active()&&!document.hidden){if(page===1)void load(true);void refreshStores();}},30000);
         }else if(nemsFeatureTab==='expired'){
             let form='';
             if(currentUser.role==='STORE'){
