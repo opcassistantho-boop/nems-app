@@ -6,7 +6,7 @@ const crypto = require('crypto');
  
 // NEMS ADMIN User Management. This module never exposes the Supabase secret to browsers.
  
-module.exports = function registerUserRoutes({ app, pool, authenticate, adminOnly }) {
+module.exports = function registerUserRoutes({ app, pool, authenticate, adminOnly, passwordHistory }) {
  
     const secret = process.env.SUPABASE_SERVICE_ROLE_KEY;
  
@@ -29,7 +29,7 @@ module.exports = function registerUserRoutes({ app, pool, authenticate, adminOnl
     const brevoSenderEmail = String(process.env.BREVO_SENDER_EMAIL || '').trim();
     const brevoSenderName = String(process.env.BREVO_SENDER_NAME || 'CARD INDOGROSIR NEMS').trim();
  
-    async function sendInvitation(email) {
+    async function sendInvitationMessage(email, historyId) {
         if (!brevoApiKey) throw new Error('BREVO_NOT_CONFIGURED');
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(brevoSenderEmail)) {
             throw new Error('BREVO_SENDER_NOT_CONFIGURED');
@@ -43,6 +43,7 @@ module.exports = function registerUserRoutes({ app, pool, authenticate, adminOnl
         const safeLink = link.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
         const response = await fetch('https://api.brevo.com/v3/smtp/email', {
             method: 'POST',
+            signal: AbortSignal.timeout(20000),
             headers: {
                 'api-key': brevoApiKey,
                 'Content-Type': 'application/json',
@@ -51,6 +52,7 @@ module.exports = function registerUserRoutes({ app, pool, authenticate, adminOnl
             body: JSON.stringify({
                 sender: { name: brevoSenderName, email: brevoSenderEmail },
                 to: [{ email }],
+                tags: ['nems-reset-'+historyId],
                 subject: 'NEMS - Set up your password',
                 textContent: 'You have a NEMS account. Open this private link to set your password:\n\n' +
                     link + '\n\nIf you did not expect this invitation, ignore this message. ' +
@@ -64,12 +66,29 @@ module.exports = function registerUserRoutes({ app, pool, authenticate, adminOnl
         if (!response.ok) {
             const err = new Error('BREVO_SEND_FAILED: ' + (result.message || response.status));
             err.status = response.status;
+            err.passwordMailRejected = true;
             throw err;
         }
         if (!result.messageId && !result.messageIds?.length) throw new Error('BREVO_NO_MESSAGE_ID');
+        return {messageId:result.messageId||result.messageIds[0],httpStatus:response.status};
     }
  
  
+    async function sendInvitation(email,source,actorEmail,ensureExisting=false){
+        const id=await passwordHistory.begin({email,source,actorEmail,provider:'BREVO'});
+        try{
+            if(ensureExisting)await ensureInvitationAuthUser(email);
+            const result=await sendInvitationMessage(email,id);
+            await passwordHistory.finish(id,{state:'ACCEPTED',httpStatus:result.httpStatus,messageId:result.messageId,code:'DELIVERY_UNCONFIRMED'});
+        }catch(error){
+            const knownFailure=error.passwordMailRejected||/^(BREVO_NOT_CONFIGURED|BREVO_SENDER_NOT_CONFIGURED|SUPABASE_ADMIN_NOT_CONFIGURED|SUPABASE_LINK_NOT_RETURNED)$/.test(error.message)||Number.isInteger(error.status);
+            const code=error.passwordMailRejected?'BREVO_REJECTED':knownFailure?(String(error.message).match(/^[A-Z_]+$/)?error.message:'AUTH_OR_PROVIDER_REJECTED'):'REQUEST_OUTCOME_UNCONFIRMED';
+            try{await passwordHistory.finish(id,{state:knownFailure?'FAILED':'UNKNOWN',httpStatus:error.status||null,code});}
+            catch(_){console.error('[NEMS password history] INVITATION_AUDIT_FAILED');}
+            throw error;
+        }
+    }
+
     async function authAdmin(path, method, body) {
  
         if (!secret || !base) throw new Error('SUPABASE_ADMIN_NOT_CONFIGURED');
@@ -253,8 +272,7 @@ module.exports = function registerUserRoutes({ app, pool, authenticate, adminOnl
  
             if (!existing.rowCount) return fail(res, 404, 'NEMS account not found');
  
-            await ensureInvitationAuthUser(email);
-            await sendInvitation(email);
+            await sendInvitation(email,'ADMIN_PASSWORD_LINK',emailOf(req.user?.email),true);
  
             res.set('Cache-Control', 'no-store');
  
@@ -525,7 +543,7 @@ module.exports = function registerUserRoutes({ app, pool, authenticate, adminOnl
  
             try {
  
-                await sendInvitation(email);
+                await sendInvitation(email,'NEW_ACCOUNT_INVITATION',emailOf(req.user?.email));
  
                 invitationSent = true;
  

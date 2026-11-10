@@ -29,6 +29,7 @@ const pool = new Pool({
 });
 const scaleServices=createServices(pool,{scopeSignature:async user=>user.role+':'+exportScopeKey(await accessibleStores(pool,user))});
 pool.on('error',error=>console.error('[NEMS idle database connection]',error.code||error.message));
+const passwordHistory=require('./nems-password-history')(pool);
  
 // ==========================================
 // SUPABASE AUTHENTICATION
@@ -281,6 +282,7 @@ app.post('/api/login', async (req, res) => {
  
 // Password recovery uses Supabase Auth; always return a generic response to avoid account enumeration.
 const nemsPasswordResetAttempts = new Map();
+const nemsPasswordResetSuppressed = new Map();
 app.post('/api/password/forgot', async (req, res) => {
     const email = cleanEmail(req.body?.email);
     if (!email || email.length > 255 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
@@ -289,21 +291,34 @@ app.post('/api/password/forgot', async (req, res) => {
     const ip = req.ip || 'unknown';
     const key = ip + ':' + email;
     const now = Date.now();
-    for (const [k,v] of nemsPasswordResetAttempts) if (now - v > 3600000) nemsPasswordResetAttempts.delete(k);
+    for (const [k,v] of nemsPasswordResetAttempts) if (now - v > 3600000) {nemsPasswordResetAttempts.delete(k);nemsPasswordResetSuppressed.delete(k);}
     if (nemsPasswordResetAttempts.has(key) && now - nemsPasswordResetAttempts.get(key) < 60000) {
+        // One suppressed-request audit per cooldown, not one row per repeated click.
+        if(nemsPasswordResetSuppressed.get(key)!==nemsPasswordResetAttempts.get(key)){
+            nemsPasswordResetSuppressed.set(key,nemsPasswordResetAttempts.get(key));
+            try{const id=await passwordHistory.begin({email,source:'FORGOT_PASSWORD',provider:'SUPABASE_AUTH'});
+                await passwordHistory.finish(id,{state:'THROTTLED',code:'LOCAL_COOLDOWN'});
+            }catch(_){console.error('[NEMS password history] THROTTLE_AUDIT_FAILED');}
+        }
         return res.json({message:'If registered, a reset link will be sent.'});
     }
     nemsPasswordResetAttempts.set(key, now);
+    let resetHistoryId;
     try {
+        resetHistoryId=await passwordHistory.begin({email,source:'FORGOT_PASSWORD',provider:'SUPABASE_AUTH'});
         const redirectTo = (process.env.NEMS_PUBLIC_URL || 'https://nems-app.onrender.com').replace(/\/$/, '') + '/';
         const response = await fetch(`${SUPABASE_URL}/auth/v1/recover?redirect_to=${encodeURIComponent(redirectTo)}`, {
-            method:'POST', headers:{apikey:SUPABASE_ANON_KEY,'Content-Type':'application/json'},
+            method:'POST', signal:AbortSignal.timeout(20000), headers:{apikey:SUPABASE_ANON_KEY,'Content-Type':'application/json'},
             body:JSON.stringify({email})
         });
+        const providerResult=await response.json().catch(()=>({}));
+        await passwordHistory.finish(resetHistoryId,{state:response.ok?'ACCEPTED':'FAILED',httpStatus:response.status,
+            code:response.ok?'DELIVERY_UNCONFIRMED':providerResult.code||providerResult.error_code||'PROVIDER_REJECTED'});
         if (!response.ok) console.warn('Supabase password recovery request rejected:', response.status);
         return res.json({message:'If registered, a reset link will be sent.'});
     } catch(error) {
-        console.error('Password recovery request error:', error.message);
+        console.error('Password recovery request error:', error.code||'RESET_REQUEST_FAILED');
+        if(resetHistoryId)try{await passwordHistory.finish(resetHistoryId,{state:'UNKNOWN',code:'REQUEST_OUTCOME_UNCONFIRMED'});}catch(_){console.error('[NEMS password history] OUTCOME_AUDIT_FAILED');}
         return sendError(res, 503, 'Password reset temporarily unavailable');
     }
 });
@@ -2007,7 +2022,8 @@ require('./nems-tasks')({
 });
  
 // ADMIN USER MANAGEMENT ROUTES
-require('./nems-users')({ app, pool, authenticate, adminOnly });
+require('./nems-users')({ app, pool, authenticate, adminOnly, passwordHistory });
+passwordHistory.register({app,authenticate,adminOnly,pageQuery:scalePageQuery});
  
 // ADMIN STORE MANAGEMENT ROUTES
 require('./nems-stores')({ app, pool, authenticate, adminOnly });
@@ -2500,11 +2516,12 @@ async function processEmailQueue() {
 app.post('/api/email/brevo-webhook',secureRoute(async(req,res)=>{
     const crypto=require('crypto'),expected=process.env.BREVO_WEBHOOK_TOKEN||'',actual=req.get('x-nems-webhook-token')||'';
     if(!expected||Buffer.byteLength(actual)!==Buffer.byteLength(expected)||!crypto.timingSafeEqual(Buffer.from(actual),Buffer.from(expected)))throw appError(401,'Invalid webhook credentials');
+    await passwordHistory.event(req.body);
     const event=req.body.event,messageId=req.body['message-id']||req.body.messageId;
     const tags=Array.isArray(req.body.tags)?req.body.tags:[];
     if(typeof req.body.tag==='string')tags.push(...req.body.tag.split(/[ ,]+/));
     const tag=tags.find(x=>/^nems-\d+$/.test(String(x)));
-    if(!messageId&&!tag)throw appError(400,'Provider message ID or NEMS tag required');
+    if(!messageId&&!tag&&!tags.some(x=>/^nems-reset-[0-9a-f-]{36}$/i.test(String(x))))throw appError(400,'Provider message ID or NEMS tag required');
     if(['delivered','hard_bounce','blocked','invalid','error'].includes(event)){
         await pool.query(`UPDATE public.nems_email_notifications SET delivery_status=$3,sent_at=CASE WHEN $3='SENT' THEN COALESCE(sent_at,NOW()) ELSE sent_at END,
             error_message=$4 WHERE (POSITION(('"messageId":' || to_json($1::text)::text) IN error_message)>0 OR email_id=$2) AND delivery_status<>'SENT'`,[messageId||'',tag?tag.slice(5):null,event==='delivered'?'SENT':'FAILED',JSON.stringify({event,messageId,provider_delivery_confirmed:event==='delivered'})]);

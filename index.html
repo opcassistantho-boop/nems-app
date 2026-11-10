@@ -4504,11 +4504,11 @@ el('entryProduct').addEventListener('change',async()=>{
 function nemsPagerHTML(name,page,more){return '<div class="row" style="margin-top:12px"><button type="button" data-page-back '+(page<=1?'disabled':'')+'>Previous</button><span>Page '+page+'</span><button type="button" data-page-next '+(!more?'disabled':'')+'>Next</button></div>';}
 function nemsBindPager(host,previous,next,load){const back=host.querySelector('[data-page-back]'),forward=host.querySelector('[data-page-next]');back.onclick=()=>{previous();void load();};forward.onclick=()=>{next();void load();};}
 let nemsFeatureGeneration=0,nemsEmployeePage=1,nemsEmployeeGeneration=0;
-const nemsFeaturePages={notifications:1,expired:1,archive:1,tasks:1,email:1};
+const nemsFeaturePages={notifications:1,expired:1,archive:1,tasks:1,email:1,passwordhistory:1};
 const nemsFeatureSearch={};
 async function nemsFeatureData(tab){
-    const endpoint={expired:'reports',archive:'archive',tasks:'task-followup',notifications:'notifications',email:'email-status'}[tab];
-    return endpoint?api('/api/scale/'+endpoint+'?'+new URLSearchParams({page:nemsFeaturePages[tab]||1,limit:50,search:nemsFeatureSearch[tab]||''})):null;
+    const endpoint={expired:'reports',archive:'archive',tasks:'task-followup',notifications:'notifications',email:'email-status',passwordhistory:'password-reset-history'}[tab];
+    return endpoint?api((tab==='passwordhistory'?'/api/admin/':'/api/scale/')+endpoint+'?'+new URLSearchParams({page:nemsFeaturePages[tab]||1,limit:50,search:nemsFeatureSearch[tab]||''})):null;
 }
 const nemsFeatures={stores:[],messages:[],reports:[],archive:[],stock:[],tasks:[],preview:null};
 function nemsFeatureSetup(){
@@ -4561,7 +4561,7 @@ async function nemsFeatureLoad(){
     try{
         if(!currentUser)return;
         const tabs=[['notifications','Notifications'],['messages','Messages'],['expired','Expired Reports'],['archive','Permanent Archive'],['tasks','Task Follow-up']];
-        if(currentUser.role==='ADMIN')tabs.push(['imports','Products / Suppliers Import'],['barcodes','Register Barcode'],['email','Email Status']);
+        if(currentUser.role==='ADMIN')tabs.push(['imports','Products / Suppliers Import'],['barcodes','Register Barcode'],['email','Email Status'],['passwordhistory','Password Reset History']);
         el('nfTabs').innerHTML=tabs.map(([id,title])=>`<button type="button" data-nf-tab="${id}">${title}</button>`).join('');
         el('nfTabs').onclick=e=>{const b=e.target.closest('[data-nf-tab]');if(b){nemsFeatureTab=b.dataset.nfTab;nemsFeatureRender();}};
         el('nfState').textContent='';await nemsFeatureRender();
@@ -4754,6 +4754,10 @@ async function nemsFeatureRender(){
             el('nfBarcodeSave').onclick=async()=>{const id=Number(el('nfBarcodeProduct').value),barcode=el('nfBarcodeValue').value.trim();if(!id||!barcode)return showMessage('Product ID and barcode required.',true);if(!confirm(`Register exact barcode ${barcode} to product ID ${id}?`))return;
                 try{await api('/api/admin/products/'+id+'/barcodes',{method:'POST',body:JSON.stringify({barcode})});showMessage('Additional barcode registered.');}catch(e){showMessage(e.message,true);}
             };
+        }else if(nemsFeatureTab==='passwordhistory'&&currentUser.role==='ADMIN'){
+            const sources={FORGOT_PASSWORD:'Forgot Password',ADMIN_PASSWORD_LINK:'ADMIN sends/resends link',NEW_ACCOUNT_INVITATION:'New account invitation'};
+            const statuses={REQUESTED:'Request started — result not recorded',ACCEPTED:'Provider accepted request — delivery unconfirmed',FAILED:'Request failed',UNKNOWN:'Outcome unconfirmed — check provider logs',THROTTLED:'Cooldown — no additional request sent'};
+            body.innerHTML='<h3>Password Reset History</h3><p>Tracks requests made through NEMS after this update. Forgot Password shows the email entered, not a verified person. Shared store accounts cannot identify which staff member clicked. ACCEPTED does not prove an account exists or an email was sent.</p><p>DELIVERED appears only after an authenticated Brevo delivery event. Supabase Forgot Password delivery is unconfirmed here; check its SMTP provider logs. Requests made directly in Supabase are not listed.</p>'+nfTable(['Requested','Store / Email entered','Source','Requested by','Request result','Delivery','Details'],paged.records.map(r=>'<tr>'+nfCell(dateTimeText(r.requested_at))+'<td>'+escapeHtml(r.store_name||'—')+'<br>'+escapeHtml(r.recipient_email)+'</td>'+nfCell(sources[r.source]||r.source)+nfCell(r.actor_email||'Unauthenticated requester — identity unverified')+nfCell(statuses[r.request_status]||r.request_status)+nfCell(r.delivery_status==='DELIVERED'?'Delivered '+dateTimeText(r.delivered_at):r.delivery_status==='FAILED'?'Delivery failed':'Unconfirmed')+nfCell([r.provider,r.provider_http_status?'HTTP '+r.provider_http_status:'',r.result_code||''].filter(Boolean).join(' · '))+'</tr>'));
         }else if(nemsFeatureTab==='email'&&currentUser.role==='ADMIN'){
             const rows=paged.records;body.innerHTML='<p>SENT means Brevo confirmed delivery through the authenticated webhook. PENDING may mean queued or accepted with delivery still unconfirmed.</p>'+nfTable(['Recipient','Subject','Status','Delivered At','Provider details'],rows.map(r=>'<tr>'+nfCell(r.recipient_email)+nfCell(r.subject)+nfCell(r.delivery_status)+nfCell(r.sent_at?dateTimeText(r.sent_at):'')+nfCell(r.error_message)+'</tr>'));
         }else{nemsFeatureTab='notifications';await nemsFeatureRender();}
