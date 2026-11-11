@@ -5084,6 +5084,28 @@ nemsMeetingSetup();
     };
     el('navigation').append(entry);
 })();
+// Store account existence, invitation history and successful NEMS login activity.
+(function(){
+    const roles=['ADMIN','HEAD','AS','AOM'];let page=1,generation=0;
+    const nav=document.createElement('button');nav.type='button';nav.className='meetingReportsOnly hidden';nav.dataset.page='accounttracker';nav.textContent='Account Tracker';nav.onclick=()=>showPage('accounttracker');el('navigation').append(nav);
+    const section=document.createElement('section');section.id='page-accounttracker';section.className='page hidden';
+    section.innerHTML=`<div class="panel"><h2>NEMS Account Tracker</h2><p>Check which stores have an account and which have a recorded successful login. AS and AOM see their assigned stores only.</p><p id="naSummary" role="status"></p><div class="grid"><div><label for="naSearch">Search store, email, AS or AOM</label><input type="search" id="naSearch" maxlength="100" placeholder="Store, email or assigned manager"></div><div><label for="naStatus">Status</label><select id="naStatus"><option value="ALL">All statuses</option><option value="NO_ACCOUNT">No account</option><option value="SETUP_INCOMPLETE">Account setup incomplete</option><option value="PROFILE_MISMATCH">Account / store mismatch</option><option value="INACTIVE">Account inactive</option><option value="INVITED">Invitation recorded · no login recorded</option><option value="NO_LOGIN_RECORDED">No login recorded</option><option value="LOGGED_IN">Login recorded</option></select></div></div><button type="button" id="naApply">Apply filters</button><button type="button" id="naRefresh">Refresh</button><button type="button" id="naExport">Download Excel</button><p id="naNote"></p><div class="tablewrap"><table><thead><tr><th>Store / Email</th><th>Account</th><th>Login / Setup Status</th><th>AS / AOM</th><th>Last Invitation</th><th>Last Recorded Login</th></tr></thead><tbody id="naRows"></tbody></table></div><div id="naPager"></div></div>`;
+    el('application').append(section);
+    const active=owner=>currentUser?.email===owner&&roles.includes(currentUser?.role)&&!section.classList.contains('hidden');
+    const params=()=>new URLSearchParams({page,search:el('naSearch').value.trim(),status:el('naStatus').value});
+    async function load(){
+        if(!roles.includes(currentUser?.role))return;const owner=currentUser.email,g=++generation;el('naRows').innerHTML='<tr><td colspan="6">Loading…</td></tr>';
+        try{const data=await api('/api/account-tracker?'+params(),{cache:'no-store'});if(!active(owner)||g!==generation)return;
+            const s=data.summary;el('naSummary').textContent=`${s.stores} authorized stores · ${s.with_account} with account · ${s.without_account} without account · ${s.login_recorded} with recorded login. ${data.total} match current filters.`;
+            el('naNote').textContent=data.note;
+            el('naRows').innerHTML=data.records.map(r=>'<tr>'+nfCell(r.store_name+' · '+(r.store_email||'NO STORE EMAIL')+' · Store '+r.store_status)+nfCell(r.has_account?(r.account_status||'Unknown'):'No account')+nfCell(r.status_label)+nfCell('AS: '+(r.as_contacts||'Unassigned')+' | AOM: '+(r.aom_contacts||'Unassigned'))+nfCell(r.invitation_at?dateTimeText(r.invitation_at)+' · '+(r.invitation_delivery||'Delivery unconfirmed'):'No invitation record')+nfCell(r.last_login_at?dateTimeText(r.last_login_at):'No login recorded')+'</tr>').join('')||'<tr><td colspan="6">No matching stores.</td></tr>';
+            el('naPager').innerHTML=nemsPagerHTML('account-tracker',page,data.has_more);nemsBindPager(el('naPager'),()=>page--,()=>page++,load);
+        }catch(e){if(active(owner)&&g===generation){el('naRows').innerHTML='<tr><td colspan="6">Account Tracker unavailable. '+escapeHtml(e.message)+'</td></tr>';}}
+    }
+    el('naApply').onclick=()=>{page=1;void load();};el('naRefresh').onclick=()=>void load();el('naSearch').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();page=1;void load();}};el('naStatus').onchange=()=>{page=1;void load();};
+    el('naExport').onclick=async()=>{const button=el('naExport'),owner=currentUser?.email;button.disabled=true;try{const response=await fetch('/api/account-tracker/export?'+params(),{headers:{Authorization:'Bearer '+token},cache:'no-store'});if(!response.ok){const error=await response.json();throw Error(error.error||'Export failed');}const blob=await response.blob();if(!active(owner))return;const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='NEMS_Account_Tracker.xlsx';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),10000);}catch(e){if(active(owner))showMessage(e.message,true);}finally{button.disabled=false;}};
+    const previous=showPage;showPage=function(name){previous(name);if(name==='accounttracker'){page=1;void load();}else generation++;};
+})();
 </script>
 </body>
 </html>

@@ -264,6 +264,17 @@ app.post('/api/login', async (req, res) => {
             );
         }
  
+        // Record successful NEMS access only after credentials and active profile pass.
+        // Tracking failure must not prevent a valid store login.
+        try{await pool.query(`INSERT INTO public.nems_account_login_activity(email,auth_user_id,role,store_name,first_recorded_login_at,last_login_at,successful_logins)
+            VALUES(LOWER($1),$2::uuid,$3,$4,clock_timestamp(),clock_timestamp(),1)
+            ON CONFLICT(email) DO UPDATE SET
+                first_recorded_login_at=CASE WHEN nems_account_login_activity.auth_user_id=EXCLUDED.auth_user_id AND nems_account_login_activity.role=EXCLUDED.role AND nems_account_login_activity.store_name IS NOT DISTINCT FROM EXCLUDED.store_name THEN nems_account_login_activity.first_recorded_login_at ELSE EXCLUDED.first_recorded_login_at END,
+                successful_logins=CASE WHEN nems_account_login_activity.auth_user_id=EXCLUDED.auth_user_id AND nems_account_login_activity.role=EXCLUDED.role AND nems_account_login_activity.store_name IS NOT DISTINCT FROM EXCLUDED.store_name THEN nems_account_login_activity.successful_logins+1 ELSE 1 END,
+                auth_user_id=EXCLUDED.auth_user_id,role=EXCLUDED.role,store_name=EXCLUDED.store_name,last_login_at=EXCLUDED.last_login_at`,
+            [rows[0].email,result.user.id,rows[0].role,rows[0].store_name||null]);}
+        catch(e){console.warn('[NEMS login tracking]',e.code||'UNAVAILABLE');}
+
         res.json({
             token: result.access_token,
             user: rows[0]
@@ -2926,6 +2937,7 @@ app.get('/api/help',authenticate,(req,res)=>{
     let video_url=null;try{const url=new URL(value);if(url.protocol==='https:')video_url=url.href;}catch(_){}
     res.json({video_url});
 });
+require('./nems-account-tracker')({app,pool,authenticate,secureRoute,storeScope,XLSX,appError});
 app.get('/api/admin/system-status',authenticate,adminOnly,secureRoute(async(req,res)=>{
     const ready=await pool.query("SELECT to_regclass('public.nems_request_keys') IS NOT NULL AS save_protection_ready");
     res.json({version:'nems-scale-2026-11',save_protection_ready:ready.rows[0].save_protection_ready,database_pool:{total:pool.totalCount,idle:pool.idleCount,waiting:pool.waitingCount,max:pool.options.max},export_jobs:scaleServices.stats()});
