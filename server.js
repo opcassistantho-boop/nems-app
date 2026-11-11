@@ -2232,6 +2232,7 @@ app.get('/api/messages/contacts/:storeId',authenticate,secureRoute(async(req,res
     const contacts=await messageContacts(pool,store.store_id,req.user.email);
     res.json(contacts.map(row=>messageRoleView(req.user,row)).sort((a,b)=>String(a.full_name||a.email).localeCompare(String(b.full_name||b.email))));
 }));
+const messageFiles=require('./nems-message-attachments')({pool,app,express,authenticate,secureRoute,requireStore,accessibleStores,appError});
 app.get('/api/messages/:storeId',authenticate,secureRoute(async(req,res)=>{
     await requireStore(pool,req.user,req.params.storeId);
     const r=await pool.query(`SELECT m.*,
@@ -2242,10 +2243,13 @@ app.get('/api/messages/:storeId',authenticate,secureRoute(async(req,res)=>{
             $3::boolean OR LOWER(m.sender_email)=LOWER($2::text) OR
             EXISTS(SELECT 1 FROM public.nems_notifications n WHERE n.reference_type='MESSAGE' AND n.reference_id=m.message_id AND LOWER(n.recipient_email)=LOWER($2::text)) OR
             NOT EXISTS(SELECT 1 FROM public.nems_notifications n WHERE n.reference_type='MESSAGE' AND n.reference_id=m.message_id AND n.title LIKE 'NEMS direct message · %'))
-        ORDER BY m.created_at DESC,m.message_id DESC LIMIT 500`,[req.params.storeId,req.user.email,['ADMIN','HEAD'].includes(req.user.role)]);res.json(r.rows.map(row=>messageRoleView(req.user,row,'sender_email')));
+        ORDER BY m.created_at DESC,m.message_id DESC LIMIT 500`,[req.params.storeId,req.user.email,['ADMIN','HEAD'].includes(req.user.role)]);res.json(await messageFiles.enrich(r.rows.map(row=>messageRoleView(req.user,row,'sender_email'))));
 }));
 app.post('/api/messages',authenticate,secureRoute(async(req,res)=>{
-    const text=requiredText(req.body.message,5000);if(!text)throw appError(400,'Message required (maximum 5000 characters)');
+    const rawMessage=String(req.body.message||'').trim();if(rawMessage.length>5000)throw appError(400,'Message maximum is 5000 characters');
+    const attachmentIds=require('./nems-message-attachments').idsOf(req.body.attachment_ids);
+    if(!rawMessage&&!attachmentIds.length)throw appError(400,'Enter a message or attach a file');
+    let text=rawMessage;
     const result=await transaction(async c=>{
         const allowed=await accessibleStores(c,req.user);
         const ids=req.body.all===true?allowed.map(s=>String(s.store_id)):[...new Set((Array.isArray(req.body.store_ids)?req.body.store_ids:[]).map(String))];
@@ -2259,18 +2263,22 @@ app.post('/api/messages',authenticate,secureRoute(async(req,res)=>{
             const contacts=await messageContacts(c,ids[0],req.user.email);
             if(directRecipients.some(mail=>!contacts.some(u=>cleanEmail(u.email)===mail)))throw appError(403,'Select only active authorized recipients for this store');
         }
-        let count=0;
+        const files=await messageFiles.claim(c,req.user.email,attachmentIds);
+        if(!text)text='Attachments: '+files.map(f=>f.file_name).join(', ');
+        const notificationText=text+(files.length?'\nAttachments: '+files.map(f=>f.file_name).join(', '):'');
+        let count=0;const attachmentMessageIds=[];
         for(const id of ids){
             const store=allowed.find(s=>String(s.store_id)===id);
             const conv=(await c.query(`INSERT INTO public.nems_conversations(store_id) VALUES($1) ON CONFLICT(store_id)
                 DO UPDATE SET updated_at=NOW() RETURNING conversation_id`,[id])).rows[0];
             const m=(await c.query(`INSERT INTO public.nems_messages(conversation_id,sender_email,sender_role,message_type,message_text)
                 VALUES($1,$2,$3,$4,$5) RETURNING message_id`,[conv.conversation_id,req.user.email,req.user.role,ids.length>1?'ANNOUNCEMENT':'DIRECT',text])).rows[0];
+            attachmentMessageIds.push(m.message_id);
             const recipients=direct?directRecipients:(req.user.role==='STORE'?await managersForStore(c,id):[store.store_email]);
             for(const mail of [...new Set(recipients.filter(Boolean).map(cleanEmail))].filter(mail=>mail!==cleanEmail(req.user.email)))
-                await notify(c,mail,req.user.email,'MESSAGE',`${direct?'NEMS direct message':'NEMS message'} · ${store.store_name}`,text,'MESSAGE',m.message_id,false);
+                await notify(c,mail,req.user.email,'MESSAGE',`${direct?'NEMS direct message':'NEMS message'} · ${store.store_name}`,notificationText,'MESSAGE',m.message_id,false);
             count++;
-        }return {stores:count,email_delivery:'In-app only; no email requested'};
+        }await messageFiles.link(c,attachmentMessageIds,files);return {stores:count,email_delivery:'In-app only; no email requested'};
     });res.status(201).json(result);
 }));
 app.post('/api/messages/:storeId/read',authenticate,secureRoute(async(req,res)=>{
@@ -2305,6 +2313,7 @@ app.get('/api/alerts/unread',authenticate,secureRoute(async(req,res)=>{
     if(before||after){args.push(before||after);cursor=` AND n.notification_id ${before?'<':'>'} $${args.length}`;}
     const result=await pool.query(`SELECT n.notification_id,n.notification_type,n.title,n.message,
         n.sender_email,n.reference_type,n.reference_id,n.created_at,
+        (SELECT COUNT(*)::integer FROM public.nems_message_file_links l WHERE n.reference_type='MESSAGE' AND l.message_id=n.reference_id) AS attachment_count,
         (SELECT c.store_id FROM public.nems_messages m JOIN public.nems_conversations c ON c.conversation_id=m.conversation_id WHERE n.reference_type='MESSAGE' AND m.message_id=n.reference_id) AS store_id,
         COALESCE(NULLIF(u.full_name,''),n.sender_email,'NEMS') AS sender_name
         FROM public.nems_notifications n
@@ -2899,6 +2908,7 @@ app.get('/api/scale/messages/:storeId',authenticate,secureRoute(async(req,res)=>
     const search=nemsRecordSearch(req.query,args,'m.sender_email,m.message_text,m.created_at::text');
     const data=await scalePageQuery(pool,req.query,`SELECT m.*,COALESCE((SELECT jsonb_agg(jsonb_build_object('email',n.recipient_email,'read_at',n.read_at) ORDER BY n.recipient_email) FROM public.nems_notifications n WHERE n.reference_type='MESSAGE' AND n.reference_id=m.message_id),'[]'::jsonb) AS recipients FROM public.nems_messages m JOIN public.nems_conversations c ON c.conversation_id=m.conversation_id WHERE c.store_id=$1 AND ($3::boolean OR LOWER(m.sender_email)=LOWER($2::text) OR EXISTS(SELECT 1 FROM public.nems_notifications n WHERE n.reference_type='MESSAGE' AND n.reference_id=m.message_id AND LOWER(n.recipient_email)=LOWER($2::text)) OR NOT EXISTS(SELECT 1 FROM public.nems_notifications n WHERE n.reference_type='MESSAGE' AND n.reference_id=m.message_id AND n.title LIKE 'NEMS direct message · %'))${search}`,args,'m.created_at DESC,m.message_id DESC');
     if(req.user.role!=='ADMIN')data.records=data.records.map(({sender_role,...row})=>row);
+    data.records=await messageFiles.enrich(data.records);
     const version=require('crypto').createHash('sha256').update(JSON.stringify(data)).digest('hex');
     if(req.query.version===version)return res.json({unchanged:true,version});
     res.json({...data,version});

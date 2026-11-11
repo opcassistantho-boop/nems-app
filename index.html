@@ -4650,41 +4650,70 @@ function nemsShowAlerts(data){
     if(panel){panel.nemsAppend(data);return;}
     panel=document.createElement('section');panel.id='nemsUnreadAlerts';panel.setAttribute('aria-label','Messages and notifications');
     panel.style.cssText='position:fixed;right:12px;bottom:12px;width:min(370px,calc(100vw - 24px));max-height:70vh;background:white;border:1px solid #bdcde0;border-radius:12px;box-shadow:0 5px 24px #1235;z-index:9000;color:#173452;overflow:hidden;';
-    panel.innerHTML='<header style="display:flex;align-items:center;gap:8px;padding:10px;background:#153963;color:white"><strong style="flex:1">Messages & Notifications <span data-count></span></strong><button type="button" data-min aria-label="Minimize chat" style="padding:5px 10px">−</button><button type="button" data-close aria-label="Close chat" style="padding:5px 10px">×</button></header><div data-content><div data-alert-list style="max-height:30vh;overflow:auto;padding:10px" aria-live="polite"></div><button type="button" data-alert-older>Older unread</button><div data-reply-wrap hidden style="padding:10px;border-top:1px solid #d9e2ed"><strong data-reply-name></strong><div data-thread style="height:130px;overflow:auto;font-size:13px;white-space:pre-wrap"></div><label for="nemsFloatingDraft">Reply</label><textarea id="nemsFloatingDraft" maxlength="5000" style="min-height:55px;max-height:100px" placeholder="Type a reply"></textarea><button type="button" data-send>Send</button><button type="button" data-back>Back to notifications</button></div><p data-error role="status" style="padding:0 10px"></p></div>';
+    panel.innerHTML='<header style="display:flex;align-items:center;gap:8px;padding:10px;background:#153963;color:white"><strong style="flex:1">Messages & Notifications <span data-count></span></strong><button type="button" data-min aria-label="Minimize chat" style="padding:5px 10px">−</button><button type="button" data-close aria-label="Close chat" style="padding:5px 10px">×</button></header><div data-content><div data-alert-list style="max-height:30vh;overflow:auto;padding:10px" aria-live="polite"></div><button type="button" data-alert-older>Older unread</button><div data-reply-wrap hidden style="padding:10px;border-top:1px solid #d9e2ed"><strong data-reply-name></strong><div data-thread style="height:130px;overflow:auto;font-size:13px;white-space:pre-wrap"></div><label for="nemsFloatingDraft">Reply</label><textarea id="nemsFloatingDraft" maxlength="5000" style="min-height:55px;max-height:100px" placeholder="Type a reply"></textarea><label for="nemsFloatingFiles">Attach files</label><input id="nemsFloatingFiles" type="file" multiple accept=".pdf,.xlsx,.xls,.csv,.docx,.doc,.pptx,.ppt,.png,.jpg,.jpeg,.txt"><small>3 files · 5 MB each · 10 MB total · online only</small><button type="button" data-send>Send</button><button type="button" data-back>Back to notifications</button></div><p data-error role="status" style="padding:0 10px"></p></div>';
     document.body.append(panel);
     let rows=[],more=data.has_more,before=0,busy=false,target=null,threadGeneration=0;
     const valid=()=>currentUser?.email===data.owner&&nemsAlertsGeneration===data.generation&&panel.isConnected;
     const q=sel=>panel.querySelector(sel);
     const render=()=>{
         const list=q('[data-alert-list]'),top=list.scrollTop;
-        list.innerHTML=rows.map(r=>'<article style="padding:10px 0;border-bottom:1px solid #dde5ed"><strong>'+escapeHtml(r.sender_name||r.sender_email||'NEMS')+'</strong><div style="font-size:12px">'+escapeHtml(r.title||'Notification')+' · '+escapeHtml(dateTimeText(r.created_at))+'</div><p style="white-space:pre-wrap;overflow-wrap:anywhere">'+escapeHtml(r.message)+'</p><button type="button" data-read="'+Number(r.notification_id)+'">Mark as read</button> '+(r.reference_type==='MESSAGE'&&r.store_id&&r.sender_email?'<button type="button" data-reply="'+Number(r.notification_id)+'">Reply</button>':'')+'</article>').join('')||'<p>No unread items on this page.</p>';
+        list.innerHTML=rows.map(r=>'<article style="padding:10px 0;border-bottom:1px solid #dde5ed"><strong>'+escapeHtml(r.sender_name||r.sender_email||'NEMS')+'</strong><div style="font-size:12px">'+escapeHtml(r.title||'Notification')+' · '+escapeHtml(dateTimeText(r.created_at))+'</div><p style="white-space:pre-wrap;overflow-wrap:anywhere">'+escapeHtml(r.message)+'</p>'+(r.reference_type==='MESSAGE'&&Number(r.attachment_count)?'<button type="button" data-nems-message-files="'+Number(r.reference_id)+'">View attachments ('+Number(r.attachment_count)+')</button>':'')+'<button type="button" data-read="'+Number(r.notification_id)+'">Mark as read</button> '+(r.reference_type==='MESSAGE'&&r.store_id&&r.sender_email?'<button type="button" data-reply="'+Number(r.notification_id)+'">Reply</button>':'')+'</article>').join('')||'<p>No unread items on this page.</p>';
         list.scrollTop=top;q('[data-count]').textContent=rows.length?'('+rows.length+')':'';q('[data-alert-older]').hidden=!more;
     };
     panel.nemsAppend=incoming=>{if(!valid())return;const ids=new Set(rows.map(r=>String(r.notification_id)));rows.push(...incoming.records.filter(r=>!ids.has(String(r.notification_id))));rows.sort((a,b)=>Number(b.notification_id)-Number(a.notification_id));if(rows.length>100)rows=rows.slice(0,100);more=more||incoming.has_more;if(rows.length)before=Math.min(...rows.map(r=>Number(r.notification_id)));render();};
-    const loadThread=async()=>{if(!target||!valid())return;const t=target,g=++threadGeneration;try{const result=await api('/api/scale/messages/'+t.store_id+'?page=1&limit=20',{cache:'no-store'});if(!valid()||target!==t||g!==threadGeneration)return;q('[data-thread]').innerHTML=(result.records||[]).slice().reverse().map(r=>'<p><b>'+escapeHtml(r.sender_email)+':</b> '+escapeHtml(r.message_text)+'</p>').join('');q('[data-thread]').scrollTop=q('[data-thread]').scrollHeight;}catch(e){if(valid())q('[data-error]').textContent=e.message;}};
+    const loadThread=async()=>{if(!target||!valid())return;const t=target,g=++threadGeneration;try{const result=await api('/api/scale/messages/'+t.store_id+'?page=1&limit=20',{cache:'no-store'});if(!valid()||target!==t||g!==threadGeneration)return;q('[data-thread]').innerHTML=(result.records||[]).slice().reverse().map(r=>'<p><b>'+escapeHtml(r.sender_email)+':</b> '+escapeHtml(r.message_text)+'</p>'+nemsAttachmentHTML(r)).join('');q('[data-thread]').scrollTop=q('[data-thread]').scrollHeight;}catch(e){if(valid())q('[data-error]').textContent=e.message;}};
     panel.nemsRefresh=()=>{if(target&&!document.hidden)void loadThread();};
     q('[data-min]').onclick=()=>{const c=q('[data-content]');c.hidden=!c.hidden;q('[data-min]').textContent=c.hidden?'+':'−';};
-    q('[data-close]').onclick=()=>{if(!busy)panel.remove();};
-    q('[data-back]').onclick=()=>{target=null;threadGeneration++;q('[data-reply-wrap]').hidden=true;q('[data-alert-list]').hidden=false;q('[data-alert-older]').hidden=!more;};
+    q('[data-close]').onclick=()=>{if(!busy&&(!(q('#nemsFloatingDraft').value.trim()||q('#nemsFloatingFiles').files.length)||confirm('Close chat and discard this unsent reply and selected attachments?')))panel.remove();};
+    q('[data-back]').onclick=()=>{if(q('#nemsFloatingDraft').value.trim()||q('#nemsFloatingFiles').files.length){q('[data-error]').textContent='Send or clear this reply and its attachments before leaving the conversation.';return;}target=null;threadGeneration++;q('[data-reply-wrap]').hidden=true;q('[data-alert-list]').hidden=false;q('[data-alert-older]').hidden=!more;};
     panel.onclick=async e=>{
         const read=e.target.closest('[data-read]'),reply=e.target.closest('[data-reply]'),older=e.target.closest('[data-alert-older]');
         if(!valid()||busy||(!read&&!reply&&!older))return;
         q('[data-error]').textContent='';
         if(reply){const row=rows.find(r=>String(r.notification_id)===reply.dataset.reply);if(!row)return;
-            if(target&&String(target.notification_id)!==String(row.notification_id)&&q('#nemsFloatingDraft').value.trim()){q('[data-error]').textContent='Send or clear your current reply before switching conversations.';return;}
+            if(target&&String(target.notification_id)!==String(row.notification_id)&&(q('#nemsFloatingDraft').value.trim()||q('#nemsFloatingFiles').files.length)){q('[data-error]').textContent='Send or clear your current reply before switching conversations.';return;}
             target=row;q('[data-reply-wrap]').hidden=false;q('[data-alert-list]').hidden=true;q('[data-alert-older]').hidden=true;q('[data-reply-name]').textContent='Reply to '+(row.sender_name||row.sender_email);void loadThread();return;
         }
         busy=true;
         try{if(read){const id=Number(read.dataset.read);nemsUnreadGeneration++;await api('/api/notifications/'+id+'/read',{method:'POST',body:'{}'});if(!valid())return;rows=rows.filter(r=>Number(r.notification_id)!==id);nemsUnreadGeneration++;render();void nemsRefreshUnreadBadge(true);}else{const result=await nemsFetchUnreadAlerts('?before='+before);if(!valid())return;rows=result.records;more=result.has_more;if(rows.length)before=Math.min(...rows.map(r=>Number(r.notification_id)));render();}}catch(e){if(valid())q('[data-error]').textContent=e.message;}finally{busy=false;}
     };
     q('[data-send]').onclick=async()=>{
-        if(busy||!target||!valid())return;const t=target,draft=q('#nemsFloatingDraft').value,message=draft.trim();if(!message)return;
-        busy=true;q('[data-send]').disabled=true;q('[data-error]').textContent='Sending…';
-        try{await api('/api/messages',{method:'POST',body:JSON.stringify({store_ids:[Number(t.store_id)],recipient_emails:[t.sender_email],message})});if(!valid())return;if(q('#nemsFloatingDraft').value===draft)q('#nemsFloatingDraft').value='';q('[data-error]').textContent='Sent.';void loadThread();}catch(e){if(valid())q('[data-error]').textContent=e.message;}finally{busy=false;if(valid())q('[data-send]').disabled=false;}
+        if(busy||!target||!valid())return;const t=target,draft=q('#nemsFloatingDraft').value,message=draft.trim();let files;try{files=nemsSelectedFiles(q('#nemsFloatingFiles'));}catch(e){q('[data-error]').textContent=e.message;return;}if(!message&&!files.length)return;
+        busy=true;q('[data-send]').disabled=true;q('#nemsFloatingFiles').disabled=true;q('[data-error]').textContent='Sending…';
+        try{const attachment_ids=await nemsUploadFiles(files,text=>{if(valid())q('[data-error]').textContent=text;});if(!valid())return;await api('/api/messages',{method:'POST',body:JSON.stringify({store_ids:[Number(t.store_id)],recipient_emails:[t.sender_email],message,attachment_ids})});if(!valid())return;if(q('#nemsFloatingDraft').value===draft)q('#nemsFloatingDraft').value='';q('#nemsFloatingFiles').value='';q('[data-error]').textContent='Sent.';void loadThread();}catch(e){if(valid())q('[data-error]').textContent=e.message;}finally{busy=false;if(valid()){q('[data-send]').disabled=false;q('#nemsFloatingFiles').disabled=false;}}
     };
     panel.nemsAppend(data);
 }
 
+// Attachments stay online; uploads do not enter the offline encoding queue.
+const nemsUploadedFiles=new WeakMap();
+function nemsAttachmentHTML(message){return(message.attachments||[]).map(f=>'<p><button type="button" data-nems-file="'+escapeHtml(f.file_id)+'" data-nems-filename="'+escapeHtml(f.file_name)+'">Download '+escapeHtml(f.file_name)+' ('+Math.ceil(Number(f.size_bytes)/1024)+' KB)</button></p>').join('');}
+function nemsSelectedFiles(input){const files=[...(input?.files||[])];if(files.length>3||files.some(f=>f.size<=0||f.size>5*1024*1024)||files.reduce((n,f)=>n+f.size,0)>10*1024*1024)throw Error('Choose up to 3 files, maximum 5 MB each and 10 MB total.');return files;}
+async function nemsUploadFiles(files,status){
+    const owner=currentUser?.email,session=token,ids=[];if(!owner||!session)throw Error('Log in before uploading attachments.');
+    if(!navigator.onLine&&files.length)throw Error('Attachments require an internet connection.');
+    for(let i=0;i<files.length;i++){
+        if(currentUser?.email!==owner||token!==session)throw Error('Account changed. Select your files again.');
+        const file=files[i],cached=nemsUploadedFiles.get(file);
+        if(cached?.owner===owner){ids.push(cached.file_id);continue;}
+        status('Uploading attachment '+(i+1)+' of '+files.length+'…');
+        const response=await fetch('/api/message-files',{method:'POST',headers:{Authorization:'Bearer '+session,'Content-Type':'application/octet-stream','X-File-Name':encodeURIComponent(file.name)},body:file,signal:AbortSignal.timeout(60000)});
+        const result=await response.json().catch(()=>({error:'Upload could not be confirmed. Try again.'}));
+        if(!response.ok)throw Error(result.error||'Attachment upload failed');
+        if(currentUser?.email!==owner||token!==session)throw Error('Account changed during upload.');
+        nemsUploadedFiles.set(file,{owner,file_id:result.file_id});ids.push(result.file_id);
+    }return ids;
+}
+document.addEventListener('click',async event=>{
+    const download=event.target.closest('[data-nems-file]'),list=event.target.closest('[data-nems-message-files]');if(!download&&!list)return;
+    const button=download||list,owner=currentUser?.email;button.disabled=true;
+    try{
+        if(list){const files=await api('/api/message-files/message/'+Number(list.dataset.nemsMessageFiles),{cache:'no-store'});if(currentUser?.email!==owner||!list.isConnected)return;let host=list.nextElementSibling;if(!host?.hasAttribute('data-attachment-list')){host=document.createElement('div');host.setAttribute('data-attachment-list','');list.after(host);}host.innerHTML=nemsAttachmentHTML({attachments:files})||'<p>No attachments.</p>';return;}
+        const response=await fetch('/api/message-files/'+encodeURIComponent(download.dataset.nemsFile)+'/download',{headers:{Authorization:'Bearer '+token},cache:'no-store',signal:AbortSignal.timeout(60000)});
+        if(!response.ok){const result=await response.json();throw Error(result.error||'Attachment unavailable');}
+        const blob=await response.blob();if(currentUser?.email!==owner)return;const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=download.dataset.nemsFilename||'NEMS-attachment';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),10000);
+    }catch(e){showMessage(e.message,true);}finally{if(button.isConnected)button.disabled=false;}
+});
 let nemsFeatureTab='notifications';
 let nemsMessageTimer=null;
 const nemsFeatureShowPage=showPage;
@@ -4733,7 +4762,7 @@ async function nemsFeatureRender(){
             </style><h3>Messages</h3><button type="button" id="nmOpenUnread">Open chat window</button><p>Click a store to open its conversation. Select stores to send the same message individually. Replies stay in each store’s conversation. Authorized management can review messages.</p>
             <div class="nm-layout"><aside><label for="nmFind">Search stores</label><input id="nmFind" type="search" placeholder="Store name or email"><button id="nmAll" type="button">Select all stores</button> <button id="nmClear" type="button">Clear selection</button><p id="nmCount" aria-live="polite"></p><div id="nmList" class="nm-list"></div></aside>
             <section><h3 id="nmTitle">Choose a store</h3><label for="nmSearch">Search this conversation</label><input id="nmSearch" type="search" maxlength="100" placeholder="Message or sender"><button type="button" id="nmRefresh">Refresh</button><div id="nmPager"></div><div id="nmThread" class="nm-thread" aria-live="polite"></div>
-            <div class="nm-composer"><p id="nmTarget" role="status"></p><details id="nmContacts"><summary>Choose specific people in this store</summary><input id="nmPeopleSearch" type="search" placeholder="Name or email"><div id="nmPeople"></div><p>Leave people unselected to message the store or its assigned management team.</p></details><label for="nmText">Message</label><textarea id="nmText" maxlength="5000" placeholder="Type your message"></textarea><button type="button" id="nmSend">Send message</button><p id="nmStatus" role="status"></p></div></section></div>`;
+            <div class="nm-composer"><p id="nmTarget" role="status"></p><details id="nmContacts"><summary>Choose specific people in this store</summary><input id="nmPeopleSearch" type="search" placeholder="Name or email"><div id="nmPeople"></div><p>Leave people unselected to message the store or its assigned management team.</p></details><label for="nmText">Message</label><textarea id="nmText" maxlength="5000" placeholder="Type your message"></textarea><label for="nmFiles">Attach files (online)</label><input id="nmFiles" type="file" multiple accept=".pdf,.xlsx,.xls,.csv,.docx,.doc,.pptx,.ppt,.png,.jpg,.jpeg,.txt"><small>Up to 3 files · 5 MB each · 10 MB total. Excel, PDF, Word, PowerPoint, images, CSV or TXT.</small><button type="button" id="nmSend">Send message</button><p id="nmStatus" role="status"></p></div></section></div>`;
             el('nmOpenUnread').onclick=()=>void nemsCheckAlerts(null,true);
             const root=el('nmList'),selected=new Set(),people=new Set();let storeId='',contacts=[],page=1,version='',generation=0,busy=false,sending=false;
             const active=()=>currentUser?.email===owner&&el('nmList')===root&&nemsFeatureTab==='messages'&&!el('page-followup')?.classList.contains('hidden');
@@ -4746,7 +4775,7 @@ async function nemsFeatureRender(){
                 try{const data=await api('/api/scale/messages/'+id+'?'+new URLSearchParams({page:p,limit:50,search,...(quiet&&version?{version}:{})}),{cache:'no-store'});if(!active()||g!==generation)return;if(data.unchanged)return;version=data.version||'';
                     const thread=el('nmThread'),atBottom=thread.scrollHeight-thread.scrollTop-thread.clientHeight<60,oldTop=thread.scrollTop;
                     const rows=data.records||[];
-                    thread.innerHTML=rows.slice().reverse().map(r=>{const mine=r.sender_email.toLowerCase()===owner.toLowerCase();return `<article class="nm-bubble ${mine?'mine':''}"><div class="nm-meta">${escapeHtml(r.sender_email)} · ${escapeHtml(dateTimeText(r.created_at))}</div><div>${escapeHtml(r.message_text)}</div><div class="nm-meta">${escapeHtml((r.recipients||[]).map(n=>n.email+': '+(n.read_at?'Read':'Unread')).join(' · '))}</div>${!mine?`<button type="button" data-reply="${escapeHtml(r.sender_email)}">Reply to sender</button>`:''}</article>`;}).join('')||'<p>No messages yet.</p>';
+                    thread.innerHTML=rows.slice().reverse().map(r=>{const mine=r.sender_email.toLowerCase()===owner.toLowerCase();return `<article class="nm-bubble ${mine?'mine':''}"><div class="nm-meta">${escapeHtml(r.sender_email)} · ${escapeHtml(dateTimeText(r.created_at))}</div><div>${escapeHtml(r.message_text)}</div>${nemsAttachmentHTML(r)}<div class="nm-meta">${escapeHtml((r.recipients||[]).map(n=>n.email+': '+(n.read_at?'Read':'Unread')).join(' · '))}</div>${!mine?`<button type="button" data-reply="${escapeHtml(r.sender_email)}">Reply to sender</button>`:''}</article>`;}).join('')||'<p>No messages yet.</p>';
                     thread.scrollTop=!quiet||atBottom?thread.scrollHeight:oldTop;
                     el('nmPager').innerHTML=nemsPagerHTML('messages',page,data.has_more);nemsBindPager(el('nmPager'),()=>{page--;version='';},()=>{page++;version='';},load);
                     const ids=rows.filter(r=>(r.recipients||[]).some(n=>n.email.toLowerCase()===owner.toLowerCase()&&!n.read_at)).map(r=>r.message_id);
@@ -4760,7 +4789,16 @@ async function nemsFeatureRender(){
             el('nmPeopleSearch').oninput=drawPeople;el('nmPeople').onchange=e=>{const email=e.target.dataset.person;if(!email)return;e.target.checked?people.add(email):people.delete(email);targetText();};
             el('nmThread').onclick=e=>{const b=e.target.closest('[data-reply]');if(!b)return;const contact=contacts.find(c=>c.email.toLowerCase()===b.dataset.reply.toLowerCase());if(!contact)return showMessage('This sender is no longer an available contact.',true);selected.clear();people.clear();people.add(contact.email);drawStores();drawPeople();el('nmContacts').open=true;el('nmText').focus();};
             let searchTimer;el('nmSearch').oninput=()=>{page=1;version='';generation++;clearTimeout(searchTimer);searchTimer=setTimeout(()=>void load(),400);};el('nmRefresh').onclick=()=>{version='';void load();void refreshStores();};
-            el('nmSend').onclick=async()=>{if(sending)return;const ids=targets(),draft=el('nmText').value,message=draft.trim();if(!ids.length||!message)return showMessage('Choose recipients and enter a message.',true);const payload={store_ids:ids.map(Number),message};if(!selected.size&&people.size)payload.recipient_emails=[...people];sending=true;el('nmSend').disabled=true;el('nmStatus').textContent='Sending…';try{const result=await api('/api/messages',{method:'POST',body:JSON.stringify(payload)});if(!active())return;if(el('nmText').value===draft)el('nmText').value='';el('nmStatus').textContent='Sent individually to '+result.stores+' store(s).';page=1;version='';generation++;void load();}catch(e){if(active())el('nmStatus').textContent=e.message;}finally{sending=false;if(active())el('nmSend').disabled=false;}};
+            el('nmSend').onclick=async()=>{
+                if(sending)return;let files;try{files=nemsSelectedFiles(el('nmFiles'));}catch(e){return showMessage(e.message,true);}
+                const ids=targets(),draft=el('nmText').value,message=draft.trim();if(!ids.length||(!message&&!files.length))return showMessage('Choose recipients and enter a message or attach a file.',true);
+                const payload={store_ids:ids.map(Number),message};if(!selected.size&&people.size)payload.recipient_emails=[...people];
+                sending=true;el('nmSend').disabled=true;el('nmFiles').disabled=true;el('nmStatus').textContent='Sending…';
+                try{payload.attachment_ids=await nemsUploadFiles(files,text=>{if(active())el('nmStatus').textContent=text;});if(!active())return;
+                    const result=await api('/api/messages',{method:'POST',body:JSON.stringify(payload)});if(!active())return;
+                    if(el('nmText').value===draft)el('nmText').value='';el('nmFiles').value='';el('nmStatus').textContent='Sent individually to '+result.stores+' store(s).';page=1;version='';generation++;void load();
+                }catch(e){if(active())el('nmStatus').textContent=e.message;}finally{sending=false;if(active()){el('nmSend').disabled=false;el('nmFiles').disabled=false;}}
+            };
             drawStores();if(stores.length===1)await openStore(String(stores[0].store_id));
             if(active())nemsMessageTimer=setInterval(()=>{if(active()&&!document.hidden){if(page===1)void load(true);void refreshStores();}},30000);
         }else if(nemsFeatureTab==='expired'){
