@@ -5,7 +5,7 @@ function entriesOf(p){const out=[];for(let i=1;i<=3;i++)if(p['expiration_'+i])ou
 function validateRows(rows){if(!rows.length||rows.length>100)throw Error('Enter 1–100 expiration dates.');for(const r of rows){if(!/^\d{4}-\d{2}-\d{2}$/.test(r.date)||!Number.isFinite(Date.parse(r.date))||new Date(r.date).toISOString().slice(0,10)!==r.date||r.qty===''||r.qty==null||!Number.isInteger(Number(r.qty))||Number(r.qty)<0)throw Error('Each row needs a valid expiration date and whole-number quantity (0 or more).');}return rows.map(r=>({date:r.date,qty:Number(r.qty)}));}
 function taskPayload(rows,noStock,name,remarks,revision){if(!name.trim()||!remarks.trim()||name.length>120||remarks.length>2000)throw Error('Enter your employee name (up to 120 characters) and remarks (up to 2000).');const p={expected_revision:revision??null,no_stock:!!noStock,employee_name:name.trim(),store_remarks:remarks.trim()};const values=noStock?[]:validateRows(rows);for(let i=1;i<=3;i++){p['expiration_'+i]=values[i-1]?.date||null;p['qty_'+i]=values[i-1]?.qty??null;}p.extra_expirations=values.slice(3);return p;}
 function storePayload(rows,name,remarks,revision,product){if(!name.trim()||!remarks.trim()||name.length>120||remarks.length>2000)throw Error('Enter your employee name and remarks.');return{expected_revision:revision??null,product_id:Number(product.product_id),employee_name:name.trim(),store_remarks:remarks.trim(),store_barcode:product.master_barcode||'',srp:product.master_srp??null,expirations:validateRows(rows).map(r=>({expiration_date:r.date,quantity:r.qty}))};}
-function taskLocked(task){return !!task.submitted||task.status!=='ACTIVE'||!!task.due_at&&new Date(task.due_at).getTime()<=Date.now();}
+function taskLocked(task){return task.status!=='ACTIVE'||!!task.due_at&&new Date(task.due_at).getTime()<=Date.now();}
 function destination(entry){return entry.type==='store'?'/api/store/monitoring':entry.type==='task'?`/api/store/tasks/${entry.task_id}/products/${entry.product_id}`:`/api/store/tasks/${entry.task_id}/submit`;}
 function method(entry){return entry.type==='task'?'PUT':'POST';}
 function outstanding(e){return e.status!=='synced'&&e.status!=='cancelled';}
@@ -26,7 +26,7 @@ async function syncEntry(state,e,io){
    if(!uncertain&&e.type!=='store'){
      const live=await io.request(`/api/store/tasks/${e.task_id}/products`);
      if(e.payload.offline_task_cycle&&live.task?.task_cycle!==e.payload.offline_task_cycle){e.status='review';e.note='Task was reopened or changed to another cycle. Download and review it before submitting new data.';await io.persist();return;}
-     if(live.locked){e.status='review';e.note='NOT included or submitted: this task is now submitted, closed or overdue. Product stock may be sent to Store Encoding separately after review.';await io.persist();return;}
+     if(live.locked){e.status='review';e.note='NOT included or submitted: this task is now closed or past its deadline. Product stock may be sent to Store Encoding separately after review.';await io.persist();return;}
    }
    if(!uncertain&&e.type==='submit'){
        const local=state.taskData[String(e.task_id)];
@@ -40,7 +40,7 @@ async function syncEntry(state,e,io){
       const row={product_id:e.product_id,revision:response.revision,store_barcode:e.payload.store_barcode,srp:e.payload.srp,expirations:e.payload.expirations.map(r=>({date:r.expiration_date,qty:r.quantity}))};state.snapshot.monitoring=state.snapshot.monitoring.filter(r=>Number(r.product_id)!==Number(e.product_id));state.snapshot.monitoring.push(row);
    }else if(e.type==='task'){
       const task=state.taskData[String(e.task_id)],p=task?.products.find(p=>Number(p.product_id)===Number(e.product_id));if(p)Object.assign(p,e.payload,{revision:response.revision,encoded:true});
-   }else{const task=state.taskData[String(e.task_id)];if(task){task.locked=true;task.task.submitted=true;}}
+   }else{const task=state.taskData[String(e.task_id)];if(task){task.task.submitted=true;task.locked=taskLocked(task.task);}}
    await io.persist();
  }catch(error){
    if(error.status===401||error.status===403){e.status=uncertain?'uncertain':'pending';e.note='Log in online again with the same store account before syncing.';await io.persist();throw error;}

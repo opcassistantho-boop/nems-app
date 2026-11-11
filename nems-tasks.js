@@ -512,11 +512,6 @@ module.exports = function registerTaskRoutes({
                     if(canonical(expected)!==canonical(actual)){await client.query('ROLLBACK');return fail(res,409,'Task products changed since the offline download or sync. Review them online before submitting.');}
                 }
 
-                if (assignment.rows[0].submitted) {
-                    await client.query('ROLLBACK');
-                    return fail(res,409,'Task already submitted. Ask ADMIN to reopen this task. Store Encoding is still available.');
-                }
-
                 if (assignment.rows[0].status !== 'ACTIVE') {
                     await client.query('ROLLBACK');
                     return fail(
@@ -642,7 +637,7 @@ module.exports = function registerTaskRoutes({
             `, [id, getStoreName(req), getEmail(req)]);
             if (!task.rowCount) return fail(res, 404, 'Task not found');
             const a = task.rows[0];
-            const locked = Boolean(a.submitted) || a.status !== 'ACTIVE' ||
+            const locked = a.status !== 'ACTIVE' ||
                 (a.due_at && new Date(a.due_at).getTime() <= Date.now());
             const products = await pool.query(`
                 SELECT p.product_id, p.sku, p.product_name, p.master_barcode, p.supplier_name,
@@ -745,9 +740,9 @@ module.exports = function registerTaskRoutes({
             if(!await offlineCycleMatches(client,id,b)){
                 await client.query('ROLLBACK');return fail(res,409,'Offline draft belongs to an earlier task cycle. Download and review the reopened task.');
             }
-            if (a.submitted || a.status !== 'ACTIVE' ||
+            if (a.status !== 'ACTIVE' ||
                 (a.due_at && new Date(a.due_at).getTime() <= Date.now())) {
-                await client.query('ROLLBACK'); return fail(res, 409, 'Task is submitted, closed or overdue. Ask ADMIN to reopen this task. Store Encoding is still available.');
+                await client.query('ROLLBACK'); return fail(res, 409, 'Task is closed or past its deadline. Ask ADMIN to reopen this task. Store Encoding is still available.');
             }
             const product = await client.query(`
                 SELECT product_id FROM public.products
@@ -791,8 +786,25 @@ module.exports = function registerTaskRoutes({
                 VALUES ($1,$2,$3,$4,$5,$6,'MY_TASKS',$7,$8::jsonb)`,
                 [getStoreName(req),getEmail(req),productId,id,employeeName,storeRemarks,getEmail(req),
                  JSON.stringify({before:previous.rows[0]||null,revision:saved.rows[0].revision,no_stock:noStock,expiration_1:dates[0],qty_1:quantities[0],expiration_2:dates[1],qty_2:quantities[1],expiration_3:dates[2],qty_3:quantities[2],extra_expirations:extras})]);
+            // Before the deadline, edits to a submitted task create a new immutable
+            // submission revision. Previous submissions/items remain unchanged.
+            let submissionUpdated=false;
+            if(a.submitted){
+                const revision=(await client.query(`INSERT INTO public.nems_monitoring_submissions(assignment_id,submitted_by,remarks,submitted_at)
+                    VALUES($1,$2,$3,clock_timestamp()) RETURNING submission_id`,[id,getEmail(req),('Updated after submission: '+storeRemarks).slice(0,2000)])).rows[0];
+                await client.query(`INSERT INTO public.nems_task_submission_items(submission_id,product_id,sku,product_name,supplier_name,
+                    expiration_1,qty_1,expiration_2,qty_2,expiration_3,qty_3,extra_expirations,no_stock)
+                    SELECT $1,p.product_id,p.sku,p.product_name,p.supplier_name,
+                        pr.expiration_1,pr.qty_1,pr.expiration_2,pr.qty_2,pr.expiration_3,pr.qty_3,COALESCE(pr.extra_expirations,'[]'::jsonb),pr.no_stock
+                    FROM public.nems_task_product_progress pr JOIN public.products p ON p.product_id=pr.product_id
+                    WHERE pr.assignment_id=$2 AND p.status='ACTIVE' AND p.store_task_visible=TRUE`,[revision.submission_id,id]);
+                await client.query(`INSERT INTO public.nems_store_remarks(store_name,store_email,product_id,assignment_id,employee_name,remarks,source,account_email,details)
+                    VALUES($1,$2,$3,$4,$5,$6,'MY_TASKS',$2,$7::jsonb)`,[getStoreName(req),getEmail(req),productId,id,employeeName,storeRemarks,
+                        JSON.stringify({event:'TASK_SUBMISSION_EDIT',submission_id:revision.submission_id})]);
+                submissionUpdated=true;
+            }
             await client.query('COMMIT');
-            return res.json(saved.rows[0]);
+            return res.json({...saved.rows[0],submission_updated:submissionUpdated});
         } catch (error) {
             if (client) await client.query('ROLLBACK').catch(() => {});
             return handleError(res, error, 'Could not save task product');

@@ -71,6 +71,7 @@ async function boot(){
  $('gateHelp').textContent=vault?'Enter your device PIN to unlock downloaded store data. This is local access, not a new NEMS login.':'First setup: log in to NEMS online, then choose Offline Encoding. Set a separate device PIN. Cached store data and drafts are encrypted on this browser.';
  if(!('serviceWorker'in navigator))throw Error('This browser cannot prepare offline pages. Use updated Chrome or Edge.');
  const existing=await navigator.serviceWorker.getRegistration('/');
+ if(existing&&navigator.onLine)void existing.update().catch(()=>{});
  if(!existing)await navigator.serviceWorker.register('/nems-offline-sw.js',{scope:'/'});
  await navigator.serviceWorker.ready;
 }
