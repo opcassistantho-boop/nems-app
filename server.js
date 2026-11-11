@@ -358,6 +358,17 @@ app.post('/api/password/change', authenticate, async (req, res) => {
 // AUTHENTICATION MIDDLEWARE
 // ==========================================
  
+const nemsAuthInFlight=new Map();
+async function nemsVerifySession(token){
+    const key=require('crypto').createHash('sha256').update(token).digest('hex');
+    if(nemsAuthInFlight.has(key))return nemsAuthInFlight.get(key);
+    const pending=(async()=>{
+        const response=await fetch(`${SUPABASE_URL}/auth/v1/user`,{headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${token}`},signal:AbortSignal.timeout(15000)});
+        return {ok:response.ok,user:response.ok?await response.json():null};
+    })();
+    nemsAuthInFlight.set(key,pending);
+    try{return await pending;}finally{if(nemsAuthInFlight.get(key)===pending)nemsAuthInFlight.delete(key);}
+}
 async function authenticate(req, res, next) {
     const match = /^Bearer (.+)$/i.exec(
         req.headers.authorization || ''
@@ -374,16 +385,9 @@ async function authenticate(req, res, next) {
     }
  
     try {
-        const response = await fetch(
-            `${SUPABASE_URL}/auth/v1/user`,
-            {
-                headers: {
-                    apikey: SUPABASE_ANON_KEY,
-                    Authorization: `Bearer ${token}`
-                }
-            }
-        );
- 
+        const verified=await nemsVerifySession(token);
+        const response={ok:verified.ok};
+
         if (!response.ok) {
             return sendError(
                 res,
@@ -392,7 +396,7 @@ async function authenticate(req, res, next) {
             );
         }
  
-        const authUser = await response.json();
+        const authUser = verified.user;
  
         if (
             !authUser.id ||
@@ -1090,9 +1094,7 @@ app.post(
  
             const product = productResult.rows[0];
  
-            // Lock matching task assignments before writing monitoring.
-            // This protects submitted and expired tasks even through the
-            // existing Store Monitoring screen, not only the task screen.
+            // Read task status for warning metadata; My Task enforces its own row locks.
             const taskLocks = await client.query(
                 `
                 SELECT a.assignment_id, COALESCE(a.due_at, ((a.due_date+1)::timestamp AT TIME ZONE 'Asia/Manila')) AS due_at, a.status,
@@ -1108,7 +1110,7 @@ app.post(
                 WHERE LOWER(TRIM(s.store_email)) = LOWER(TRIM($1))
                   AND LOWER(TRIM(s.store_name)) = LOWER(TRIM($2))
                   AND LOWER(TRIM(sp.supplier_name)) = LOWER(TRIM($3))
-                FOR UPDATE OF a
+                
                 `,
                 [user.email, user.store_name, product.supplier_name]
             );
@@ -2123,6 +2125,28 @@ app.post('/api/admin/products/:id/barcodes',authenticate,adminOnly,secureRoute(a
         return (await c.query(`INSERT INTO public.nems_product_barcodes(product_id,barcode,registered_by) VALUES($1,$2,$3)
             ON CONFLICT(barcode) DO NOTHING RETURNING *`,[id,barcode,req.user.email])).rows[0]||{product_id:id,barcode};
     });res.json(value);
+}));
+// Offline workspace shell is public; protected data is downloaded only by an active STORE.
+for(const [url,file] of [['/offline','nems-offline.html'],['/nems-offline.js','nems-offline.js'],['/nems-offline-core.js','nems-offline-core.js'],['/nems-offline-sw.js','nems-offline-sw.js']]){
+    app.get(url,(req,res)=>{res.set('Cache-Control','no-cache');if(url.endsWith('-sw.js'))res.set('Service-Worker-Allowed','/');res.sendFile(path.join(__dirname,file));});
+}
+app.get('/api/offline/bootstrap',authenticate,secureRoute(async(req,res)=>{
+    if(req.user.role!=='STORE')throw appError(403,'Offline encoding is for STORE accounts');
+    const [catalog,stock,archives,tasks]=await Promise.all([
+        pool.query(`SELECT product_id,sku,product_name,master_barcode,master_srp,supplier_name FROM public.products WHERE status='ACTIVE' ORDER BY supplier_name,product_name,product_id`),
+        pool.query(`SELECT m.*,xmin::text AS revision FROM public.monitoring m WHERE store_email=$1 AND store_name=$2`,[req.user.email,req.user.store_name]),
+        pool.query(`SELECT product_id,monitoring_snapshot->>'expiration_date' AS date FROM public.nems_expired_archive WHERE LOWER(store_email)=LOWER($1) AND restored_at IS NULL`,[req.user.email]),
+        pool.query(`SELECT a.assignment_id,a.status,a.expiry_scope,sp.supplier_name,
+            COALESCE(a.due_at,((a.due_date+1)::timestamp AT TIME ZONE 'Asia/Manila')) AS due_at,
+            EXISTS(SELECT 1 FROM public.nems_monitoring_submissions sub WHERE sub.assignment_id=a.assignment_id
+              AND sub.submitted_at>COALESCE((SELECT MAX(reopened_at) FROM public.nems_task_reopen_history rh WHERE rh.assignment_id=a.assignment_id),'-infinity'::timestamptz)) AS submitted
+            FROM public.nems_task_assignments a JOIN public.stores s ON s.store_id=a.store_id JOIN public.suppliers sp ON sp.supplier_id=a.supplier_id
+            WHERE LOWER(s.store_email)=LOWER($1) AND s.store_name=$2 ORDER BY a.assigned_at DESC,a.assignment_id DESC`,[req.user.email,req.user.store_name])
+    ]);
+    const hidden=new Set(archives.rows.map(r=>String(r.product_id)+':'+r.date));
+    const monitoring=stock.rows.map(r=>({product_id:r.product_id,revision:r.revision,store_barcode:r.store_barcode,srp:r.srp,
+        expirations:stockDates(r,'monitoring').filter(e=>!hidden.has(String(r.product_id)+':'+e.date)).map(e=>({date:e.date,qty:e.qty}))}));
+    res.set('Cache-Control','no-store');res.json({captured_at:new Date().toISOString(),profile:{email:req.user.email,store_name:req.user.store_name,role:'STORE'},products:catalog.rows,monitoring,tasks:tasks.rows});
 }));
 app.get('/api/store/monitoring/:productId',authenticate,secureRoute(async(req,res)=>{
     if(req.user.role!=='STORE')throw appError(403,'STORE access required');

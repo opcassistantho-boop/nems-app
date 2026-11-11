@@ -1293,7 +1293,17 @@ function fieldLabel(field) {
 // API REQUESTS
 // ==========================================
  
-async function nemsRawApi(url, options = {}) {
+// Share concurrent catalog lookups, without caching monitoring rows or write results.
+const nemsCatalogReads=new Map();
+function nemsRawApi(url,options={}){
+    const dedupe=(options.method||'GET').toUpperCase()==='GET'&&/^\/api\/(?:suppliers$|products(?:\?|$))/.test(url);
+    if(!dedupe)return nemsFetchApi(url,options);
+    const owner=currentUser?.email||'',id=owner+' '+url;
+    if(nemsCatalogReads.has(id))return nemsCatalogReads.get(id).then(value=>structuredClone(value));
+    const p=nemsFetchApi(url,options);nemsCatalogReads.set(id,p);
+    return p.then(value=>structuredClone(value)).finally(()=>{if(nemsCatalogReads.get(id)===p)nemsCatalogReads.delete(id);});
+}
+async function nemsFetchApi(url, options = {}) {
     const headers = {
         ...(options.headers || {})
     };
@@ -1498,6 +1508,7 @@ function logout() {
     nemsTaskProducts=[];nemsStoreTasks=[];nemsTaskRows=[];nemsSelectedStoreIds.clear();
     if(nemsMessageTimer){clearInterval(nemsMessageTimer);nemsMessageTimer=null;}
     if(el('nemsFeaturesNav'))el('nemsFeaturesNav').textContent='Messages and Follow-up';
+    sessionStorage.removeItem('nems-offline-bridge');
     token = '';
     currentUser = null;
  
@@ -5016,6 +5027,24 @@ nemsMeetingSetup();
  document.addEventListener('visibilitychange',()=>{if(document.hidden)hideAll();});
  document.addEventListener('reset',hideAll,true);
  document.addEventListener('submit',hideAll,true);
+})();
+
+(function(){
+    const go=document.createElement('button');go.type='button';go.textContent='Offline Encoding';
+    go.onclick=()=>{
+        if(currentUser?.role==='STORE'&&token){
+            sessionStorage.setItem('nems-offline-bridge',JSON.stringify({token,user:currentUser,created:Date.now()}));
+        }
+        window.open('/offline','_blank','noopener');
+    };
+    el('loginPanel').append(go);
+    const entry=document.createElement('button');entry.type='button';entry.className='storeOnly hidden';entry.textContent='Offline Encoding';
+    entry.onclick=()=>{
+        if(currentUser?.role!=='STORE')return;
+        if(!confirm('Open Offline Encoding in this tab? Save any unsaved entries first. Offline entries remain pending until synced.'))return;
+        sessionStorage.setItem('nems-offline-bridge',JSON.stringify({token,user:currentUser,created:Date.now()}));location.href='/offline';
+    };
+    el('navigation').append(entry);
 })();
 </script>
 </body>

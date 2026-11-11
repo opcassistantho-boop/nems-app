@@ -30,6 +30,13 @@ async function queueTaskAssignmentAlerts(client,created,actor){
     return result.rowCount;
 }
 
+// Offline drafts belong to the downloaded reopen cycle, never a later reopen.
+async function offlineCycleMatches(client,assignmentId,body){
+    if(!Object.hasOwn(body||{},'offline_task_cycle'))return true;
+    const r=await client.query(`SELECT COALESCE(MAX(reopened_at)::text,'INITIAL') AS task_cycle FROM public.nems_task_reopen_history WHERE assignment_id=$1`,[assignmentId]);
+    return typeof body.offline_task_cycle==='string'&&body.offline_task_cycle===r.rows[0].task_cycle;
+}
+
 module.exports = function registerTaskRoutes({
     app,
     pool,
@@ -362,7 +369,7 @@ module.exports = function registerTaskRoutes({
             }
  
             try {
-                await scanOverdueTasks();
+                // Display status is computed by deadline; maintenance handles reminder scans.
                 const result = await pool.query(
                     `
                     SELECT
@@ -490,6 +497,21 @@ module.exports = function registerTaskRoutes({
                     return fail(res, 404, 'Task not found');
                 }
  
+                if(!await offlineCycleMatches(client,assignmentId,req.body)){
+                    await client.query('ROLLBACK');return fail(res,409,'Offline draft belongs to an earlier task cycle. Download and review the reopened task.');
+                }
+                if(Object.hasOwn(req.body||{},'offline_product_revisions')){
+                    const expected=req.body.offline_product_revisions;
+                    if(!Array.isArray(expected)||expected.length>10000){await client.query('ROLLBACK');return fail(res,400,'Invalid offline task revisions');}
+                    const actual=(await client.query(`SELECT p.product_id,pr.xmin::text AS revision FROM public.products p
+                        JOIN public.suppliers sp ON LOWER(TRIM(sp.supplier_name))=LOWER(TRIM(p.supplier_name))
+                        JOIN public.nems_task_assignments a ON a.supplier_id=sp.supplier_id AND a.assignment_id=$1
+                        LEFT JOIN public.nems_task_product_progress pr ON pr.assignment_id=a.assignment_id AND pr.product_id=p.product_id
+                        WHERE p.status='ACTIVE' AND p.store_task_visible=TRUE ORDER BY p.product_id`,[assignmentId])).rows;
+                    const canonical=rows=>JSON.stringify(rows.map(r=>[Number(r.product_id),r.revision??null]).sort((a,b)=>a[0]-b[0]));
+                    if(canonical(expected)!==canonical(actual)){await client.query('ROLLBACK');return fail(res,409,'Task products changed since the offline download or sync. Review them online before submitting.');}
+                }
+
                 if (assignment.rows[0].submitted) {
                     await client.query('ROLLBACK');
                     return fail(res,409,'Task already submitted. Ask ADMIN to reopen this task. Store Encoding is still available.');
@@ -603,7 +625,8 @@ module.exports = function registerTaskRoutes({
         if (!id) return fail(res, 400, 'Invalid task ID');
         try {
             const task = await pool.query(`
-                SELECT a.assignment_id, a.status, a.expiry_scope, COALESCE(a.due_at, ((a.due_date+1)::timestamp AT TIME ZONE 'Asia/Manila')) AS due_at, sp.supplier_name,
+                SELECT a.assignment_id, a.status, a.expiry_scope,
+                       (SELECT COALESCE(MAX(reopened_at)::text,'INITIAL') FROM public.nems_task_reopen_history rh WHERE rh.assignment_id=a.assignment_id) AS task_cycle, COALESCE(a.due_at, ((a.due_date+1)::timestamp AT TIME ZONE 'Asia/Manila')) AS due_at, sp.supplier_name,
                        EXISTS (
                          SELECT 1 FROM public.nems_monitoring_submissions sub
                          WHERE sub.assignment_id = a.assignment_id
@@ -719,6 +742,9 @@ module.exports = function registerTaskRoutes({
             `, [id, getStoreName(req), getEmail(req)]);
             if (!task.rowCount) { await client.query('ROLLBACK'); return fail(res, 404, 'Task not found'); }
             const a = task.rows[0];
+            if(!await offlineCycleMatches(client,id,b)){
+                await client.query('ROLLBACK');return fail(res,409,'Offline draft belongs to an earlier task cycle. Download and review the reopened task.');
+            }
             if (a.submitted || a.status !== 'ACTIVE' ||
                 (a.due_at && new Date(a.due_at).getTime() <= Date.now())) {
                 await client.query('ROLLBACK'); return fail(res, 409, 'Task is submitted, closed or overdue. Ask ADMIN to reopen this task. Store Encoding is still available.');
