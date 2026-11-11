@@ -357,6 +357,8 @@ app.post('/api/password/change', authenticate, async (req, res) => {
             body:JSON.stringify({password})
         });
         if (!changed.ok) return sendError(res, 400, 'Unable to change password. Try again.');
+        try{await pool.query('INSERT INTO public.nems_account_password_activity(email,auth_user_id) VALUES(LOWER($1),$2::uuid)',[req.user.email,verified.user.id]);}
+        catch(e){console.warn('[NEMS self password-change history]',e.code||'UNAVAILABLE');}
         res.set('Cache-Control','no-store');
         return res.json({message:'Password changed successfully.'});
     } catch(error) {
