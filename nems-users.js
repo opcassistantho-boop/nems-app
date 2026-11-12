@@ -38,6 +38,11 @@ module.exports = function registerUserRoutes({ app, pool, authenticate, adminOnl
         const generated = await authAdmin('generate_link', 'POST', {
             type: 'recovery', email, options: { redirect_to: redirectTo }
         });
+        // Set only after matching Supabase Email OTP Expiration. Never change Auth expiry here.
+        const expiryMinutes = Number(process.env.NEMS_AUTH_LINK_EXPIRY_MINUTES);
+        const expiryNotice = Number.isInteger(expiryMinutes) && expiryMinutes > 0 && expiryMinutes <= 1440
+            ? 'This private link expires ' + expiryMinutes + ' minutes after it was requested. If it has expired, request a new link.'
+            : 'This private link has a limited validity period. If it has expired, request a new link.';
         const link = generated.action_link || generated.properties?.action_link;
         if (!link) throw new Error('SUPABASE_LINK_NOT_RETURNED');
         const safeLink = link.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
@@ -55,10 +60,10 @@ module.exports = function registerUserRoutes({ app, pool, authenticate, adminOnl
                 tags: ['nems-reset-'+historyId],
                 subject: 'NEMS - Set up your password',
                 textContent: 'You have a NEMS account. Open this private link to set your password:\n\n' +
-                    link + '\n\nIf you did not expect this invitation, ignore this message. ' +
+                    link + '\n\n' + expiryNotice + '\n\nIf you did not expect this invitation, ignore this message. ' +
                     'You can sign in only after an ADMIN activates your account.',
                 htmlContent: '<p>You have a NEMS account.</p><p><a href="' + safeLink +
-                    '">Set up your NEMS password</a></p><p>If you did not expect this invitation, ignore this message. ' +
+                    '">Set up your NEMS password</a></p><p>' + expiryNotice + '</p><p>If you did not expect this invitation, ignore this message. ' +
                     'You can sign in only after an ADMIN activates your account.</p>'
             })
         });

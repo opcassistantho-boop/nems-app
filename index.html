@@ -321,6 +321,24 @@ td button { margin:2px; }
 .nems-password-toggle:hover{background:#e7eef7;color:#173b65}
 .nems-password-toggle:focus-visible{outline:2px solid #245ca6;outline-offset:1px}
 .nems-password-toggle svg{width:24px;height:24px;pointer-events:none}
+/* Left navigation: existing buttons, permissions and event handlers are preserved. */
+body.nems-side-layout > header{position:sticky;top:0;z-index:110}
+body.nems-side-layout main{max-width:none;margin:24px 12px 24px 250px;padding:0 16px;min-width:0}
+body.nems-side-layout #navigation{position:fixed;top:var(--nems-header-height,64px);bottom:0;left:0;width:234px;margin:0;padding:18px 12px;display:flex;flex-direction:column;flex-wrap:nowrap;gap:7px;overflow-y:auto;overscroll-behavior:contain;background:#fff;border-right:1px solid #d7e0eb;z-index:100;transition:transform .15s ease}
+body.nems-side-layout #navigation button{width:100%;flex:0 0 auto;min-height:42px;text-align:left;white-space:normal;line-height:1.35;border-radius:7px;padding:11px 13px}
+body.nems-side-layout #navigation button.active{background:var(--navy);color:white}
+#nemsMenuToggle{background:#ffffff20;color:white;border:1px solid #ffffff55;padding:8px 12px}
+#nemsMenuShade{display:none}
+body.nems-side-layout.nems-side-collapsed #navigation{transform:translateX(-100%);visibility:hidden}
+body.nems-side-layout.nems-side-collapsed main{margin-left:12px}
+@media(max-width:800px){
+ body.nems-side-layout main,body.nems-side-layout.nems-side-collapsed main{margin:16px 0;padding:0 12px}
+ body.nems-side-layout #navigation{width:min(280px,86vw);transform:translateX(-100%);visibility:hidden}
+ body.nems-side-layout.nems-side-open #navigation{transform:translateX(0);visibility:visible}
+ body.nems-side-layout.nems-side-open #nemsMenuShade{display:block;position:fixed;inset:var(--nems-header-height,64px) 0 0;background:#10284166;z-index:99;border-radius:0;margin:0;width:100%;padding:0}
+ body.nems-side-layout > header{padding:12px;gap:8px}
+}
+@media(prefers-reduced-motion:reduce){body.nems-side-layout #navigation{transition:none}}
 </style>
 </head>
  
@@ -1414,9 +1432,28 @@ el('loginForm').addEventListener(
                 }
             );
  
-            token = result.token;
-            currentUser = result.user;
+            nemsStartSession(result.token, result.user, 'dashboard');
  
+        } catch (error) {
+            message.textContent = error.message;
+            message.className = 'message error';
+ 
+        } finally {
+            btn.disabled = false;
+        }
+    }
+);
+ 
+// ==========================================
+// LOGOUT
+// ==========================================
+ 
+
+const nemsSessionKey = 'nems-online-session-v1';
+function nemsStartSession(accessToken, user, page) {
+    token = accessToken;
+    currentUser = user;
+    try { sessionStorage.setItem(nemsSessionKey, JSON.stringify({token})); } catch (_) {}
             el('loginPassword').value = '';
  
             el('loginPanel').classList.add('hidden');
@@ -1484,23 +1521,13 @@ el('loginForm').addEventListener(
                     ? 'Your store monitoring additions, edits and deletions.'
                     : 'Monitoring changes across all stores. Filter by store, supplier, product, action or date.';
  
-            showPage('dashboard');
- 
-        } catch (error) {
-            message.textContent = error.message;
-            message.className = 'message error';
- 
-        } finally {
-            btn.disabled = false;
-        }
-    }
-);
- 
-// ==========================================
-// LOGOUT
-// ==========================================
- 
+
+    const nav = Array.from(document.querySelectorAll('[data-page]')).find(n => n.dataset.page === page && !n.classList.contains('hidden'));
+    showPage(nav ? page : 'dashboard');
+}
+
 function logout() {
+    try { sessionStorage.removeItem(nemsSessionKey); sessionStorage.removeItem('nems-last-page'); } catch (_) {}
     nemsResetAlerts();
     nemsUnreadGeneration++;nemsFeatureGeneration++;nemsMonitoringGeneration++;nemsEmployeeGeneration++;nemsTrackerGeneration++;
     nemsBadgeLastAt=0;nemsBadgeOwner='';nemsMonitoringPage=1;nemsEmployeePage=1;nemsTrackerPage=1;nemsAdminTaskPage=1;nemsStoreTaskPage=1;
@@ -1577,6 +1604,7 @@ function showPage(page) {
     });
  
     target.classList.remove('hidden');
+    try { if (currentUser) sessionStorage.setItem('nems-last-page', page); } catch (_) {}
  
     document.querySelectorAll(
         '[data-page]'
@@ -5086,25 +5114,79 @@ nemsMeetingSetup();
 })();
 // Store account existence, invitation history and successful NEMS login activity.
 (function(){
-    const roles=['ADMIN','HEAD','AS','AOM'];let page=1,generation=0;
+    const roles=['ADMIN','HEAD','AS','AOM'];let page=1,generation=0,trackerOwner='';
     const nav=document.createElement('button');nav.type='button';nav.className='meetingReportsOnly hidden';nav.dataset.page='accounttracker';nav.textContent='Account Tracker';nav.onclick=()=>showPage('accounttracker');el('navigation').append(nav);
     const section=document.createElement('section');section.id='page-accounttracker';section.className='page hidden';
-    section.innerHTML=`<div class="panel"><h2>NEMS Account Tracker</h2><p>Check existing accounts, previous sign-ins, encoding/submission activity and confirmed password-change records. Each source is shown separately. AS and AOM see their assigned stores only.</p><p id="naSummary" role="status"></p><div class="grid"><div><label for="naSearch">Search store, email, AS or AOM</label><input type="search" id="naSearch" maxlength="100" placeholder="Store, email or assigned manager"></div><div><label for="naStatus">Status</label><select id="naStatus"><option value="ALL">All statuses</option><option value="NO_ACCOUNT">No account</option><option value="SETUP_INCOMPLETE">Account setup incomplete</option><option value="PROFILE_MISMATCH">Account / store mismatch</option><option value="INACTIVE">Account inactive</option><option value="INVITED">Invitation recorded · no login recorded</option><option value="NO_LOGIN_RECORDED">No sign-in/activity record available</option><option value="LOGGED_IN">Sign-in recorded (includes previous)</option><option value="PREVIOUS_ACTIVITY">Previous NEMS activity found</option><option value="PASSWORD_CHANGE_RECORDED">Store password change recorded</option></select></div></div><button type="button" id="naApply">Apply filters</button><button type="button" id="naRefresh">Refresh</button><button type="button" id="naExport">Download Excel</button><p id="naNote"></p><div class="tablewrap"><table><thead><tr><th>Store / Email</th><th>Account</th><th>Login / Setup Status</th><th>AS / AOM</th><th>Last Invitation</th><th>Supabase Sign-in</th><th>Recorded NEMS Login</th><th>Previous NEMS Activity</th><th>Password-change Records</th></tr></thead><tbody id="naRows"></tbody></table></div><div id="naPager"></div></div>`;
+    section.innerHTML=`<div class="panel"><h2>NEMS Account Tracker</h2><div id="naAdminFilters" hidden><label for="naView">View</label><select id="naView"><option value="ALL_USERS">All User Accounts — every role</option><option value="STORES">Store Accounts — includes stores without an account</option></select><label for="naRole">Role</label><select id="naRole"><option value="ALL">All roles</option><option>STORE</option><option>AS</option><option>AOM</option><option>HEAD</option><option>ADMIN</option></select></div><label for="naAccountState">Account status</label><select id="naAccountState"><option value="ALL">Active and inactive</option><option value="ACTIVE">Active</option><option value="INACTIVE">Inactive</option></select><p>ADMIN can track every user account, including unassigned and inactive accounts. Other management users keep their authorized store-only view.</p><p>Check existing accounts, previous sign-ins, encoding/submission activity and confirmed password-change records. Each source is shown separately. AS and AOM see their assigned stores only.</p><p id="naSummary" role="status"></p><div class="grid"><div><label for="naSearch">Search store, email, AS or AOM</label><input type="search" id="naSearch" maxlength="100" placeholder="Store, email or assigned manager"></div><div><label for="naStatus">Status</label><select id="naStatus"><option value="ALL">All statuses</option><option value="NO_ACCOUNT">No account</option><option value="SETUP_INCOMPLETE">Account setup incomplete</option><option value="PROFILE_MISMATCH">Account / store mismatch</option><option value="INACTIVE">Account inactive</option><option value="INVITED">Invitation recorded · no login recorded</option><option value="NO_LOGIN_RECORDED">No sign-in/activity record available</option><option value="LOGGED_IN">Sign-in recorded (includes previous)</option><option value="PREVIOUS_ACTIVITY">Previous NEMS activity found</option><option value="PASSWORD_CHANGE_RECORDED">Store password change recorded</option></select></div></div><button type="button" id="naApply">Apply filters</button><button type="button" id="naRefresh">Refresh</button><button type="button" id="naExport">Download Excel</button><p id="naNote"></p><div class="tablewrap"><table><thead><tr><th>Name / Store / Email</th><th>Role</th><th>Account</th><th>Login / Setup Status</th><th>AS / AOM</th><th>Last Invitation</th><th>Supabase Sign-in</th><th>Recorded NEMS Login</th><th>Previous NEMS Activity</th><th>Password-change Records</th></tr></thead><tbody id="naRows"></tbody></table></div><div id="naPager"></div></div>`;
     el('application').append(section);
     const active=owner=>currentUser?.email===owner&&roles.includes(currentUser?.role)&&!section.classList.contains('hidden');
-    const params=()=>new URLSearchParams({page,search:el('naSearch').value.trim(),status:el('naStatus').value});
+    const params=()=>new URLSearchParams({page,view:currentUser?.role==='ADMIN'?el('naView').value:'STORES',role:currentUser?.role==='ADMIN'?el('naRole').value:'ALL',account_state:el('naAccountState').value,search:el('naSearch').value.trim(),status:el('naStatus').value});
     async function load(){
-        if(!roles.includes(currentUser?.role))return;const owner=currentUser.email,g=++generation;el('naRows').innerHTML='<tr><td colspan="9">Loading…</td></tr>';
+        if(!roles.includes(currentUser?.role))return;el('naAdminFilters').hidden=currentUser.role!=='ADMIN';if(trackerOwner!==currentUser.email){trackerOwner=currentUser.email;el('naView').value=currentUser.role==='ADMIN'?'ALL_USERS':'STORES';el('naRole').value='ALL';el('naAccountState').value='ALL';el('naStatus').value='ALL';el('naSearch').value='';}const owner=currentUser.email,g=++generation;el('naRows').innerHTML='<tr><td colspan="10">Loading…</td></tr>';
         try{const data=await api('/api/account-tracker?'+params(),{cache:'no-store'});if(!active(owner)||g!==generation)return;
-            const s=data.summary;el('naSummary').textContent=`${s.stores} authorized stores · ${s.with_account} with account · ${s.without_account} without account · ${s.login_recorded} with recorded sign-in · ${s.previous_activity} with NEMS activity. ${data.total} match current filters.`;
+            const s=data.summary;el('naSummary').textContent=`${s.stores} ${s.view==='ALL_USERS'?'user accounts (all roles)':'authorized stores'} · ${s.active} active · ${s.inactive} inactive · ${s.with_account} with account · ${s.without_account} without account · ${s.login_recorded} with recorded sign-in · ${s.previous_activity} with NEMS activity. ${data.total} match current filters.`;
             el('naNote').textContent=data.note;
-            el('naRows').innerHTML=data.records.map(r=>'<tr>'+nfCell(r.store_name+' · '+(r.store_email||'NO STORE EMAIL')+' · Store '+r.store_status)+nfCell(r.has_account?(r.account_status||'Unknown'):'No account')+nfCell(r.status_label)+nfCell('AS: '+(r.as_contacts||'Unassigned')+' | AOM: '+(r.aom_contacts||'Unassigned'))+nfCell(r.invitation_at?dateTimeText(r.invitation_at)+' · '+(r.invitation_delivery||'Delivery unconfirmed'):'No invitation record')+nfCell(r.last_auth_sign_in_at?dateTimeText(r.last_auth_sign_in_at):r.auth_history_available?'No record available':'History source unavailable')+nfCell(r.last_login_at?dateTimeText(r.last_login_at):'No record available')+nfCell(r.last_activity_at?dateTimeText(r.last_activity_at)+' · '+r.activity_source:'No record available')+nfCell('Store self-change: '+(r.last_self_password_change_at?dateTimeText(r.last_self_password_change_at):'No record available')+' | Admin reset record: '+(r.last_admin_password_change_at?dateTimeText(r.last_admin_password_change_at):'No record available'))+'</tr>').join('')||'<tr><td colspan="9">No matching stores.</td></tr>';
+            el('naRows').innerHTML=data.records.map(r=>'<tr>'+nfCell(r.store_name+' · '+(r.store_email||'NO STORE EMAIL')+(s.view==='ALL_USERS'?'':' · Store '+r.store_status))+nfCell(r.account_role||'STORE')+nfCell(r.has_account?(r.account_status||'Unknown'):'No account')+nfCell(r.status_label)+nfCell('AS: '+(r.as_contacts||'Unassigned')+' | AOM: '+(r.aom_contacts||'Unassigned'))+nfCell(r.invitation_at?dateTimeText(r.invitation_at)+' · '+(r.invitation_delivery||'Delivery unconfirmed'):'No invitation record')+nfCell(r.last_auth_sign_in_at?dateTimeText(r.last_auth_sign_in_at):r.auth_history_available?'No record available':'History source unavailable')+nfCell(r.last_login_at?dateTimeText(r.last_login_at):'No record available')+nfCell(r.last_activity_at?dateTimeText(r.last_activity_at)+' · '+r.activity_source:'No record available')+nfCell('Store self-change: '+(r.last_self_password_change_at?dateTimeText(r.last_self_password_change_at):'No record available')+' | Admin reset record: '+(r.last_admin_password_change_at?dateTimeText(r.last_admin_password_change_at):'No record available'))+'</tr>').join('')||'<tr><td colspan="10">No matching stores.</td></tr>';
             el('naPager').innerHTML=nemsPagerHTML('account-tracker',page,data.has_more);nemsBindPager(el('naPager'),()=>page--,()=>page++,load);
-        }catch(e){if(active(owner)&&g===generation){el('naRows').innerHTML='<tr><td colspan="9">Account Tracker unavailable. '+escapeHtml(e.message)+'</td></tr>';}}
+        }catch(e){if(active(owner)&&g===generation){el('naRows').innerHTML='<tr><td colspan="10">Account Tracker unavailable. '+escapeHtml(e.message)+'</td></tr>';}}
     }
+    for(const id of ['naView','naRole','naAccountState'])el(id).onchange=()=>{page=1;void load();};
     el('naApply').onclick=()=>{page=1;void load();};el('naRefresh').onclick=()=>void load();el('naSearch').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();page=1;void load();}};el('naStatus').onchange=()=>{page=1;void load();};
     el('naExport').onclick=async()=>{const button=el('naExport'),owner=currentUser?.email;button.disabled=true;try{const response=await fetch('/api/account-tracker/export?'+params(),{headers:{Authorization:'Bearer '+token},cache:'no-store'});if(!response.ok){const error=await response.json();throw Error(error.error||'Export failed');}const blob=await response.blob();if(!active(owner))return;const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='NEMS_Account_Tracker.xlsx';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),10000);}catch(e){if(active(owner))showMessage(e.message,true);}finally{button.disabled=false;}};
     const previous=showPage;showPage=function(name){previous(name);if(name==='accounttracker'){page=1;void load();}else generation++;};
+})();
+(function nemsSidebarSetup(){
+ const app=el('application'),nav=el('navigation'),header=document.querySelector('body > header');
+ if(!app||!nav||!header)return;
+ nav.setAttribute('aria-label','Main navigation');
+ const toggle=document.createElement('button');toggle.id='nemsMenuToggle';toggle.type='button';toggle.textContent='☰ Menu';toggle.className='hidden';toggle.setAttribute('aria-controls','navigation');header.prepend(toggle);
+ const shade=document.createElement('button');shade.type='button';shade.id='nemsMenuShade';shade.setAttribute('aria-label','Close navigation');shade.tabIndex=-1;document.body.append(shade);
+ const mobile=window.matchMedia('(max-width:800px)');
+ function update(){
+   const visible=!app.classList.contains('hidden');document.body.classList.toggle('nems-side-layout',visible);toggle.classList.toggle('hidden',!visible);
+   if(!visible){document.body.classList.remove('nems-side-open','nems-side-collapsed');}
+   const open=visible&&(mobile.matches?document.body.classList.contains('nems-side-open'):!document.body.classList.contains('nems-side-collapsed'));
+   toggle.setAttribute('aria-expanded',String(open));toggle.setAttribute('aria-label',open?'Hide navigation menu':'Show navigation menu');
+   document.documentElement.style.setProperty('--nems-header-height',header.getBoundingClientRect().height+'px');
+ }
+ function close(){document.body.classList.remove('nems-side-open');update();}
+ toggle.onclick=()=>{document.body.classList.toggle(mobile.matches?'nems-side-open':'nems-side-collapsed');update();};shade.onclick=close;
+ nav.addEventListener('click',e=>{if(mobile.matches&&e.target.closest('button'))close();});
+ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&document.body.classList.contains('nems-side-open')){close();toggle.focus();}});
+ new MutationObserver(update).observe(app,{attributes:true,attributeFilter:['class']});
+ if(typeof ResizeObserver!=='undefined')new ResizeObserver(update).observe(header);
+ window.addEventListener('resize',update);update();
+})();
+
+// Run after every feature has registered its page and navigation handlers.
+(async function nemsRestoreSession() {
+    if (nemsRecoveryAccessToken || /(?:^|[?#&])(access_token|code|error)=/.test(location.hash + location.search)) return;
+    let saved, page;
+    try { saved = JSON.parse(sessionStorage.getItem(nemsSessionKey) || 'null'); page = sessionStorage.getItem('nems-last-page'); } catch (_) { return; }
+    if (!saved || typeof saved.token !== 'string' || !saved.token) return;
+    const btn = el('loginBtn');
+    btn.disabled = true;
+    el('loginPanel').classList.add('hidden');
+    const notice = document.createElement('p');
+    notice.textContent = 'Restoring your session…';
+    notice.style.cssText = 'text-align:center;padding:40px';
+    el('loginPanel').before(notice);
+    token = saved.token;
+    try {
+        const response = await fetch('/api/me', {headers:{Authorization:'Bearer ' + token},cache:'no-store',signal:AbortSignal.timeout(20000)});
+        if (!response.ok) {
+            if (response.status === 401 || response.status === 403) { logout(); throw new Error('Your session has ended. Please log in again.'); }
+            throw new Error('Cannot reconnect right now. Check your connection and refresh to retry.');
+        }
+        const user = await response.json();
+        if (!user?.email || !['STORE','ADMIN','HEAD','AS','AOM'].includes(user.role)) { logout(); throw new Error('Please log in again.'); }
+        nemsStartSession(saved.token, user, page || 'dashboard');
+    } catch (error) {
+        token = ''; currentUser = null;
+        el('loginPanel').classList.remove('hidden');
+        el('loginMessage').textContent = error.message || 'Cannot restore session. Refresh to retry.';
+        el('loginMessage').className = 'message error';
+    } finally { notice.remove(); btn.disabled = false; }
 })();
 </script>
 </body>
