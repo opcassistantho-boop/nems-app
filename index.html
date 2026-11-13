@@ -1311,15 +1311,18 @@ function fieldLabel(field) {
 // API REQUESTS
 // ==========================================
  
-// Share concurrent catalog lookups, without caching monitoring rows or write results.
+// Coalesce only simultaneous identical reads within the same authenticated session.
+// Never persist monitoring data or reuse a read after a mutation starts.
 const nemsCatalogReads=new Map();
+let nemsReadEpoch=0;
 function nemsRawApi(url,options={}){
-    const dedupe=(options.method||'GET').toUpperCase()==='GET'&&/^\/api\/(?:suppliers$|products(?:\?|$))/.test(url);
-    if(!dedupe)return nemsFetchApi(url,options);
-    const owner=currentUser?.email||'',id=owner+' '+url;
-    if(nemsCatalogReads.has(id))return nemsCatalogReads.get(id).then(value=>structuredClone(value));
+    const method=(options.method||'GET').toUpperCase();
+    if(method!=='GET'){nemsReadEpoch++;nemsCatalogReads.clear();return nemsFetchApi(url,options);}
+    if(!token||options.signal)return nemsFetchApi(url,options);
+    const id=JSON.stringify([token,nemsReadEpoch,url,options.cache||'',options.headers||{}]);
+    if(nemsCatalogReads.has(id))return nemsCatalogReads.get(id).then(value=>value instanceof Response?value.clone():structuredClone(value));
     const p=nemsFetchApi(url,options);nemsCatalogReads.set(id,p);
-    return p.then(value=>structuredClone(value)).finally(()=>{if(nemsCatalogReads.get(id)===p)nemsCatalogReads.delete(id);});
+    return p.then(value=>value instanceof Response?value.clone():structuredClone(value)).finally(()=>{if(nemsCatalogReads.get(id)===p)nemsCatalogReads.delete(id);});
 }
 async function nemsFetchApi(url, options = {}) {
     const headers = {
@@ -1527,6 +1530,7 @@ function nemsStartSession(accessToken, user, page) {
 }
 
 function logout() {
+    nemsReadEpoch++; nemsCatalogReads.clear();
     try { sessionStorage.removeItem(nemsSessionKey); sessionStorage.removeItem('nems-last-page'); } catch (_) {}
     nemsResetAlerts();
     nemsUnreadGeneration++;nemsFeatureGeneration++;nemsMonitoringGeneration++;nemsEmployeeGeneration++;nemsTrackerGeneration++;
@@ -4618,7 +4622,7 @@ let nemsBadgeBusy=null,nemsBadgeLastAt=0,nemsBadgeOwner='';
 async function nemsRefreshUnreadBadge(force=false){
     if(!currentUser||document.hidden)return null;
     const email=currentUser.email;if(nemsBadgeBusy&&nemsBadgeOwner===email)return nemsBadgeBusy;
-    if(!force&&nemsBadgeOwner===email&&Date.now()-nemsBadgeLastAt<30000)return null;
+    if(!force&&nemsBadgeOwner===email&&Date.now()-nemsBadgeLastAt<60000)return null;
     nemsBadgeOwner=email;const generation=nemsUnreadGeneration;
     const pending=api('/api/scale/notifications/count',{cache:'no-store'}).then(data=>{
         if(currentUser?.email===email&&generation===nemsUnreadGeneration){const count=Number(data.unread)||0;const button=el('nemsFeaturesNav');if(button)button.textContent='Messages and Follow-up'+(count?' ('+count+' unread)':'');nemsBadgeLastAt=Date.now();if(count>0)void nemsCheckAlerts(data.latest_unread_id);}return data;
@@ -4654,7 +4658,7 @@ async function nemsCheckAlerts(latestId=null,manual=false){
     if(!manual&&latestId&&Number(latestId)<=nemsAlertsHigh)return;
     if(manual&&el('nemsUnreadAlerts')){el('nemsUnreadAlerts').querySelector('[data-content]').hidden=false;el('nemsUnreadAlerts').querySelector('[data-min]').textContent='−';}
     if(manual&&nemsAlertsPending){nemsTryShowAlerts(true);return;}
-    if(nemsAlertsBusy||nemsAlertsPending||(!manual&&Date.now()-nemsAlertsLast<30000))return;
+    if(nemsAlertsBusy||nemsAlertsPending||(!manual&&Date.now()-nemsAlertsLast<60000))return;
     const generation=nemsAlertsGeneration;nemsAlertsBusy=true;nemsAlertsLast=Date.now();
     try{
         const data=await nemsFetchUnreadAlerts(!manual&&nemsAlertsHigh?'?after='+nemsAlertsHigh:'');
@@ -4828,7 +4832,7 @@ async function nemsFeatureRender(){
                 }catch(e){if(active())el('nmStatus').textContent=e.message;}finally{sending=false;if(active()){el('nmSend').disabled=false;el('nmFiles').disabled=false;}}
             };
             drawStores();if(stores.length===1)await openStore(String(stores[0].store_id));
-            if(active())nemsMessageTimer=setInterval(()=>{if(active()&&!document.hidden){if(page===1)void load(true);void refreshStores();}},30000);
+            if(active())nemsMessageTimer=setInterval(()=>{if(active()&&navigator.onLine!==false&&!document.hidden){if(page===1)void load(true);void refreshStores();}},60000);
         }else if(nemsFeatureTab==='expired'){
             let form='';
             if(currentUser.role==='STORE'){
@@ -4936,7 +4940,7 @@ async function nemsFeatureRender(){
     }catch(e){if(valid())body.textContent=e.message;}
 }
 nemsFeatureSetup();
-setInterval(()=>{if(!document.hidden){void nemsRefreshUnreadBadge().catch(()=>{});el('nemsUnreadAlerts')?.nemsRefresh?.();}},30000);
+setInterval(()=>{if(navigator.onLine!==false&&!document.hidden){void nemsRefreshUnreadBadge().catch(()=>{});el('nemsUnreadAlerts')?.nemsRefresh?.();}},60000);
 window.addEventListener('focus',()=>{void nemsRefreshUnreadBadge().catch(()=>{});});
 document.addEventListener('visibilitychange',()=>{
     if(!document.hidden)void nemsRefreshUnreadBadge().catch(()=>{});

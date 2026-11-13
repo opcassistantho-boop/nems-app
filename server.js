@@ -10,6 +10,7 @@ const {pageQuery:scalePageQuery,createServices}=require('./nems-scale');
 const app = express();
  
 app.disable('x-powered-by');
+app.use(require('./nems-bandwidth'));
 app.use(express.json({ limit: '6mb' }));
  
 // ==========================================
@@ -59,10 +60,10 @@ app.use(
     )
 );
  
+// Public shell: browser revalidates every time; compression uses the same middleware as JSON.
+const nemsShell = require('node:fs').readFileSync(path.join(__dirname,'index.html'));
 app.get('/', (req, res) => {
-    res.sendFile(
-        path.join(__dirname, 'index.html')
-    );
+    res.set('Cache-Control','public, no-cache').type('html').send(nemsShell);
 });
  
 // ==========================================
