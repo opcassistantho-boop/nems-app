@@ -6,7 +6,7 @@ const crypto = require('crypto');
  
 // NEMS ADMIN User Management. This module never exposes the Supabase secret to browsers.
  
-module.exports = function registerUserRoutes({ app, pool, authenticate, adminOnly, passwordHistory }) {
+module.exports = function registerUserRoutes({ app, pool, authenticate, adminOnly, passwordHistory, localAuth }) {
  
     const secret = process.env.SUPABASE_SERVICE_ROLE_KEY;
  
@@ -29,7 +29,7 @@ module.exports = function registerUserRoutes({ app, pool, authenticate, adminOnl
     const brevoSenderEmail = String(process.env.BREVO_SENDER_EMAIL || '').trim();
     const brevoSenderName = String(process.env.BREVO_SENDER_NAME || 'CARD INDOGROSIR NEMS').trim();
  
-    async function sendInvitationMessage(email, historyId) {
+    async function sendInvitationMessage(email, historyId, source) {
         if (!brevoApiKey) throw new Error('BREVO_NOT_CONFIGURED');
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(brevoSenderEmail)) {
             throw new Error('BREVO_SENDER_NOT_CONFIGURED');
@@ -39,12 +39,16 @@ module.exports = function registerUserRoutes({ app, pool, authenticate, adminOnl
             type: 'recovery', email, options: { redirect_to: redirectTo }
         });
         // Set only after matching Supabase Email OTP Expiration. Never change Auth expiry here.
-        const expiryMinutes = Number(process.env.NEMS_AUTH_LINK_EXPIRY_MINUTES);
+        const expiryMinutes = localAuth ? 30 : Number(process.env.NEMS_AUTH_LINK_EXPIRY_MINUTES);
         const expiryNotice = Number.isInteger(expiryMinutes) && expiryMinutes > 0 && expiryMinutes <= 1440
             ? 'This private link expires ' + expiryMinutes + ' minutes after it was requested. If it has expired, request a new link.'
             : 'This private link has a limited validity period. If it has expired, request a new link.';
         const link = generated.action_link || generated.properties?.action_link;
         if (!link) throw new Error('SUPABASE_LINK_NOT_RETURNED');
+        const isRecovery = source === 'FORGOT_PASSWORD';
+        const intro = isRecovery ? 'A password reset was requested for your NEMS account.' : 'You have a NEMS account.';
+        const ending = isRecovery ? 'If you did not request this link, ignore this message.' :
+            'If you did not expect this invitation, ignore this message. You can sign in only after an ADMIN activates your account.';
         const safeLink = link.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
         const response = await fetch('https://api.brevo.com/v3/smtp/email', {
             method: 'POST',
@@ -58,13 +62,11 @@ module.exports = function registerUserRoutes({ app, pool, authenticate, adminOnl
                 sender: { name: brevoSenderName, email: brevoSenderEmail },
                 to: [{ email }],
                 tags: ['nems-reset-'+historyId],
-                subject: 'NEMS - Set up your password',
-                textContent: 'You have a NEMS account. Open this private link to set your password:\n\n' +
-                    link + '\n\n' + expiryNotice + '\n\nIf you did not expect this invitation, ignore this message. ' +
-                    'You can sign in only after an ADMIN activates your account.',
-                htmlContent: '<p>You have a NEMS account.</p><p><a href="' + safeLink +
-                    '">Set up your NEMS password</a></p><p>' + expiryNotice + '</p><p>If you did not expect this invitation, ignore this message. ' +
-                    'You can sign in only after an ADMIN activates your account.</p>'
+                subject: isRecovery ? 'NEMS - Reset your password' : 'NEMS - Set up your password',
+                textContent: intro + ' Open this private link to set your password:\n\n' +
+                    link + '\n\n' + expiryNotice + '\n\n' + ending,
+                htmlContent: '<p>' + intro + '</p><p><a href="' + safeLink +
+                    '">Set your NEMS password</a></p><p>' + expiryNotice + '</p><p>' + ending + '</p>'
             })
         });
         const result = await response.json().catch(() => ({}));
@@ -83,7 +85,7 @@ module.exports = function registerUserRoutes({ app, pool, authenticate, adminOnl
         const id=await passwordHistory.begin({email,source,actorEmail,provider:'BREVO'});
         try{
             if(ensureExisting)await ensureInvitationAuthUser(email);
-            const result=await sendInvitationMessage(email,id);
+            const result=await sendInvitationMessage(email,id,source);
             await passwordHistory.finish(id,{state:'ACCEPTED',httpStatus:result.httpStatus,messageId:result.messageId,code:'DELIVERY_UNCONFIRMED'});
         }catch(error){
             const knownFailure=error.passwordMailRejected||/^(BREVO_NOT_CONFIGURED|BREVO_SENDER_NOT_CONFIGURED|SUPABASE_ADMIN_NOT_CONFIGURED|SUPABASE_LINK_NOT_RETURNED)$/.test(error.message)||Number.isInteger(error.status);
@@ -94,11 +96,11 @@ module.exports = function registerUserRoutes({ app, pool, authenticate, adminOnl
         }
     }
 
-    async function authAdmin(path, method, body) {
+    async function authAdmin(path, method, body, client) {
  
-        if (!secret || !base) throw new Error('SUPABASE_ADMIN_NOT_CONFIGURED');
+        if (!localAuth && (!secret || !base)) throw new Error('SUPABASE_ADMIN_NOT_CONFIGURED');
  
-        const response = await fetch(`${base}/auth/v1/admin/${path}`, {
+        const response = localAuth ? await localAuth.admin(path, method, body, client) : await fetch(`${base}/auth/v1/admin/${path}`, {
  
             method,
             signal: AbortSignal.timeout(20000),
@@ -210,11 +212,20 @@ module.exports = function registerUserRoutes({ app, pool, authenticate, adminOnl
                 'SELECT email, auth_user_id FROM public.users WHERE LOWER(email)=$1 FOR UPDATE',
                 [email]
             );
-            if (!record.rowCount) {
+            if (record.rowCount !== 1) {
                 await client.query('ROLLBACK');
                 const err = new Error('NEMS_ACCOUNT_NOT_FOUND'); err.status = 404; throw err;
             }
             const linkedId = record.rows[0].auth_user_id;
+            if (localAuth) {
+                const authUser = await localAuth.ensureIdentity(client, linkedId, email);
+                await client.query(
+                    'UPDATE public.users SET auth_user_id=$1::uuid WHERE LOWER(email)=$2 AND auth_user_id IS DISTINCT FROM $1::uuid',
+                    [authUser.id, email]
+                );
+                await client.query('COMMIT');
+                return authUser;
+            }
             let authUser = null;
             if (linkedId) {
                 try {
@@ -388,11 +399,10 @@ module.exports = function registerUserRoutes({ app, pool, authenticate, adminOnl
  
                 Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' };
  
-            const identity = await fetch(`${base}/auth/v1/user`, { headers });
+            const identity = localAuth ? null : await fetch(`${base}/auth/v1/user`, { headers });
+            const authUser = localAuth ? await localAuth.identify(accessToken, 'recovery') : identity.ok ? await identity.json() : null;
  
-            if (!identity.ok) return fail(res, 401, 'Password setup link has expired or is invalid');
- 
-            const authUser = await identity.json();
+            if (!authUser) return fail(res, 401, 'Password setup link has expired or is invalid');
  
             const account = await pool.query(
  
@@ -404,7 +414,7 @@ module.exports = function registerUserRoutes({ app, pool, authenticate, adminOnl
  
             if (!account.rowCount) return fail(res, 403, 'NEMS account not found');
  
-            const changed = await fetch(`${base}/auth/v1/user`, {
+            const changed = localAuth ? await localAuth.setPassword(authUser.id, password, accessToken, 'recovery') : await fetch(`${base}/auth/v1/user`, {
  
                 method: 'PUT', headers, body: JSON.stringify({ password })
  
@@ -583,11 +593,11 @@ module.exports = function registerUserRoutes({ app, pool, authenticate, adminOnl
  
                 app_metadata: { nems_pending_admin_approval: true }
  
-            });
+            }, client);
  
             authId = created.id || created.user?.id;
  
-            if (!authId) throw new Error('Supabase did not return a user ID');
+            if (!authId) throw new Error('Sign-in provider did not return a user ID');
  
             await client.query(
  
@@ -633,7 +643,7 @@ module.exports = function registerUserRoutes({ app, pool, authenticate, adminOnl
  
             if (!committed) await client.query('ROLLBACK').catch(() => {});
  
-            if (authId && !committed) {
+            if (!localAuth && authId && !committed) {
  
                 try { await authAdmin(`users/${encodeURIComponent(authId)}`, 'DELETE'); }
  
@@ -778,4 +788,5 @@ module.exports = function registerUserRoutes({ app, pool, authenticate, adminOnl
  
     });
  
+    return { sendInvitation };
 };

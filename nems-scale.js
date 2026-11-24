@@ -13,7 +13,7 @@ if(!isMainThread && workerData?.nemsExport){
     })().catch(error=>{throw error;});
 async function buildDatabaseExport(){
     const {Pool}=require('pg');
-    const exportPool=new Pool({connectionString:process.env.DATABASE_URL,ssl:process.env.PGSSL_DISABLE==='true'?false:{rejectUnauthorized:false},max:1,connectionTimeoutMillis:10000,idleTimeoutMillis:1000,statement_timeout:30000,application_name:'nems-export-worker'});
+    const exportPool=new Pool({...require('./nems-database')(),max:1,connectionTimeoutMillis:10000,idleTimeoutMillis:1000,statement_timeout:30000,application_name:'nems-export-worker'});
     let pool;
     const storeScope=(user,alias='m')=>workerData.scopes[alias];
     const scopedMonitoringSQL=()=>workerData.monitoringSQL;

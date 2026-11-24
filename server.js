@@ -18,10 +18,7 @@ app.use(express.json({ limit: '6mb' }));
 // ==========================================
  
 const pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
-    ssl: process.env.PGSSL_DISABLE === 'true'
-        ? false
-        : { rejectUnauthorized: false },
+    ...require('./nems-database')(),
     max: Math.max(2,Math.min(20,parseInt(process.env.DB_POOL_MAX,10)||10)),
     connectionTimeoutMillis: 10000,
     idleTimeoutMillis: 30000,
@@ -41,14 +38,16 @@ const SUPABASE_URL = (
 ).replace(/\/$/, '');
  
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
+const localAuth = process.env.NEMS_AUTH_MODE === 'local'
+    ? require('./nems-local-auth')(pool, process.env.NEMS_PUBLIC_URL)
+    : null;
  
 if (
     !process.env.DATABASE_URL ||
-    !SUPABASE_URL ||
-    !SUPABASE_ANON_KEY
+    (!localAuth && (!SUPABASE_URL || !SUPABASE_ANON_KEY))
 ) {
     console.error(
-        'Missing DATABASE_URL, SUPABASE_URL, or SUPABASE_ANON_KEY'
+        'DATABASE_URL is required. Supabase mode also requires SUPABASE_URL and SUPABASE_ANON_KEY.'
     );
     process.exit(1);
 }
@@ -207,7 +206,7 @@ app.post('/api/login', async (req, res) => {
     }
  
     try {
-        const response = await fetch(
+        const response = localAuth ? await localAuth.login({email, password}, true) : await fetch(
             `${SUPABASE_URL}/auth/v1/token?grant_type=password`,
             {
                 method: 'POST',
@@ -300,6 +299,19 @@ app.post('/api/password/forgot', async (req, res) => {
     if (!email || email.length > 255 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
         return sendError(res, 400, 'Enter a valid email address');
     }
+    if (localAuth) {
+        try {
+            const account = await pool.query(
+                "SELECT 1 FROM public.users WHERE lower(email)=$1 AND status='ACTIVE'", [email]
+            );
+            if (account.rowCount === 1) {
+                await userManagement.sendInvitation(email, 'FORGOT_PASSWORD', null, true);
+            }
+        } catch (error) {
+            console.warn('[NEMS recovery]', error.code || error.status || 'UNAVAILABLE');
+        }
+        return res.json({message:'If registered, a reset link will be sent.'});
+    }
     const ip = req.ip || 'unknown';
     const key = ip + ':' + email;
     const now = Date.now();
@@ -343,7 +355,7 @@ app.post('/api/password/change', authenticate, async (req, res) => {
         return sendError(res, 400, 'Current password required; new password must be different and 12–128 characters');
     }
     try {
-        const verify = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
+        const verify = localAuth ? await localAuth.login({email:req.user.email,password:current}, false) : await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
             method:'POST', headers:{apikey:SUPABASE_ANON_KEY,'Content-Type':'application/json'},
             body:JSON.stringify({email:req.user.email,password:current})
         });
@@ -353,7 +365,7 @@ app.post('/api/password/change', authenticate, async (req, res) => {
         if (!verified.user?.id || verified.user.email?.toLowerCase() !== req.user.email.toLowerCase()) {
             return sendError(res, 401, 'Current password verification failed');
         }
-        const changed = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+        const changed = localAuth ? await localAuth.setPassword(verified.user.id, password, bearer, 'session') : await fetch(`${SUPABASE_URL}/auth/v1/user`, {
             method:'PUT', headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${bearer}`,'Content-Type':'application/json'},
             body:JSON.stringify({password})
         });
@@ -361,7 +373,7 @@ app.post('/api/password/change', authenticate, async (req, res) => {
         try{await pool.query('INSERT INTO public.nems_account_password_activity(email,auth_user_id) VALUES(LOWER($1),$2::uuid)',[req.user.email,verified.user.id]);}
         catch(e){console.warn('[NEMS self password-change history]',e.code||'UNAVAILABLE');}
         res.set('Cache-Control','no-store');
-        return res.json({message:'Password changed successfully.'});
+        return res.json({message:localAuth ? 'Password changed. Sign in again with your new password.' : 'Password changed successfully.'});
     } catch(error) {
         console.error('Password change error:', error.message);
         return sendError(res, 503, 'Password change temporarily unavailable');
@@ -377,6 +389,10 @@ async function nemsVerifySession(token){
     const key=require('crypto').createHash('sha256').update(token).digest('hex');
     if(nemsAuthInFlight.has(key))return nemsAuthInFlight.get(key);
     const pending=(async()=>{
+        if (localAuth) {
+            const user = await localAuth.identify(token, 'session');
+            return {ok:!!user,user};
+        }
         const response=await fetch(`${SUPABASE_URL}/auth/v1/user`,{headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${token}`},signal:AbortSignal.timeout(15000)});
         return {ok:response.ok,user:response.ok?await response.json():null};
     })();
@@ -2038,7 +2054,7 @@ require('./nems-tasks')({
 });
  
 // ADMIN USER MANAGEMENT ROUTES
-require('./nems-users')({ app, pool, authenticate, adminOnly, passwordHistory });
+const userManagement = require('./nems-users')({ app, pool, authenticate, adminOnly, passwordHistory, localAuth });
 passwordHistory.register({app,authenticate,adminOnly,pageQuery:scalePageQuery});
  
 // ADMIN STORE MANAGEMENT ROUTES
@@ -2604,9 +2620,15 @@ app.get('/api/admin/email-status',authenticate,adminOnly,secureRoute(async(req,r
 }));
 let lastRequestCleanup=0;
 async function cleanupRequestReceipts(){if(Date.now()-lastRequestCleanup<3600000)return;lastRequestCleanup=Date.now();try{await pool.query(`DELETE FROM public.nems_request_keys WHERE (owner_email,request_key) IN (SELECT owner_email,request_key FROM public.nems_request_keys WHERE state='COMPLETE' AND completed_at<NOW()-INTERVAL '30 days' LIMIT 1000)`);}catch(e){console.error('[NEMS receipt cleanup]',e.code||e.message);}}
-const maintenanceTimer=setInterval(()=>{void scanOverdueTasks();void processEmailQueue();void cleanupRequestReceipts();void meetingReports.tick();},60000);
-maintenanceTimer.unref();
-setImmediate(()=>void meetingReports.tick());
+if (process.env.NEMS_DISABLE_BACKGROUND_JOBS !== 'true') {
+    const maintenanceTimer = setInterval(() => {
+        void scanOverdueTasks();
+        void processEmailQueue();
+        void cleanupRequestReceipts();
+        void meetingReports.tick();
+    }, 60000);
+    maintenanceTimer.unref();
+}
 
 // Separate Products/Suppliers imports: preview first, then an owner-bound one-use confirmation.
 const importPreviews=new Map();
@@ -2940,7 +2962,7 @@ app.get('/api/help',authenticate,(req,res)=>{
     let video_url=null;try{const url=new URL(value);if(url.protocol==='https:')video_url=url.href;}catch(_){}
     res.json({video_url});
 });
-require('./nems-account-tracker')({app,pool,authenticate,secureRoute,storeScope,XLSX,appError});
+require('./nems-account-tracker')({app,pool,authenticate,secureRoute,storeScope,XLSX,appError,localAuth});
 app.get('/api/admin/system-status',authenticate,adminOnly,secureRoute(async(req,res)=>{
     const ready=await pool.query("SELECT to_regclass('public.nems_request_keys') IS NOT NULL AS save_protection_ready");
     res.json({version:'nems-scale-2026-11',save_protection_ready:ready.rows[0].save_protection_ready,database_pool:{total:pool.totalCount,idle:pool.idleCount,waiting:pool.waitingCount,max:pool.options.max},export_jobs:scaleServices.stats()});
@@ -2969,12 +2991,13 @@ const PORT = Number(
     process.env.PORT || 3000
 );
  
-app.listen(
-    PORT,
-    '0.0.0.0',
-    () => {
-        console.log(
-            `NEMS listening on ${PORT}`
-        );
-    }
-);
+async function startServer() {
+    if (localAuth) await localAuth.initialize();
+    if (process.env.NEMS_DISABLE_BACKGROUND_JOBS !== 'true') setImmediate(() => void meetingReports.tick());
+    app.listen(PORT, '0.0.0.0', () => console.log(`NEMS listening on ${PORT}`));
+}
+
+startServer().catch(error => {
+    console.error('[NEMS startup]', error.code || error.message);
+    process.exit(1);
+});

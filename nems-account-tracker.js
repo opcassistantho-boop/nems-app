@@ -22,7 +22,7 @@ function filterRows(rows,query){
  const term=String(query.search||'').trim().slice(0,100).toLowerCase();
  return rows.filter(r=>(role==='ALL'||(r.account_role||'STORE')===role)&&(accountState==='ALL'||String(r.account_status||'').toUpperCase()===accountState)&&(status==='ALL'||r.tracker_status===status)&&(!term||[r.store_name,r.store_email,r.employee_name,r.as_contacts,r.aom_contacts,r.status_label].join(' ').toLowerCase().includes(term)));
 }
-module.exports=function registerAccountTracker({app,pool,authenticate,secureRoute,storeScope,XLSX,appError}){
+module.exports=function registerAccountTracker({app,pool,authenticate,secureRoute,storeScope,XLSX,appError,localAuth}){
  const authorized=user=>{if(!ROLES.includes(user?.role))throw appError(403,'Management access required');};
  async function rowsFor(user){
    authorized(user);const scope=storeScope(user,'s');
@@ -92,6 +92,13 @@ module.exports=function registerAccountTracker({app,pool,authenticate,secureRout
    return withAuthHistory(data.rows);
  }
  async function withAuthHistory(rows){
+   if(localAuth){
+     const ids=[...new Set(rows.filter(r=>r._auth_id).map(r=>r._auth_id))];
+     const ready=new Set(ids.length?(await pool.query(
+       'SELECT id FROM nems_auth.identities WHERE id=ANY($1::uuid[]) AND password_hash IS NOT NULL',[ids]
+     )).rows.map(r=>String(r.id)):[]);
+     return rows.map(({_auth_id,...r})=>classify({...r,auth_linked:ready.has(String(_auth_id)),last_auth_sign_in_at:null,auth_history_available:false}));
+   }
    let available=true,history=[];const ids=[...new Set(rows.filter(r=>r.profile_matches&&r._auth_id).map(r=>r._auth_id))];
    if(ids.length)try{history=(await pool.query('SELECT auth_user_id,last_auth_sign_in_at FROM public.nems_account_auth_history($1::uuid[])',[ids])).rows;}catch(e){available=false;console.warn('[NEMS account Auth history]',e.code||'UNAVAILABLE');}
    const map=new Map(history.map(r=>[String(r.auth_user_id),r.last_auth_sign_in_at]));
@@ -103,7 +110,7 @@ module.exports=function registerAccountTracker({app,pool,authenticate,secureRout
    const rows=await selectedRows(req.user,req.query),filtered=filterRows(rows,req.query),page=Math.max(1,parseInt(req.query.page,10)||1),limit=50;
    const summary={view:viewFor(req.user,req.query),stores:rows.length,active:rows.filter(r=>r.account_status==='ACTIVE').length,inactive:rows.filter(r=>r.account_status==='INACTIVE').length,with_account:rows.filter(r=>r.has_account).length,without_account:rows.filter(r=>!r.has_account).length,login_recorded:rows.filter(r=>(r.last_login_at||r.last_auth_sign_in_at)&&r.profile_matches).length,previous_activity:rows.filter(r=>r.last_activity_at&&r.profile_matches).length};
    for(const code of STATUSES)summary[code]=rows.filter(r=>r.tracker_status===code).length;
-   res.set('Cache-Control','no-store');res.json({records:filtered.slice((page-1)*limit,page*limit),has_more:filtered.length>page*limit,page,total:filtered.length,summary,note:'Includes historical Supabase sign-ins and existing NEMS activity, shown separately from newly tracked NEMS logins. Activity is not proof of a specific login date. Only confirmed password-change records are shown; an invitation or password-reset request does not prove a change. No record available does not mean never used.'+(rows.some(r=>!r.auth_history_available)?' Supabase sign-in history is unavailable: check nems-account-history.sql and the privileged database role.':'')});
+   res.set('Cache-Control','no-store');res.json({records:filtered.slice((page-1)*limit,page*limit),has_more:filtered.length>page*limit,page,total:filtered.length,summary,note:'Includes historical Supabase sign-ins and existing NEMS activity, shown separately from newly tracked NEMS logins. Activity is not proof of a specific login date. Only confirmed password-change records are shown; an invitation or password-reset request does not prove a change. No record available does not mean never used.'+(rows.some(r=>!r.auth_history_available)?(localAuth?' Historical Supabase sign-ins were not included in this database copy.':' Supabase sign-in history is unavailable: check nems-account-history.sql and the privileged database role.'):'')});
  }));
  app.get('/api/account-tracker/export',authenticate,secureRoute(async(req,res)=>{
    const rows=filterRows(await selectedRows(req.user,req.query),req.query);
