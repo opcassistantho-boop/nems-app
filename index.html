@@ -1812,6 +1812,9 @@ function renderMonitoring() {
                     )}
                 </td>
                 <td>
+                    ${item.monitoring_id != null && ['STORE', 'ADMIN'].includes(currentUser?.role)
+                        ? ['edit', 'delete'].map(action => `<button type="button" class="secondary small" data-entry-id="${escapeHtml(item.monitoring_id)}" data-expiry="${escapeHtml(String(item.expiration_date).slice(0,10))}" data-entry-action="${action}" onclick="changeMonitoringEntry(this)">${action === 'edit' ? 'Edit' : 'Delete entry'}</button>`).join(' ')
+                        : ''}
                     ${currentUser?.role === 'ADMIN' && item.category === 'EXPIRED'
                         ? (item.monitoring_id != null
                             ? `<button type="button" class="secondary small" onclick="disposeExpiredMonitoring(${Number(item.monitoring_id)}, '${String(item.expiration_date).slice(0,10)}')">Dispose Expired</button>`
@@ -1837,6 +1840,37 @@ function renderMonitoring() {
         'Showing ' + rows.length + ' records';
 }
  
+async function changeMonitoringEntry(button) {
+    const { entryId, expiry, entryAction } = button.dataset;
+    const url = '/api/monitoring/entries/' + encodeURIComponent(entryId);
+    button.disabled = true;
+    try {
+        const record = await api(url);
+        const original = record.dates.find(entry => entry.date === expiry);
+        if (!original) throw new Error('The date changed. Refresh Monitoring and try again.');
+        const payload = { revision: record.revision };
+        const deleting = entryAction === 'delete';
+        const label = [record.store, record.sku, record.product].filter(Boolean).join(' / ');
+        if (deleting) {
+            const dates = record.dates.map(entry => entry.date + ' · Qty ' + entry.qty).join('\n');
+            if (!confirm('Delete the entire Monitoring entry?\n\n' + label + '\n' + dates)) return;
+        } else {
+            const date = prompt(label + '\nExpiration date (YYYY-MM-DD)', original.date);
+            if (date === null) return;
+            const quantity = prompt('Quantity for ' + date.trim(), original.qty);
+            if (quantity === null) return;
+            Object.assign(payload, { previousDate: expiry, date: date.trim(), quantity: Number(quantity) });
+        }
+        const result = await api(url, { method: deleting ? 'DELETE' : 'PATCH', body: JSON.stringify(payload) });
+        showMessage(result.message);
+        await loadMonitoring();
+    } catch (error) {
+        showMessage(error.message, true);
+    } finally {
+        button.disabled = false;
+    }
+}
+
 function nemsSavePosition(anchor) {
     const y=window.scrollY,x=window.scrollX,id=anchor?.id;
     const product=anchor?.closest('[data-nems-product]')?.dataset.nemsProduct;

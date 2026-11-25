@@ -2863,6 +2863,99 @@ app.get('/api/scale/monitoring',authenticate,secureRoute(async(req,res)=>{
     const data=await scalePageQuery(pool,req.query,`SELECT m.* FROM (${scopedMonitoringSQL(req.user)}) m WHERE ${filters.where}`,filters.args,'m.expiration_date,m.store_name,m.product_id,m.slot,m.monitoring_id NULLS LAST');
     data.records=(await enrichMonitoring(pool,data.records)).map(r=>({...r,action_remarks:req.user.role==='ADMIN'?r.action_remarks:undefined,category:expiryCategory(r.expiration_date)}));res.json(data);
 }));
+const monitoringEntryPath = '/api/monitoring/entries/:id';
+
+async function monitoringEntryForChange(client, user, id, lock = false) {
+    if (!['STORE', 'ADMIN'].includes(user.role)) {
+        throw appError(403, 'Only the store or an admin can change this entry.');
+    }
+    if (!validId(id)) throw appError(400, 'Invalid monitoring entry.');
+    const scope = storeScope(user, 'm');
+    const args = [...scope.args, id];
+    const result = await client.query(
+        `SELECT m.*, m.xmin::text AS revision FROM public.monitoring m
+          WHERE (${scope.sql}) AND m.monitoring_id = $${args.length}${lock ? ' FOR UPDATE' : ''}`, args
+    );
+    if (!result.rowCount) throw appError(404, 'Monitoring entry not found. Refresh Monitoring.');
+    return result.rows[0];
+}
+
+app.get(monitoringEntryPath, authenticate, secureRoute(async (req, res) => {
+    const row = await monitoringEntryForChange(pool, req.user, req.params.id);
+    res.json({
+        revision: row.revision,
+        store: row.store_name,
+        product: row.product_name,
+        sku: row.sku,
+        dates: stockDates(row, 'monitoring')
+    });
+}));
+
+async function visibleTaskStockForMonitoringChange(client, row) {
+    const result = await client.query(
+        `SELECT expiration_date::text, quantity, slot, updated_at, updated_by
+           FROM (${combinedMonitoringEntries}) AS stock
+          WHERE monitoring_id IS NULL AND LOWER(TRIM(store_email))=LOWER(TRIM($1))
+            AND product_id=$2
+          ORDER BY expiration_date`, [row.store_email, row.product_id]
+    );
+    return JSON.stringify(result.rows);
+}
+
+app.all(monitoringEntryPath, authenticate, secureRoute(async (req, res) => {
+    const deleting = req.method === 'DELETE';
+    if (!deleting && req.method !== 'PATCH') {
+        throw appError(405, 'Use PATCH or DELETE.');
+    }
+    const { revision, previousDate, date, quantity } = req.body || {};
+    await transaction(async client => {
+        const initial = await monitoringEntryForChange(client, req.user, req.params.id);
+        await lockProduct(client, initial.store_email, initial.product_id);
+        const row = await monitoringEntryForChange(client, req.user, req.params.id, true);
+        if (revision !== row.revision) {
+            throw appError(409, 'This entry changed. Refresh Monitoring and try again.');
+        }
+        const taskStockBefore = await visibleTaskStockForMonitoringChange(client, row);
+        if (deleting) {
+            await client.query('DELETE FROM public.monitoring WHERE monitoring_id=$1', [row.monitoring_id]);
+        } else {
+            const parsedDate = new Date(String(date) + 'T00:00:00Z');
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date)) || !Number.isFinite(+parsedDate)
+                || dateKey(parsedDate) !== date || date.startsWith('0000')
+                || !Number.isInteger(quantity) || quantity < 1 || quantity > 2147483647) {
+                throw appError(400, 'Enter a valid expiration date and a positive whole quantity.');
+            }
+            const entries = stockDates(row, 'monitoring');
+            const matches = entries.filter(entry => entry.date === previousDate);
+            if (matches.length !== 1) throw appError(409, 'The original date is missing or ambiguous.');
+            if (previousDate !== date && entries.some(entry => entry.date === date)) {
+                throw appError(409, 'This expiration date is already on the entry.');
+            }
+            if (previousDate === date && matches[0].qty === quantity) return;
+            await assertDatesNotArchived(client, row.store_email, row.product_id, [previousDate, date]);
+            matches[0].date = date;
+            matches[0].qty = quantity;
+            await writeRestoredDates(client, row, entries, req.user.email, 'monitoring');
+        }
+        if (taskStockBefore !== await visibleTaskStockForMonitoringChange(client, row)) {
+            throw appError(409, 'This change would affect stock shown from My Tasks. Ask OPC to review the task and Monitoring records together.');
+        }
+        // The existing trigger snapshots the record. Attribute its event to
+        // the signed-in actor, including when DELETE only has the old row.
+        const audit = await client.query(
+            `UPDATE public.nems_monitoring_history
+              SET changed_by=$2, changed_at=clock_timestamp()
+              WHERE monitoring_id=$1 AND action=$3
+                AND xmin::text=(txid_current() % 4294967296)::text`,
+            [row.monitoring_id, req.user.email, deleting ? 'DELETE' : 'UPDATE']
+        );
+        if (audit.rowCount !== 1) {
+            throw appError(503, 'The change was rolled back because Monitoring History could not record it.');
+        }
+    });
+    res.json({ message: deleting ? 'Monitoring entry deleted.' : 'Monitoring entry updated.' });
+}));
+
 app.get('/api/scale/expired-stock',authenticate,secureRoute(async(req,res)=>{
     if(req.user.role!=='STORE')throw appError(403,'STORE access required');
     const filters=monitoringFilters(req.user,{category:'EXPIRED',search:req.query.search});
