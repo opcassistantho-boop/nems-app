@@ -1814,7 +1814,8 @@ function renderMonitoring() {
                 <td>
                     ${item.monitoring_id != null && ['STORE', 'ADMIN'].includes(currentUser?.role)
                         ? ['edit', 'delete'].map(action => `<button type="button" class="secondary small" data-entry-id="${escapeHtml(item.monitoring_id)}" data-expiry="${escapeHtml(String(item.expiration_date).slice(0,10))}" data-entry-action="${action}" onclick="changeMonitoringEntry(this)">${action === 'edit' ? 'Edit' : 'Delete entry'}</button>`).join(' ')
-                        : ''}
+                        : item.monitoring_id == null && ['STORE', 'ADMIN'].includes(currentUser?.role)
+                            ? '<small>From My Tasks</small>' : ''}
                     ${currentUser?.role === 'ADMIN' && item.category === 'EXPIRED'
                         ? (item.monitoring_id != null
                             ? `<button type="button" class="secondary small" onclick="disposeExpiredMonitoring(${Number(item.monitoring_id)}, '${String(item.expiration_date).slice(0,10)}')">Dispose Expired</button>`
@@ -1843,31 +1844,84 @@ function renderMonitoring() {
 async function changeMonitoringEntry(button) {
     const { entryId, expiry, entryAction } = button.dataset;
     const url = '/api/monitoring/entries/' + encodeURIComponent(entryId);
+    const deleting = entryAction === 'delete';
+    const dialog = document.createElement('dialog');
+    dialog.setAttribute('aria-labelledby', 'monitoring-change-title');
+    dialog.style.cssText = 'width:min(480px,calc(100% - 32px));max-height:85vh;padding:24px;border:1px solid #c8d5e3;border-radius:12px;box-shadow:0 12px 48px #1235;color:#142f50';
+    dialog.innerHTML = `<style>dialog::backdrop{background:#10233b80}</style>
+        <form>
+            <h2 id="monitoring-change-title">${deleting ? 'Delete Monitoring entry' : 'Edit Monitoring entry'}</h2>
+            <p data-entry-status role="status">Loading entry…</p>
+            <p data-entry-label></p>
+            <div data-entry-fields hidden>${deleting
+                ? '<p>This removes all expiration dates and quantities on this entry.</p><ul data-entry-dates></ul>'
+                : '<label>Expiration date <input name="date" type="date" required></label><label>Quantity <input name="quantity" type="number" min="1" max="2147483647" step="1" required></label>'}
+            </div>
+            <div class="row"><button type="button" class="secondary" data-entry-cancel>Cancel</button>
+            <button type="submit" disabled>${deleting ? 'Delete entry' : 'Save changes'}</button></div>
+        </form>`;
+    const status = dialog.querySelector('[data-entry-status]');
+    const cancel = dialog.querySelector('[data-entry-cancel]');
+    const save = dialog.querySelector('[type="submit"]');
+    const form = dialog.querySelector('form');
+    let saving = false;
     button.disabled = true;
+    dialog.addEventListener('close', () => {
+        dialog.remove();
+        button.disabled = false;
+        if (button.isConnected) button.focus({preventScroll:true});
+    }, { once:true });
+    dialog.addEventListener('cancel', event => { if (saving) event.preventDefault(); });
+    cancel.onclick = () => dialog.close();
+    document.body.append(dialog);
+    dialog.showModal();
+
     try {
         const record = await api(url);
+        if (!dialog.open) return;
         const original = record.dates.find(entry => entry.date === expiry);
-        if (!original) throw new Error('The date changed. Refresh Monitoring and try again.');
-        const payload = { revision: record.revision };
-        const deleting = entryAction === 'delete';
-        const label = [record.store, record.sku, record.product].filter(Boolean).join(' / ');
+        if (!original) throw new Error('The date changed. Close this window and refresh Monitoring.');
+        dialog.querySelector('[data-entry-label]').textContent =
+            [record.store, record.sku, record.product].filter(Boolean).join(' / ');
         if (deleting) {
-            const dates = record.dates.map(entry => entry.date + ' · Qty ' + entry.qty).join('\n');
-            if (!confirm('Delete the entire Monitoring entry?\n\n' + label + '\n' + dates)) return;
+            const list = dialog.querySelector('[data-entry-dates]');
+            for (const entry of record.dates) {
+                const item = document.createElement('li');
+                item.textContent = entry.date + ' · Qty ' + entry.qty;
+                list.append(item);
+            }
         } else {
-            const date = prompt(label + '\nExpiration date (YYYY-MM-DD)', original.date);
-            if (date === null) return;
-            const quantity = prompt('Quantity for ' + date.trim(), original.qty);
-            if (quantity === null) return;
-            Object.assign(payload, { previousDate: expiry, date: date.trim(), quantity: Number(quantity) });
+            form.elements.date.value = original.date;
+            form.elements.quantity.value = original.qty;
         }
-        const result = await api(url, { method: deleting ? 'DELETE' : 'PATCH', body: JSON.stringify(payload) });
-        showMessage(result.message);
-        await loadMonitoring();
+        status.textContent = '';
+        dialog.querySelector('[data-entry-fields]').hidden = false;
+        save.disabled = false;
+        form.onsubmit = async event => {
+            event.preventDefault();
+            if (saving) return;
+            const payload = { revision:record.revision };
+            if (!deleting) Object.assign(payload, { previousDate:expiry,
+                date:form.elements.date.value, quantity:Number(form.elements.quantity.value) });
+            saving = true;
+            save.disabled = cancel.disabled = true;
+            status.textContent = deleting ? 'Deleting…' : 'Saving…';
+            try {
+                const result = await api(url, { method:deleting ? 'DELETE' : 'PATCH', body:JSON.stringify(payload) });
+                const restorePosition = nemsSavePosition(button);
+                dialog.close();
+                showMessage(result.message);
+                await loadMonitoring();
+                restorePosition();
+            } catch (error) {
+                status.textContent = error.message;
+            } finally {
+                saving = false;
+                save.disabled = cancel.disabled = false;
+            }
+        };
     } catch (error) {
-        showMessage(error.message, true);
-    } finally {
-        button.disabled = false;
+        if (dialog.open) status.textContent = error.message;
     }
 }
 
