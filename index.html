@@ -4132,7 +4132,7 @@ function nemsUserSetup() {
         <form id="nemsUserForm"><div class="formgrid">
         <div><label>Email *</label><input type="email" id="nemsUserEmail" required maxlength="255"></div>
         <div><label>Full name *</label><input id="nemsUserName" required maxlength="255"></div>
-        <div><label>Role *</label><select id="nemsUserRole"><option>HEAD</option><option>AOM</option><option>AS</option><option>STORE</option><option>ADMIN</option></select></div>
+        <div><label>Role *</label><select id="nemsUserRole"><option>HEAD</option><option>AOM</option><option>AS</option><option>STORE</option><option>IC</option><option>OPC</option><option>ADMIN</option></select></div>
         <div id="nemsUserPasswordBox"><label>Temporary password (12+ characters) *</label><input type="password" id="nemsUserPassword" minlength="12" maxlength="128" autocomplete="new-password"></div>
         <div class="hidden" id="nemsUserStatusBox"><label>Approval status</label><select id="nemsUserStatus"><option value="INACTIVE">INACTIVE — not approved</option><option value="ACTIVE">ACTIVE — approved</option></select></div>
         <div class="hidden" id="nemsUserStoreBox"><label>STORE assignment *</label><select id="nemsUserStore"></select><p class="muted">STORE account email must match the registered store email.</p></div>
@@ -5250,6 +5250,240 @@ nemsMeetingSetup();
  window.addEventListener('resize',update);update();
 })();
 
+(function setupHighValueInventory() {
+    const nav = document.createElement('button');
+    nav.type = 'button';
+    nav.dataset.page = 'highvalue';
+    nav.textContent = 'High-Value Inventory';
+    nav.onclick = () => showPage('highvalue');
+    el('navigation').append(nav);
+
+    const page = document.createElement('section');
+    page.id = 'page-highvalue';
+    page.className = 'page hidden';
+    page.innerHTML = `
+        <div class="panel">
+            <h2>Daily High-Value Inventory</h2>
+            <div class="grid">
+                <div><label for="hvDate">Inventory date</label><input type="date" id="hvDate"></div>
+                <div><label for="hvStore">Store</label><select id="hvStore"></select></div>
+                <div><label for="hvShift">Shift</label><select id="hvShift"><option>OPENING</option><option>CLOSING</option></select></div>
+            </div>
+            <button type="button" id="hvLoad">Load counts</button>
+            <button type="button" id="hvCompliance">View compliance</button>
+            <button type="button" id="hvHistory">View history</button>
+            <button type="button" id="hvManageStores">Manage stores</button>
+            <button type="button" id="hvManageProducts">Manage products</button>
+            <p id="hvStatus" role="status"></p>
+            <div id="hvContent"></div>
+        </div>`;
+    el('page-dashboard').parentElement.append(page);
+
+    const root = '/api/high-value';
+    const e = value => escapeHtml(String(value ?? ''));
+    const cell = value => '<td>'+e(value)+'</td>';
+    const table = (headers,rows) => '<div class="tablewrap"><table><thead><tr>'+
+        headers.map(x=>'<th scope="col">'+e(x)+'</th>').join('')+'</tr></thead><tbody>'+
+        rows.join('')+'</tbody></table></div>';
+    const option = (value,label) => '<option value="'+e(value)+'">'+e(label)+'</option>';
+    const editors = ['ADMIN','OPC','IC'];
+    const content = el('hvContent');
+    const status = el('hvStatus');
+    let request = 0;
+
+    function run(action) {
+        const current = ++request;
+        const email = currentUser?.email;
+        const active = () => current===request && email===currentUser?.email && !page.classList.contains('hidden');
+        status.textContent = 'Loading…';
+        Promise.resolve().then(()=>action(active)).then(message=>{
+            if(active()) status.textContent = message || '';
+        }).catch(error=>{
+            if(active()) status.textContent = error.message;
+        });
+    }
+
+    function bind(id, action) {
+        const button = el(id);
+        button.onclick = () => {
+            button.disabled = true;
+            run(async active=>{
+                try { return await action(active); }
+                finally { button.disabled = false; }
+            });
+        };
+    }
+
+    function parameters() {
+        return new URLSearchParams({store:el('hvStore').value,date:el('hvDate').value});
+    }
+
+    function write(path,method,data) {
+        return api(root+path,{method,body:JSON.stringify(data)});
+    }
+
+    async function loadCounts(active) {
+        content.replaceChildren();
+        const params = parameters();
+        if (!params.get('store')) return 'Choose a store.';
+        const shift = el('hvShift').value;
+        const response = await api(root+'/counts?'+params);
+        if (!active()) return;
+        const rows = response.rows.filter(row=>row.shift===shift);
+        if (!rows.length) return 'No high-value items for this store and date.';
+        const field = response.showSystem?'system_count':'actual';
+        const editable = response.canEdit && response.canSave;
+        const names = [...new Set(rows.map(x=>x.counted_by).filter(Boolean))];
+        content.innerHTML = (editable&&field==='actual'?'<label for="hvLeader">Store Leader / Shift Leader who counted</label>'+
+            '<input id="hvLeader" maxlength="120" value="'+e(names.length===1?names[0]:'')+'">':'')+
+            table(['SKU','Product','Counted by','Actual','System','Variance'],rows.map(row=>{
+                const input = '<input aria-label="'+e(row.product_name+' '+field)+'" type="number" min="0" step="1" max="2147483647" data-hv-product="'+
+                    e(row.product_id)+'" value="'+e(row[field])+'">';
+                return '<tr>'+cell(row.sku)+cell(row.product_name)+cell(row.counted_by)+
+                    '<td>'+(editable&&field==='actual'?input:e(row.actual))+'</td>'+
+                    '<td>'+(editable&&field==='system_count'?input:e(response.showSystem?row.system_count:'***'))+'</td>'+
+                    cell(response.showSystem?row.variance:row.variance_status)+'</tr>';
+            }))+(editable?'<button type="button" id="hvSave">Save '+e(shift.toLowerCase())+' counts</button>':'');
+        if (editable) bind('hvSave',async now=>{
+            const counts = [...content.querySelectorAll('[data-hv-product]')].filter(input=>input.value!==''&&input.value!==input.defaultValue)
+                .map(input=>({product_id:input.dataset.hvProduct,value:Number(input.value)}));
+            if (!counts.length) return 'Change or enter at least one count.';
+            await write('/counts','PUT',{store_id:params.get('store'),date:params.get('date'),shift,counts,counted_by:el('hvLeader')?.value});
+            if (now()) await loadCounts(now);
+            return 'Counts saved.';
+        });
+    }
+
+    async function showCompliance(active) {
+        content.replaceChildren();
+        const rows = await api(root+'/compliance?'+parameters());
+        if (!active()) return;
+        if (!rows.length) return 'No active stores with high-value items for this date.';
+        const groups = new Map();
+        const countRows = [];
+        for (const row of rows) {
+            const group = (row.as_name||'Unassigned AS')+' / '+(row.aom_name||'Unassigned AOM');
+            if (!groups.has(group)) groups.set(group,[0,0,0]);
+            const missing = row.opening_actual+row.opening_system+row.closing_actual+row.closing_system;
+            const classification = missing===0?0:missing===row.expected?2:1;
+            groups.get(group)[classification]++;
+            countRows.push('<tr>'+cell(row.store_name)+cell(group)+
+                [row.opening_actual,row.opening_system,row.closing_actual,row.closing_system].map(cell).join('')+
+                cell(['Complete','Incomplete','Missing'][classification])+'</tr>');
+        }
+        const colors = ['#237a56','#966019','#9d3044'];
+        content.innerHTML = '<h3>Daily store compliance</h3><p>Complete / Incomplete / Missing</p>'+
+            [...groups].map(([name,totals])=>{
+                const total = totals.reduce((a,b)=>a+b,0);
+                return '<p>'+e(name)+' — '+totals.join(' / ')+'</p><div aria-hidden="true" style="display:flex;height:12px;margin-bottom:12px">'+
+                    totals.map((n,i)=>'<span style="background:'+colors[i]+';width:'+(100*n/total)+'%"></span>').join('')+'</div>';
+            }).join('')+table(['Store','AS / AOM','Opening Actual missing','Opening System missing','Closing Actual missing','Closing System missing','Status'],countRows);
+    }
+
+    async function showHistory(active) {
+        content.replaceChildren();
+        const rows = await api(root+'/history?'+parameters());
+        if (!active()) return;
+        content.innerHTML = table(['Product','Shift','Field','Previous','Saved','Counted by (previous → saved)','Saved by','Time (PH)'],
+            rows.map(row=>'<tr>'+[row.product_name,row.shift,row.field==='actual'?'Actual':'System',row.old_value,row.new_value,
+                [row.old_counted_by,row.new_counted_by].filter(Boolean).join(' → '),row.actor,
+                new Date(row.saved_at).toLocaleString('en-PH',{timeZone:'Asia/Manila'})].map(cell).join('')+'</tr>'));
+        if (!rows.length) return 'No saved changes for this date.';
+    }
+
+    async function manageStores(active) {
+        const id = el('hvStore').value;
+        const [stores,people] = await Promise.all([api(root+'/stores'),api(root+'/managers')]);
+        if (!active()) return;
+        const selected = stores.find(x=>String(x.store_id)===id);
+        if (!selected) return 'Choose a store.';
+        const select = role=>option('','Unassigned')+people.filter(p=>p.role===role).map(p=>option(p.email,p.full_name+' · '+p.email)).join('');
+        content.innerHTML = '<h3>'+e(selected.store_name)+'</h3><label for="hvStoreStatus">Inventory status</label>'+
+            '<select id="hvStoreStatus"><option>PIPELINE</option><option>ACTIVE</option><option>CLOSED</option></select>'+
+            '<label for="hvAs">Assigned AS</label><select id="hvAs">'+select('AS')+'</select>'+
+            '<label for="hvAom">Assigned AOM</label><select id="hvAom">'+select('AOM')+'</select>'+
+            '<button type="button" id="hvStoreSave">Save store settings</button>';
+        el('hvStoreStatus').value = selected.inventory_status;
+        el('hvAs').value = selected.as_email||'';
+        el('hvAom').value = selected.aom_email||'';
+        bind('hvStoreSave',async()=>{
+            await write('/stores/'+encodeURIComponent(id),'PATCH',{status:el('hvStoreStatus').value,as_email:el('hvAs').value,aom_email:el('hvAom').value});
+            return 'Store status and NEMS assignments saved.';
+        });
+    }
+
+    async function searchProducts(active) {
+        const requestParams = new URLSearchParams({q:el('hvSearch').value});
+        const previousReview = el('hvReview')?.value;
+        const {products,review} = await api(root+'/products?'+requestParams);
+        if (!active()) return;
+        el('hvProductResults').innerHTML = '<label for="hvReview">Workbook row to match manually (optional)</label>'+
+            '<select id="hvReview">'+option('','None')+review.map(x=>option(x.sku,x.sku+' · '+x.name+' · '+x.state)).join('')+
+            '</select>'+table(['SKU','Product','Barcode','Status','Action'],products.map(p=>'<tr>'+
+                [p.sku,p.product_name,p.master_barcode,p.active===null?'—':p.active?'Active':'Inactive'].map(cell).join('')+
+                '<td><button type="button" data-hv-id="'+e(p.product_id)+'" data-hv-active="'+String(!p.active)+'">'+
+                (p.active?'Set inactive':'Set active')+'</button></td></tr>'))+
+            (products.length?'':'<p>No products found. Search by stock number, barcode, or description.</p>');
+        if (review.some(x=>x.sku===previousReview)) el('hvReview').value = previousReview;
+        for (const button of el('hvProductResults').querySelectorAll('[data-hv-id]')) {
+            button.onclick = () => {
+                button.disabled = true;
+                run(async now=>{
+                    try {
+                        const seedSku = el('hvReview').value;
+                        await write('/products/'+encodeURIComponent(button.dataset.hvId),'PUT',
+                            {active:button.dataset.hvActive==='true'||Boolean(seedSku),seed_sku:seedSku||undefined});
+                        if(now()) await searchProducts(now);
+                        return 'Product status saved.';
+                    } finally { button.disabled = false; }
+                });
+            };
+        }
+    }
+
+    async function manageProducts(active) {
+        content.innerHTML = '<label for="hvSearch">Search NEMS products</label><input type="search" id="hvSearch">'+
+            '<button type="button" id="hvSearchButton">Search</button> '+
+            '<button type="button" id="hvSeed">Match the 89 workbook items</button><div id="hvProductResults"></div>';
+        bind('hvSearchButton',searchProducts);
+        bind('hvSeed',async now=>{
+            const result = await write('/seed','POST',{});
+            if(now()) await searchProducts(now);
+            return result.matched+' matched, '+result.ambiguous+' ambiguous, '+result.unmatched+' unmatched.';
+        });
+        await searchProducts(active);
+    }
+
+    bind('hvLoad',loadCounts);
+    bind('hvHistory',showHistory);
+    bind('hvCompliance',showCompliance);
+    bind('hvManageStores',manageStores);
+    bind('hvManageProducts',manageProducts);
+    async function enter(active) {
+        content.replaceChildren();
+        if (!currentUser) return;
+        const canManage = editors.includes(currentUser.role);
+        for (const id of ['hvManageStores','hvManageProducts']) el(id).classList.toggle('hidden',!canManage);
+        const current = el('hvStore').value;
+        const today = new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Manila',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+        el('hvDate').max = today;
+        el('hvDate').value ||= today;
+        const stores = await api(root+'/stores');
+        if (!active()) return;
+        el('hvStore').innerHTML = stores.map(s=>option(s.store_id,s.store_name)).join('');
+        if (stores.some(s=>String(s.store_id)===current)) el('hvStore').value = current;
+        return loadCounts(active);
+    }
+
+    for (const id of ['hvStore','hvDate','hvShift']) el(id).onchange = () => run(loadCounts);
+    const previousShowPage = showPage;
+    showPage = function(name) {
+        previousShowPage(name);
+        if (name==='highvalue') run(enter);
+        else { request++; content.replaceChildren(); }
+    };
+})();
+
 // Run after every feature has registered its page and navigation handlers.
 (async function nemsRestoreSession() {
     if (nemsRecoveryAccessToken || /(?:^|[?#&])(access_token|code|error)=/.test(location.hash + location.search)) return;
@@ -5271,7 +5505,7 @@ nemsMeetingSetup();
             throw new Error('Cannot reconnect right now. Check your connection and refresh to retry.');
         }
         const user = await response.json();
-        if (!user?.email || !['STORE','ADMIN','HEAD','AS','AOM'].includes(user.role)) { logout(); throw new Error('Please log in again.'); }
+        if (!user?.email || !['STORE','ADMIN','HEAD','AS','AOM','IC','OPC'].includes(user.role)) { logout(); throw new Error('Please log in again.'); }
         nemsStartSession(saved.token, user, page || 'dashboard');
     } catch (error) {
         token = ''; currentUser = null;

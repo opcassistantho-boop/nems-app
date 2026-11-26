@@ -85,6 +85,8 @@ const VALID_ROLES = [
     'AS',
     'AOM',
     'HEAD',
+    'IC',
+    'OPC',
     'ADMIN'
 ];
  
@@ -2326,6 +2328,7 @@ app.post('/api/messages/:storeId/read',authenticate,secureRoute(async(req,res)=>
 }));
 // Notifications remain visible only while the recipient retains access to the source store.
 const notificationAccess=`(
+    (n.reference_type='HIGH_VALUE') OR
     (n.reference_type='TASK' AND EXISTS(SELECT 1 FROM public.nems_task_assignments a JOIN public.stores s ON s.store_id=a.store_id WHERE a.assignment_id=n.reference_id AND SCOPE)) OR
     (n.reference_type='REPORT' AND EXISTS(SELECT 1 FROM public.nems_expired_status_reports s WHERE s.report_id=n.reference_id AND SCOPE)) OR
     (n.reference_type='MESSAGE' AND EXISTS(SELECT 1 FROM public.nems_messages m JOIN public.nems_conversations c ON c.conversation_id=m.conversation_id JOIN public.stores s ON s.store_id=c.store_id WHERE m.message_id=n.reference_id AND SCOPE))
@@ -3071,6 +3074,8 @@ app.get('/api/exports/:id/download',authenticate,secureRoute(async(req,res)=>{
     res.set({'Content-Type':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','Content-Disposition':'attachment; filename="NEMS_Monitoring.xlsx"','Cache-Control':'no-store'});res.send(j.buffer);
 }));
 
+const highValue = require('./nems-high-value')({app,pool,authenticate,secureRoute,transaction,appError,accessibleStores,businessDate,notify});
+
 app.use((error,req,res,next)=>{
     if(error.type==='entity.too.large')return sendError(res,413,'Request exceeds the 6 MB limit');
     if(error instanceof SyntaxError&&error.status===400)return sendError(res,400,'Invalid JSON request');
@@ -3086,7 +3091,10 @@ const PORT = Number(
  
 async function startServer() {
     if (localAuth) await localAuth.initialize();
-    if (process.env.NEMS_DISABLE_BACKGROUND_JOBS !== 'true') setImmediate(() => void meetingReports.tick());
+    if (process.env.NEMS_DISABLE_BACKGROUND_JOBS !== 'true') {
+        setImmediate(() => void meetingReports.tick());
+        highValue.start();
+    }
     app.listen(PORT, '0.0.0.0', () => console.log(`NEMS listening on ${PORT}`));
 }
 

@@ -1,0 +1,447 @@
+[
+  {
+    "sku": "10004",
+    "barcode": "8410028900091",
+    "name": "ALFONSO 1 LIGHT 1LITER"
+  },
+  {
+    "sku": "10007",
+    "barcode": "8410028900077",
+    "name": "ALFONSO 1 LIGHT 70CL"
+  },
+  {
+    "sku": "10002",
+    "barcode": "8410028225101",
+    "name": "ALFONSO 1 SOLERA 1 LITER -FD"
+  },
+  {
+    "sku": "10005",
+    "barcode": "8410028225705",
+    "name": "ALFONSO 1 SOLERA 70CL -FD"
+  },
+  {
+    "sku": "10760",
+    "barcode": "8410028901210",
+    "name": "ALFONSO PLATINUM 1000ML"
+  },
+  {
+    "sku": "11447",
+    "barcode": "8410028904518",
+    "name": "ALFONSO SHERRY OAK CASK BRANDY 1L"
+  },
+  {
+    "sku": "11449",
+    "barcode": "8410028904792",
+    "name": "ALFONSO SHERRY OAK CASK BRANDY TRIPACK 1L"
+  },
+  {
+    "sku": "11448",
+    "barcode": "8410028904891",
+    "name": "ALFONSO SHERRY OAK CASK BRANDY TWINPACK 1L"
+  },
+  {
+    "sku": "11288",
+    "barcode": "4800142119631",
+    "name": "EMPERADOR CLVB DE SAN BRUNO 750ML"
+  },
+  {
+    "sku": "11204",
+    "barcode": "4800142118290",
+    "name": "EMPERADOR DOUBLE LIGHT 1L"
+  },
+  {
+    "sku": "11203",
+    "barcode": "4800142118283",
+    "name": "EMPERADOR DOUBLE LIGHT 750ML"
+  },
+  {
+    "sku": "11202",
+    "barcode": "4800142110102",
+    "name": "EMPERADOR LIGHT 1L"
+  },
+  {
+    "sku": "10616",
+    "barcode": "4800142110089",
+    "name": "EMPERADOR LIGHT 750 ML"
+  },
+  {
+    "sku": "11076",
+    "barcode": "1056664",
+    "name": "EMPERADOR LIGHT 750ML WITH FREE CHASER"
+  },
+  {
+    "sku": "11208",
+    "barcode": "8410162480008",
+    "name": "FUNDADOR SUPER SPECIAL 1L -S"
+  },
+  {
+    "sku": "11462",
+    "barcode": "4800142904237",
+    "name": "FUNDADOR SUPER SPECIAL 1L PROMO PCK SAVE P100"
+  },
+  {
+    "sku": "10762",
+    "barcode": "4802306687116",
+    "name": "GILBEYS GIN 1L -FD"
+  },
+  {
+    "sku": "10761",
+    "barcode": "4802306685365",
+    "name": "GILBEYS GIN 350ML -FD"
+  },
+  {
+    "sku": "11474",
+    "barcode": "4800130100030",
+    "name": "GINEBRA FRASQUITO 350ML"
+  },
+  {
+    "sku": "10617",
+    "barcode": "4800130728128",
+    "name": "GINEBRA SAN MIGUEL MOJITO LONG NECK 700 ML"
+  },
+  {
+    "sku": "10828",
+    "barcode": "4800130100016",
+    "name": "GINEBRA SAN MIGUEL RED FRASCO 700 ML"
+  },
+  {
+    "sku": "10829",
+    "barcode": "4806518687179",
+    "name": "GINEBRA SAN MIGUEL RED HARI 1000 ML"
+  },
+  {
+    "sku": "10615",
+    "barcode": "4800130100023",
+    "name": "GINEBRA SAN MIGUEL ROUND BILOG 350ML"
+  },
+  {
+    "sku": "10830",
+    "barcode": "4800130315168",
+    "name": "GSM BLUE MOJITO COOLITRO 1000 ML"
+  },
+  {
+    "sku": "11207",
+    "barcode": "4800142123010",
+    "name": "SONICE GREEN GRAPES 360ML"
+  },
+  {
+    "sku": "11206",
+    "barcode": "4800142123065",
+    "name": "SONICE PINK GRAPE FRUIT 360ML"
+  },
+  {
+    "sku": "10622",
+    "barcode": "4801032211077",
+    "name": "RED HORSE BTL 500 ML"
+  },
+  {
+    "sku": "10623",
+    "barcode": "4801032211138",
+    "name": "RED HORSE BTL LITRO"
+  },
+  {
+    "sku": "11536",
+    "barcode": "98426104709",
+    "name": "WHITE CASTLE LIGHT WHISKY 700ML"
+  },
+  {
+    "sku": "11537",
+    "barcode": "98426701755",
+    "name": "MARIA CLARA SANGRIA 750ML"
+  },
+  {
+    "sku": "11538",
+    "barcode": "98426727755",
+    "name": "MARIA CLARA VIRGIN SANGRIA 750ML"
+  },
+  {
+    "sku": "11539",
+    "barcode": "98426700338",
+    "name": "MARIA CLARA SPARKLING SANGRIA 330ML"
+  },
+  {
+    "sku": "11540",
+    "barcode": "98426801752",
+    "name": "EL HOMBRE TEQUILA FLAVORED SPIRIT SILVER 700ML"
+  },
+  {
+    "sku": "11541",
+    "barcode": "98426801707",
+    "name": "EL HOMBRE TEQUILA FLAVORED SPIRIT GOLD 700ML"
+  },
+  {
+    "sku": "10621",
+    "barcode": "4801032281049",
+    "name": "SAN MIGUEL BEER APPLE BTL 330 ML"
+  },
+  {
+    "sku": "10620",
+    "barcode": "4801032741048",
+    "name": "SAN MIGUEL BEER LIGHT BTL 330 ML"
+  },
+  {
+    "sku": "10618",
+    "barcode": "4801032111025",
+    "name": "SAN MIGUEL BEER PALE PILSEN 320ML"
+  },
+  {
+    "sku": "10619",
+    "barcode": "4801032111131",
+    "name": "SAN MIGUEL BEER PALE PILSEN GRANDE 1L"
+  },
+  {
+    "sku": "11205",
+    "barcode": "4800142116111",
+    "name": "SMIRNOFF MULE 330ML"
+  },
+  {
+    "sku": "11237",
+    "barcode": "4806523995481",
+    "name": "BLUE JASMINE 5KG"
+  },
+  {
+    "sku": "11068",
+    "barcode": "1106811",
+    "name": "CI RICE NUEVA FIESTA SINANDOMENG 1KG"
+  },
+  {
+    "sku": "11073",
+    "barcode": "4806523995634",
+    "name": "CI RICE NUEVA FIESTA SINANDOMENG 25KG"
+  },
+  {
+    "sku": "11067",
+    "barcode": "4806523997416",
+    "name": "CI RICE NUEVA FIESTA SINANDOMENG 5KG"
+  },
+  {
+    "sku": "10851",
+    "barcode": "928330",
+    "name": "LIKHA  SPECIAL RICE 25KG"
+  },
+  {
+    "sku": "11002",
+    "barcode": "1100211",
+    "name": "LIKHA SPECIAL RICE 5KG"
+  },
+  {
+    "sku": "10020",
+    "barcode": "8997035600027",
+    "name": "POCARI SWEAT ION DRINK (PET) 500 ML"
+  },
+  {
+    "sku": "10021",
+    "barcode": "8997035600010",
+    "name": "POCARI SWEAT ION DRINK (PET) 350 ML"
+  },
+  {
+    "sku": "10018",
+    "barcode": "4803925350054",
+    "name": "GATORADE BLUE BOLT 350ML"
+  },
+  {
+    "sku": "11024",
+    "barcode": "4800611112880",
+    "name": "COBRA ENERGY DRINK BERRY BLAST 350ML"
+  },
+  {
+    "sku": "11021",
+    "barcode": "8851028000945",
+    "name": "VITAMILK SOY MILK DRINK ORIGINAL  300ML"
+  },
+  {
+    "sku": "10016",
+    "barcode": "4800611546760",
+    "name": "COBRA ENERGY DRINK 350ML"
+  },
+  {
+    "sku": "10019",
+    "barcode": "4803925061141",
+    "name": "GATORADE BLUE BOLT 500ML"
+  },
+  {
+    "sku": "11022",
+    "barcode": "8851028002505",
+    "name": "VITAMILK SOY MILK DRINK DOUBLE CHOCO  300ML"
+  },
+  {
+    "sku": "10017",
+    "barcode": "4803925033551",
+    "name": "STING REGULAR STRAWBERRY 290ML"
+  },
+  {
+    "sku": "10011",
+    "barcode": "4800016052057",
+    "name": "C2 GREEN TEA LEMON 335ML"
+  },
+  {
+    "sku": "10010",
+    "barcode": "4800016052040",
+    "name": "C2 GREEN TEA APPLE 335ML"
+  },
+  {
+    "sku": "10008",
+    "barcode": "4800016068010",
+    "name": "C2 APPLE SOLO 230ML"
+  },
+  {
+    "sku": "10009",
+    "barcode": "4800016068195",
+    "name": "C2 LEMON SOLO 230ML"
+  },
+  {
+    "sku": "11031",
+    "barcode": "4803925151125",
+    "name": "SEVEN-UP 1.5L"
+  },
+  {
+    "sku": "11029",
+    "barcode": "4803925151101",
+    "name": "PEPSI 1.5L"
+  },
+  {
+    "sku": "11030",
+    "barcode": "4803925151149",
+    "name": "MOUNTAIN DEW 1.5L"
+  },
+  {
+    "sku": "10013",
+    "barcode": "4803925130311",
+    "name": "PEPSI REGULAR 290ML"
+  },
+  {
+    "sku": "10015",
+    "barcode": "4803925130328",
+    "name": "MOUNTAIN DEW 290ML"
+  },
+  {
+    "sku": "10624",
+    "barcode": "4801981116072",
+    "name": "COCA-COLA COKE 1.5L"
+  },
+  {
+    "sku": "10625",
+    "barcode": "4801981116171",
+    "name": "ROYAL TRU ORANGE 1.5L"
+  },
+  {
+    "sku": "10626",
+    "barcode": "4801981116270",
+    "name": "SPRITE 1.5L"
+  },
+  {
+    "sku": "10627",
+    "barcode": "4801981118502",
+    "name": "COKE MISMO 290ML"
+  },
+  {
+    "sku": "10628",
+    "barcode": "4801981118519",
+    "name": "ROYAL MISMO 250ML"
+  },
+  {
+    "sku": "10629",
+    "barcode": "4801981118601",
+    "name": "SPRITE MISMO 290ML"
+  },
+  {
+    "sku": "11045",
+    "barcode": "48044301",
+    "name": "MARLBORO LIGHT 20S"
+  },
+  {
+    "sku": "11046",
+    "barcode": "95509433",
+    "name": "MARLBORO BLACK 20S"
+  },
+  {
+    "sku": "11047",
+    "barcode": "48042772",
+    "name": "MARLBORO ICE BLAST 20S"
+  },
+  {
+    "sku": "11048",
+    "barcode": "48043823",
+    "name": "MARLBORO FUSION PURPLE 20S"
+  },
+  {
+    "sku": "11049",
+    "barcode": "48044318",
+    "name": "MARLBORO CRAFTED RED"
+  },
+  {
+    "sku": "11050",
+    "barcode": "48044394",
+    "name": "MARLBORO CRAFTED ICE"
+  },
+  {
+    "sku": "11051",
+    "barcode": "48043441",
+    "name": "FORTUNE BLUE"
+  },
+  {
+    "sku": "11052",
+    "barcode": "48043717",
+    "name": "FORTUNE MENTHOL"
+  },
+  {
+    "sku": "11053",
+    "barcode": "48044172",
+    "name": "CHESTERFIELD MENTHOL"
+  },
+  {
+    "sku": "11054",
+    "barcode": "48044226",
+    "name": "CHESTERFIELD REMIX COOL"
+  },
+  {
+    "sku": "11055",
+    "barcode": "48044165",
+    "name": "CHESTERFIELD RED"
+  },
+  {
+    "sku": "11044",
+    "barcode": "48044295",
+    "name": "MARLBORO RED 20S"
+  },
+  {
+    "sku": "10360",
+    "barcode": "40329055",
+    "name": "CAMEL YELLOW"
+  },
+  {
+    "sku": "10361",
+    "barcode": "4032900155975",
+    "name": "CAMEL ACTIVATE MAX"
+  },
+  {
+    "sku": "10362",
+    "barcode": "48041812",
+    "name": "MIGHTY MENTHOL"
+  },
+  {
+    "sku": "10363",
+    "barcode": "48039871",
+    "name": "WINSTON BLUE"
+  },
+  {
+    "sku": "10364",
+    "barcode": "48040594",
+    "name": "WINSTON RED"
+  },
+  {
+    "sku": "10365",
+    "barcode": "4032900145211",
+    "name": "MIGHTY MAX COOL"
+  },
+  {
+    "sku": "10366",
+    "barcode": "88402048",
+    "name": "WINSTON BURST"
+  },
+  {
+    "sku": "10367",
+    "barcode": "40329086",
+    "name": "CAMEL BLUE"
+  }
+]

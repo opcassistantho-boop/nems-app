@@ -12,7 +12,7 @@ module.exports = function registerUserRoutes({ app, pool, authenticate, adminOnl
  
     const base = (process.env.SUPABASE_URL || '').replace(/\/$/, '');
  
-    const roles = new Set(['ADMIN', 'HEAD', 'AOM', 'AS', 'STORE']);
+    const roles = new Set(['ADMIN', 'HEAD', 'AOM', 'AS', 'STORE', 'IC', 'OPC']);
  
     const fail = (res, code, message) => res.status(code).json({ error: message });
  
