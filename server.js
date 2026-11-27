@@ -2711,8 +2711,9 @@ app.post('/api/admin/import/preview',authenticate,adminOnly,secureRoute(async(re
     const resolutions=req.body.resolutions||{};
     if(typeof resolutions!=='object'||Array.isArray(resolutions))throw appError(400,'Invalid row selections');
     for(let i=1;i<cells.length;i++){
+        let supplied;
         try{
-        const supplied=collectImportValues(headers,cells[i],type);
+        supplied=collectImportValues(headers,cells[i],type);
         for(const f of ['sku','master_barcode'])if(supplied[f]!==null&&supplied[f]!==undefined&&typeof supplied[f]!=='string')
             throw appError(400,`Row ${i+1}: ${f} must be stored as text in Excel to preserve leading zeroes`);
         const warnings=[];
@@ -2721,6 +2722,10 @@ app.post('/api/admin/import/preview',authenticate,adminOnly,secureRoute(async(re
         for(const f of fields)if(Object.hasOwn(supplied,f)){
             if(f==='master_barcode'&&scientificBarcode)continue;
             let value=supplied[f];
+            if(type==='PRODUCTS'&&f==='status'){
+                const status=String(value??'').trim().toUpperCase();
+                if(status==='A'||status==='I')value=status==='A'?'ACTIVE':'INACTIVE';
+            }
             // Existing products retain their registered supplier even if this cell is blank.
             if(type==='PRODUCTS'&&f==='supplier_name'&&!String(value??'').trim())continue;
             if(['master_srp','landed_cost'].includes(f)&&value!==null&&value!==''){
@@ -2810,7 +2815,7 @@ app.post('/api/admin/import/preview',authenticate,adminOnly,secureRoute(async(re
         }catch(error){
             // Validation is read-only. Report every affected row; never issue a commit token for partial data.
             if(![400,409].includes(error.status)&&![400,409].includes(error.statusCode))throw error;
-            errors.push({row:i+1,sku:String(supplied.sku??''),product_name:String(supplied.product_name??''),supplier_name:String(supplied.supplier_name??''),message:error.message});
+            errors.push({row:i+1,sku:String(supplied?.sku??cells[i][headers.indexOf('sku')]??''),product_name:String(supplied?.product_name??cells[i][headers.indexOf('product_name')]??''),supplier_name:String(supplied?.supplier_name??cells[i][headers.indexOf('supplier_name')]??''),message:error.message});
         }
     }
     if(conflicts.length||errors.length)return res.json({requires_resolution:true,conflicts,errors,total_rows:cells.length-1,valid_rows:changes.length,
