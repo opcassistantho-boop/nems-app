@@ -2676,6 +2676,10 @@ function canonicalImportValue(field,value) {
 function importProductIdentity(row) {
     return [row.sku,row.supplier_name,row.product_name].map(v=>String(v??'').trim().toLowerCase()).join('\u0000');
 }
+function importBarcodeDigits(value) {
+    const text=String(value??'').trim();
+    return /^\d+$/.test(text)?text.replace(/^0+(?=\d)/,''):'';
+}
 function importScientificBarcode(value) {
     return typeof value==='string' && /^[+-]?\d+(?:\.\d+)?[eE][+-]?\d+$/.test(value.trim());
 }
@@ -2753,11 +2757,16 @@ app.post('/api/admin/import/preview',authenticate,adminOnly,secureRoute(async(re
             const barcode=scientificBarcode?'':String(values.master_barcode||'').trim();
             const exact=barcode?skuMatches.filter(r=>String(r.master_barcode||'').trim()===barcode||barcodes.some(b=>Number(b.product_id)===Number(r.product_id)&&String(b.barcode).trim()===barcode)):[];
             const named=skuMatches.filter(r=>norm(r.product_name)===norm(values.product_name)&&(!values.supplier_name||norm(r.supplier_name)===norm(values.supplier_name)));
-            let candidates=exact.length?exact:named.length?named:skuMatches;
+            const digits=importBarcodeDigits(barcode);
+            const padded=(!exact.length&&digits)?skuMatches.filter(r=>
+                importBarcodeDigits(r.master_barcode)===digits||
+                barcodes.some(b=>Number(b.product_id)===Number(r.product_id)&&importBarcodeDigits(b.barcode)===digits)
+            ):[];
+            let candidates=exact.length?exact:padded.length?padded:named.length?named:skuMatches;
             const selection=resolutions[String(i+1)];
             if(selection!==undefined){
                 if(selection==='NEW'){
-                    if(!barcode||exact.length)throw appError(409,`Row ${i+1}: A new pack needs a unique exact barcode`);
+                    if(!barcode||exact.length||padded.length)throw appError(409,`Row ${i+1}: A new pack needs a unique exact barcode`);
                     warnings.push('New product/pack explicitly selected in preview.');
                 }else{
                     const id=validId(selection);current=candidates.find(r=>Number(r.product_id)===id);
@@ -2765,10 +2774,11 @@ app.post('/api/admin/import/preview',authenticate,adminOnly,secureRoute(async(re
                     warnings.push(`Existing product #${current.product_id} explicitly selected in preview.`);
                 }
             }else if(exact.length===1)current=exact[0];
+            else if(padded.length===1)current=padded[0];
             else if(!barcode&&!exact.length&&named.length===1)current=named[0];
             else if(candidates.length){
                 conflicts.push({row:i+1,sku:values.sku,product_name:values.product_name,barcode:supplied.master_barcode,
-                    allow_new:!!barcode&&!exact.length,
+                    allow_new:!!barcode&&!exact.length&&!padded.length,
                     candidates:candidates.map(r=>({product_id:r.product_id,product_name:r.product_name,supplier_name:r.supplier_name,master_barcode:r.master_barcode,landed_cost:r.landed_cost}))});
                 continue;
             }
@@ -2781,6 +2791,15 @@ app.post('/api/admin/import/preview',authenticate,adminOnly,secureRoute(async(re
         if(type==='PRODUCTS'&&current){
             if(Object.hasOwn(values,'supplier_name')&&values.supplier_name!==current.supplier_name)warnings.push(`Supplier preserved: ${current.supplier_name}. Uploaded supplier was ${values.supplier_name||'blank'}.`);
             values.supplier_name=current.supplier_name;
+            const uploadedDigits=importBarcodeDigits(values.master_barcode);
+            const paddedMaster=uploadedDigits&&uploadedDigits===importBarcodeDigits(current.master_barcode)&&
+                String(values.master_barcode).trim()!==String(current.master_barcode).trim();
+            const paddedAlias=uploadedDigits&&barcodes.some(b=>Number(b.product_id)===Number(current.product_id)&&
+                uploadedDigits===importBarcodeDigits(b.barcode)&&String(values.master_barcode).trim()!==String(b.barcode).trim());
+            if(paddedMaster||paddedAlias){
+                warnings.push('Barcode differs only by leading zeroes; existing master barcode preserved.');
+                delete values.master_barcode;
+            }
             // A registered alternative barcode identifies the product but must not replace its master barcode.
             if(values.master_barcode&&values.master_barcode!==current.master_barcode&&barcodes.some(b=>Number(b.product_id)===Number(current.product_id)&&b.barcode===values.master_barcode)){
                 warnings.push('Registered alternative barcode matched; existing master barcode preserved.');
