@@ -5399,27 +5399,24 @@ nemsMeetingSetup();
             const input = el(id);
             if (input && countsPanel.contains(input)) input.value = value;
         }
-        if (data.canExport) bindDialog('hvExport','Download Excel',()=>async()=>{
-            content.innerHTML = '<p>'+e(data.store.store_name)+' · '+e(params.get('date'))+'</p>'+
-                '<button type="button" id="hvDownloadFile">Download '+(selection==='BOTH'?'Opening + Closing':shiftLabels[selection])+' counts</button>';
-            bind('hvDownloadFile',()=>downloadCounts(params,selection));
-        });
+        if (data.canExport) bind('hvExport',()=>downloadCounts(params,'BOTH'));
         if (data.canImport) bindDialog('hvUpload','Upload System Excel',()=>async()=>{
             content.innerHTML = '<p>'+e(data.store.store_name)+' · '+e(params.get('date'))+'</p>'+
                 '<label for="hvUploadShift">Upload shift</label><select id="hvUploadShift">'+
                 option('OPENING','Opening')+option('CLOSING','Closing')+'</select>'+
                 '<button type="button" id="hvTemplateDownload">Download import template</button>'+
                 '<label for="hvSystemFile">Excel file</label><input type="file" id="hvSystemFile" accept=".xlsx,.xls">'+
-                '<button type="button" id="hvPreviewImport">Preview Excel</button><div id="hvImportPreview"></div>';
+                '<div id="hvImportPreview"></div>';
             const shiftField = el('hvUploadShift');
             shiftField.value = selection==='BOTH'?'OPENING':selection;
-            for (const field of [shiftField,el('hvSystemFile')]) field.onchange = ()=>{
+            const fileField = el('hvSystemFile');
+            for (const field of [shiftField,fileField]) field.onchange = ()=>{
                 request++;
                 el('hvDialogStatus').textContent = '';
                 el('hvImportPreview').replaceChildren();
+                if (fileField.files.length) run(now=>previewSystemFile(params,shiftField.value,now));
             };
             bind('hvTemplateDownload',()=>downloadCounts(params,shiftField.value,true));
-            bind('hvPreviewImport',now=>previewSystemFile(params,shiftField.value,now));
         });
         if (edit) for (const shift of shown) bind('hvSave'+shift,async now=>{
             const counts = [...countsPanel.querySelectorAll('[data-hv-product][data-hv-shift="'+shift+'"]')]
@@ -5533,7 +5530,7 @@ nemsMeetingSetup();
             (result.issues.length?'<ul>'+result.issues.map(issue=>'<li>'+e(issue)+'</li>').join('')+'</ul>':'')+
             table(['Stock #','Barcode','Description','On-hand (Pcs)'],result.counts.map(row=>
                 '<tr>'+[row.sku,row.master_barcode,row.product_name,row.value].map(cell).join('')+'</tr>'))+
-            (result.counts.length?'<button type="button" id="hvApplyImport'+shift+'">Confirm and save '+e(shift.toLowerCase())+' System counts</button>':'');
+            (result.counts.length?'<button type="button" id="hvApplyImport'+shift+'">Confirm import · '+e(shift.toLowerCase())+' System counts</button>':'');
         if (result.counts.length) bind('hvApplyImport'+shift,async now=>{
             const saved = await write('/import-system','POST',{...request,confirm:true,import_key:importKey,
                 preview_counts:result.counts.map(row=>[String(row.product_id),row.value])});
