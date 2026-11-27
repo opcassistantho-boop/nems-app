@@ -2636,8 +2636,24 @@ if (process.env.NEMS_DISABLE_BACKGROUND_JOBS !== 'true') {
 // Separate Products/Suppliers imports: preview first, then an owner-bound one-use confirmation.
 const importPreviews=new Map();
 const IMPORT_FIELDS={PRODUCTS:['sku','product_name','master_barcode','master_srp','supplier_name','condition','remarks','category','status','shelf_life','landed_cost','store_task_visible'],SUPPLIERS:['supplier_name','status']};
-const IMPORT_ALIASES={'product id':'product_id','supplier id':'supplier_id','product name':'product_name','short description':'product_name','description':'product_name','barcode':'master_barcode','master barcode':'master_barcode','srp':'master_srp','retail price':'master_srp','master srp':'master_srp','supplier':'supplier_name','supplier name':'supplier_name','landed cost':'landed_cost','shelf life':'shelf_life','store task visible':'store_task_visible'};
-const normalizeImportHeader=v=>{const h=String(v).trim().toLowerCase().replaceAll('_',' ').replace(/\s+/g,' ');return IMPORT_ALIASES[h]||h.replaceAll(' ','_');};
+const IMPORT_ALIASES={'product id':'product_id','supplier id':'supplier_id','stock no':'sku','stockno':'sku','stock number':'sku','stock #':'sku','short name':'product_name','shortname':'product_name','product name':'product_name','short description':'product_name','description':'product_name','barcode':'master_barcode','master barcode':'master_barcode','srp':'master_srp','retail price':'master_srp','master srp':'master_srp','supplier':'supplier_name','supplier name':'supplier_name','landed cost':'landed_cost','shelf life':'shelf_life','store task visible':'store_task_visible'};
+const normalizeImportHeader=v=>{const h=String(v).trim().toLowerCase().replaceAll('_',' ').replace(/\.$/,'').replace(/\s+/g,' ');return IMPORT_ALIASES[h]||h.replaceAll(' ','_');};
+function collectImportValues(headers,row,type) {
+    const supplied={};
+    for (const [index,field] of headers.entries()) {
+        const value=row[index];
+        if (type==='PRODUCTS'&&Object.hasOwn(supplied,field)&&['sku','product_name'].includes(field)) {
+            const previous=String(supplied[field]??'').trim();
+            const incoming=String(value??'').trim();
+            if (previous&&incoming&&previous!==incoming) {
+                throw appError(400,field+' columns contain different values');
+            }
+            if (!incoming || previous) continue;
+        }
+        supplied[field]=value;
+    }
+    return supplied;
+}
 function canonicalImportValue(field,value) {
     if(['master_srp','landed_cost'].includes(field)){
         if(value===null||value===undefined||value==='')return null;
@@ -2684,7 +2700,8 @@ app.post('/api/admin/import/preview',authenticate,adminOnly,secureRoute(async(re
     if(cells.length<2||cells.length>5001)throw appError(400,'Import 1–5000 data rows per file');
     const idField=type==='PRODUCTS'?'product_id':'supplier_id',table=type==='PRODUCTS'?'products':'suppliers';
     const headers=cells[0].map(normalizeImportHeader);
-    if(new Set(headers).size!==headers.length)throw appError(400,'Duplicate column headers');
+    const uniqueHeaders=headers.filter(h=>type!=='PRODUCTS'||!['sku','product_name'].includes(h));
+    if(new Set(uniqueHeaders).size!==uniqueHeaders.length)throw appError(400,'Duplicate column headers');
     const unknown=headers.filter(h=>!fields.includes(h)&&h!==idField);if(unknown.length)throw appError(400,'Unsupported columns: '+unknown.join(', '));
     const source=await pool.query(`SELECT * FROM public.${table} ORDER BY ${idField}`);
     const supplierRows=(await pool.query('SELECT * FROM public.suppliers ORDER BY supplier_id')).rows;
@@ -2694,8 +2711,8 @@ app.post('/api/admin/import/preview',authenticate,adminOnly,secureRoute(async(re
     const resolutions=req.body.resolutions||{};
     if(typeof resolutions!=='object'||Array.isArray(resolutions))throw appError(400,'Invalid row selections');
     for(let i=1;i<cells.length;i++){
-        const supplied=Object.fromEntries(headers.map((h,j)=>[h,cells[i][j]]));
         try{
+        const supplied=collectImportValues(headers,cells[i],type);
         for(const f of ['sku','master_barcode'])if(supplied[f]!==null&&supplied[f]!==undefined&&typeof supplied[f]!=='string')
             throw appError(400,`Row ${i+1}: ${f} must be stored as text in Excel to preserve leading zeroes`);
         const warnings=[];
