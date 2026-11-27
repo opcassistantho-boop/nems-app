@@ -166,22 +166,41 @@ module.exports = function register({app,pool,authenticate,secureRoute,transactio
     route('post','/seed',async(req,res)=>{
         requireEditor(req.user);
         await transaction(async c=>{
-            await c.query(`WITH source AS (
+            const added = await c.query(`WITH source AS (
                 SELECT * FROM jsonb_to_recordset($1::jsonb) AS s(sku text,barcode text,name text)
             ), matches AS (
-                SELECT s.sku,COUNT(DISTINCT p.product_id) AS candidates,MIN(p.product_id) AS product_id
+                SELECT s.sku,COUNT(DISTINCT p.product_id) AS candidates,MIN(p.product_id) AS product_id,
+                    COUNT(DISTINCT p.product_id) FILTER (
+                        WHERE trim(p.sku::text)=s.sku AND s.barcode<>'' AND trim(p.master_barcode::text)=s.barcode
+                    ) AS exact_candidates,
+                    MIN(p.product_id) FILTER (
+                        WHERE trim(p.sku::text)=s.sku AND s.barcode<>'' AND trim(p.master_barcode::text)=s.barcode
+                    ) AS exact_product_id
                 FROM source s LEFT JOIN public.products p ON trim(p.sku::text)=s.sku
                     OR (s.barcode<>'' AND trim(p.master_barcode::text)=s.barcode)
                 GROUP BY s.sku
+            ), proposed AS (
+                SELECT sku,candidates,CASE WHEN exact_candidates=1 THEN exact_product_id
+                    WHEN candidates=1 THEN product_id END AS picked
+                FROM matches
+            ), reviewed AS (
+                SELECT p.sku,p.candidates,CASE WHEN NOT EXISTS (
+                    SELECT 1 FROM public.nems_hv_rejections r WHERE r.sku=p.sku AND r.product_id=p.picked
+                ) THEN p.picked END AS picked FROM proposed p
             ), recorded AS (
                 INSERT INTO public.nems_hv_seed(sku,product_id,state)
-                SELECT sku,CASE WHEN candidates=1 THEN product_id END,
-                    CASE candidates WHEN 1 THEN 'MATCHED' WHEN 0 THEN 'UNMATCHED' ELSE 'AMBIGUOUS' END
-                FROM matches ON CONFLICT(sku) DO UPDATE SET product_id=excluded.product_id,state=excluded.state
+                SELECT sku,picked,
+                    CASE WHEN picked IS NOT NULL THEN 'MATCHED' WHEN candidates=0 THEN 'UNMATCHED' ELSE 'AMBIGUOUS' END
+                FROM reviewed ON CONFLICT(sku) DO UPDATE SET product_id=excluded.product_id,state=excluded.state
                     WHERE public.nems_hv_seed.state<>'MATCHED' RETURNING product_id
             )
             INSERT INTO public.nems_hv_products(product_id)
-            SELECT DISTINCT product_id FROM recorded WHERE product_id IS NOT NULL ON CONFLICT DO NOTHING`,[JSON.stringify(seed)]);
+            SELECT DISTINCT product_id FROM recorded WHERE product_id IS NOT NULL ON CONFLICT DO NOTHING
+            RETURNING product_id`,[JSON.stringify(seed)]);
+            if (added.rows.length) await c.query(`INSERT INTO public.nems_hv_days(inventory_date,store_id,product_id)
+                SELECT DISTINCT d.inventory_date,d.store_id,p.product_id FROM public.nems_hv_days d
+                CROSS JOIN unnest($2::bigint[]) p(product_id) WHERE d.inventory_date=$1
+                ON CONFLICT DO NOTHING`,[businessDate(),added.rows.map(row=>row.product_id)]);
         });
         const states = (await pool.query('SELECT state,COUNT(*)::int AS count FROM public.nems_hv_seed GROUP BY state')).rows;
         const totals = Object.fromEntries(states.map(row=>[row.state,row.count]));
