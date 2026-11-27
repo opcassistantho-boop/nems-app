@@ -12,6 +12,7 @@ function column(value) {
 const shifts = ['OPENING', 'CLOSING'];
 const managers = ['AS', 'AOM'];
 const editors = ['ADMIN', 'OPC', 'IC'];
+const transferRoles = [...editors, ...managers];
 const allStores = [...editors, 'HEAD'];
 const storeQuery = `SELECT s.store_id,s.store_name,s.store_email,
     COALESCE(h.status,CASE WHEN s.status='ACTIVE' THEN 'ACTIVE' ELSE 'CLOSED' END) AS inventory_status,
@@ -72,6 +73,23 @@ module.exports = function register({app,pool,authenticate,secureRoute,transactio
         if (!found) throw appError(403,'Store is outside your assignments');
         return found;
     }
+
+    function recordFile(client,user,id,day,shift,action,filename,count,key=null) {
+        return client.query(`INSERT INTO public.nems_hv_file_history
+            (store_id,inventory_date,shift,action,filename,row_count,actor,actor_role,import_key)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,[id,day,shift,action,filename,count,user.email,user.role,key]);
+    }
+
+    route('get','/file-history',async(req,res)=>{
+        requireEditor(req.user);
+        const id = validateId(req.query.store);
+        const day = inventoryDate(req.query.date);
+        await store(pool,req.user,id);
+        const {rows} = await pool.query(`SELECT shift,action,filename,row_count,actor,actor_role,recorded_at
+            FROM public.nems_hv_file_history WHERE store_id=$1 AND inventory_date=$2
+            ORDER BY event_id DESC LIMIT 250`,[id,day]);
+        res.json(rows);
+    });
 
     route('get','/stores',async(req,res)=>res.json(await listStores(pool,req.user)));
 
@@ -204,7 +222,7 @@ module.exports = function register({app,pool,authenticate,secureRoute,transactio
     });
 
     route('post','/import-system',async(req,res)=>{
-        if (!managers.includes(req.user.role)) throw appError(403,'AS or AOM access required');
+        if (!transferRoles.includes(req.user.role)) throw appError(403,'System-count import is unavailable for this role');
         const params = req.body || {};
         const id = validateId(params.store_id);
         const day = inventoryDate(params.date);
@@ -215,8 +233,9 @@ module.exports = function register({app,pool,authenticate,secureRoute,transactio
             WHERE $3 OR EXISTS (SELECT 1 FROM public.nems_hv_days WHERE inventory_date=$1 AND store_id=$2)`,
             [day,id,selected.inventory_status==='ACTIVE']);
         if (!catalog.length) throw appError(409,'No high-value products are available for this store and date');
+        const filename = String(params.filename||'').split(/[\\/]/).pop().trim();
         const data = params.file_base64;
-        if (!/\.xlsx?$/i.test(String(params.filename)) || typeof data!=='string'||data.length>4200000) {
+        if (filename.length>255 || !/\.xlsx?$/i.test(filename) || typeof data!=='string'||data.length>4200000) {
             throw appError(400,'Choose an Excel file (.xlsx or .xls) under 3 MB');
         }
         let sheet;
@@ -263,7 +282,19 @@ module.exports = function register({app,pool,authenticate,secureRoute,transactio
             }
             proposed.set(key,{...product,value:quantity});
         }
-        res.json({counts:[...proposed.values()],issues:issues.slice(0,30),issue_count:issues.length,ignored});
+        const counts = [...proposed.values()];
+        if (params.confirm===true) {
+            if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(params.import_key||'')) {
+                throw appError(400,'Preview the workbook again before saving');
+            }
+            const confirmed = counts.map(row=>[String(row.product_id),row.value]);
+            if (JSON.stringify(confirmed)!==JSON.stringify(params.preview_counts)) {
+                throw appError(409,'The product matches changed. Preview the workbook again.');
+            }
+            await saveCounts(req,{store_id:id,date:day,shift:params.shift,counts},{filename,key:params.import_key});
+            return res.json({saved:true,row_count:counts.length});
+        }
+        res.json({counts,issues:issues.slice(0,30),issue_count:issues.length,ignored});
     });
 
     route('get','/counts',async(req,res)=>{
@@ -286,7 +317,9 @@ module.exports = function register({app,pool,authenticate,secureRoute,transactio
             const shift = req.query.shift;
             if (!shifts.includes(shift)) throw appError(400,'Select Opening or Closing');
             const template = req.query.template==='1';
-            if (template && !managers.includes(req.user.role)) throw appError(403,'AS or AOM access required');
+            if (req.user.role==='HEAD'||(template&&!transferRoles.includes(req.user.role))) {
+                throw appError(403,'This download is unavailable for this role');
+            }
             const rows = result.rows.filter(row=>row.shift===shift);
             const headers = ['Stock #','Barcode','Description','On-hand (Pcs)','Price (SRP)','Actual Cost','Total Price (SRP)'];
             const data = template ? rows.map(row=>[String(row.sku??''),String(row.master_barcode??''),row.product_name,null,null,null,null]) :
@@ -295,19 +328,22 @@ module.exports = function register({app,pool,authenticate,secureRoute,transactio
             const heading = template?headers:['Stock #','Barcode','Description','Counted by','Actual (Pcs)',...(showSystem?['System (Pcs)']:[]),'Variance'];
             const workbook = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(workbook,XLSX.utils.aoa_to_sheet([heading,...data]),shift);
+            const filename = 'NEMS_'+(template?'System_Template':'Counts')+'_'+day+'_'+shift+'.xlsx';
+            const buffer = XLSX.write(workbook,{type:'buffer',bookType:'xlsx'});
+            await recordFile(pool,req.user,id,day,shift,template?'TEMPLATE':'EXPORT',filename,rows.length);
             res.set({'Content-Type':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                'Content-Disposition':'attachment; filename="NEMS_'+(template?'System_Template':'Counts')+'_'+day+'_'+shift+'.xlsx"'});
-            return res.send(XLSX.write(workbook,{type:'buffer',bookType:'xlsx'}));
+                'Content-Disposition':'attachment; filename="'+filename+'"'});
+            return res.send(buffer);
         }
-        res.json({rows:result.rows,showSystem,canEdit:!showSystem||managers.includes(req.user.role),canSave:result.rowCount>0,store:selected});
+        res.json({rows:result.rows,showSystem,canEdit:!showSystem||managers.includes(req.user.role),canSave:result.rowCount>0,canImport:transferRoles.includes(req.user.role),canExport:req.user.role!=='HEAD',store:selected});
     });
 
-    route('put','/counts',async(req,res)=>{
-        const {store_id,date,shift,counts,counted_by} = req.body || {};
+    async function saveCounts(req,body,imported=null) {
+        const {store_id,date,shift,counts,counted_by} = body || {};
         const id = validateId(store_id);
         const day = inventoryDate(date);
         const actual = req.user.role==='STORE';
-        if (!actual && !managers.includes(req.user.role)) throw appError(403,'Count entry is unavailable for this role');
+        if (!actual && !(imported?transferRoles:managers).includes(req.user.role)) throw appError(403,'Count entry is unavailable for this role');
         const leader = actual ? String(counted_by||'').trim() : null;
         if (!shifts.includes(shift) || !Array.isArray(counts) || !counts.length || counts.length>500 ||
             (actual && (!leader || leader.length>120))) throw appError(400,'Choose a shift and enter counts and the shift leader name where required');
@@ -322,6 +358,12 @@ module.exports = function register({app,pool,authenticate,secureRoute,transactio
         await transaction(async c=>{
             await c.query('SELECT store_id FROM public.stores WHERE store_id=$1 FOR UPDATE',[id]);
             const selected = await store(c,req.user,id);
+            if (imported) {
+                const prior = await c.query(`SELECT 1 FROM public.nems_hv_file_history
+                    WHERE import_key=$1 AND actor=$2 AND store_id=$3 AND inventory_date=$4 AND shift=$5`,
+                    [imported.key,req.user.email,id,day,shift]);
+                if (prior.rowCount) return;
+            }
             const {rows} = await c.query(expectedProducts,[day,id]);
             const existing = await c.query('SELECT 1 FROM public.nems_hv_days WHERE inventory_date=$1 AND store_id=$2 LIMIT 1',[day,id]);
             if (!existing.rowCount && selected.inventory_status!=='ACTIVE') throw appError(409,'This store is outside the active inventory program');
@@ -346,7 +388,12 @@ module.exports = function register({app,pool,authenticate,secureRoute,transactio
             ON CONFLICT(inventory_date,store_id,product_id,shift)
             DO UPDATE SET ${field}=excluded.${field},counted_by=COALESCE(excluded.counted_by,nems_hv_counts.counted_by)`,
             [day,id,shift,req.user.email,JSON.stringify([...values].map(([product_id,value])=>({product_id,value}))),leader]);
+            if (imported) await recordFile(c,req.user,id,day,shift,'IMPORT',imported.filename,values.size,imported.key);
         });
+    }
+
+    route('put','/counts',async(req,res)=>{
+        await saveCounts(req,req.body);
         res.json({saved:true});
     });
 

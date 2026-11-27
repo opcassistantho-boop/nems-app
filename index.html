@@ -5272,6 +5272,7 @@ nemsMeetingSetup();
             <button type="button" id="hvLoad">Load counts</button>
             <button type="button" id="hvCompliance">View compliance</button>
             <button type="button" id="hvHistory">View history</button>
+            <button type="button" id="hvFileHistory" class="hidden">Import / download history</button>
             <button type="button" id="hvManageStores">Manage stores</button>
             <button type="button" id="hvManageProducts">Manage products</button>
             <p id="hvStatus" role="status"></p>
@@ -5344,13 +5345,13 @@ nemsMeetingSetup();
                     '<td>'+(editable&&field==='system_count'?input:e(response.showSystem?row.system_count:'***'))+'</td>'+
                     cell(response.showSystem?row.variance:row.variance_status)+'</tr>';
             }))+(editable?'<button type="button" id="hvSave">Save '+e(shift.toLowerCase())+' counts</button>':'');
-        content.insertAdjacentHTML('afterbegin','<button type="button" id="hvExport">Download counts Excel</button> '+
-            (editable&&field==='system_count'?'<button type="button" id="hvTemplate">Download import template</button>'+
+        content.insertAdjacentHTML('afterbegin',(response.canExport?'<button type="button" id="hvExport">Download counts Excel</button> ':'')+
+            (response.canImport?'<button type="button" id="hvTemplate">Download import template</button>'+
                 '<label for="hvSystemFile">Upload '+e(shift.toLowerCase())+' System counts for '+e(response.store.store_name)+' · '+e(params.get('date'))+'</label>'+
                 '<input type="file" id="hvSystemFile" accept=".xlsx,.xls"> '+
                 '<button type="button" id="hvPreviewImport">Preview Excel</button><div id="hvImportPreview"></div>':''));
-        bind('hvExport',()=>downloadCounts(params,shift));
-        if (editable&&field==='system_count') {
+        if (response.canExport) bind('hvExport',()=>downloadCounts(params,shift));
+        if (response.canImport) {
             bind('hvTemplate',()=>downloadCounts(params,shift,true));
             bind('hvPreviewImport',now=>previewSystemFile(params,shift,now));
         }
@@ -5448,8 +5449,10 @@ nemsMeetingSetup();
             reader.onerror = ()=>reject(Error('Could not read the file.'));
             reader.readAsDataURL(file);
         });
-        const result = await write('/import-system','POST',{store_id:params.get('store'),date:params.get('date'),
-            shift,filename:file.name,file_base64:data});
+        const request = {store_id:params.get('store'),date:params.get('date'),
+            shift,filename:file.name,file_base64:data};
+        const result = await write('/import-system','POST',request);
+        const importKey = crypto.randomUUID();
         if (!active()) return;
         const preview = el('hvImportPreview');
         preview.innerHTML = '<h3>'+e(shift)+' System counts from '+e(file.name)+'</h3><p>'+
@@ -5458,14 +5461,12 @@ nemsMeetingSetup();
             (result.issues.length?'<ul>'+result.issues.map(issue=>'<li>'+e(issue)+'</li>').join('')+'</ul>':'')+
             table(['Stock #','Barcode','Description','On-hand (Pcs)'],result.counts.map(row=>
                 '<tr>'+[row.sku,row.master_barcode,row.product_name,row.value].map(cell).join('')+'</tr>'))+
-            (result.counts.length?'<button type="button" id="hvApplyImport">Load these quantities into System</button>':'');
-        if (result.counts.length) bind('hvApplyImport',async()=>{
-            const quantities = new Map(result.counts.map(row=>[String(row.product_id),row.value]));
-            for (const input of content.querySelectorAll('[data-hv-product]')) {
-                if (quantities.has(input.dataset.hvProduct)) input.value = quantities.get(input.dataset.hvProduct);
-            }
-            preview.replaceChildren();
-            return 'Quantities loaded into '+shift.toLowerCase()+' System. Click Save to record them.';
+            (result.counts.length?'<button type="button" id="hvApplyImport">Confirm and save '+e(shift.toLowerCase())+' System counts</button>':'');
+        if (result.counts.length) bind('hvApplyImport',async now=>{
+            const saved = await write('/import-system','POST',{...request,confirm:true,import_key:importKey,
+                preview_counts:result.counts.map(row=>[String(row.product_id),row.value])});
+            if (now()) await loadCounts(now);
+            return saved.row_count+' System counts imported and recorded in history.';
         });
     }
 
@@ -5549,6 +5550,18 @@ nemsMeetingSetup();
     }
 
     bind('hvLoad',loadCounts);
+    bind('hvFileHistory',async active=>{
+        content.replaceChildren();
+        const params = parameters();
+        const rows = await api(root+'/file-history?'+params);
+        if (!active()) return;
+        const actions = {IMPORT:'System counts imported',EXPORT:'Counts Excel downloaded',TEMPLATE:'Template downloaded'};
+        content.innerHTML = '<h3>Import / download history</h3><p>'+e(el('hvStore').selectedOptions[0]?.textContent)+' · '+
+            e(params.get('date'))+'</p>'+table(['Action','Filename','Shift','Rows','Account','Role','Time (PH)'],
+            rows.map(row=>'<tr>'+[actions[row.action],row.filename,row.shift,row.row_count,row.actor,row.actor_role,
+                new Date(row.recorded_at).toLocaleString('en-PH',{timeZone:'Asia/Manila'})].map(cell).join('')+'</tr>'));
+        if (!rows.length) return 'No imports or downloads recorded for this store and date.';
+    });
     bind('hvHistory',showHistory);
     bind('hvCompliance',showCompliance);
     bind('hvManageStores',manageStores);
@@ -5557,7 +5570,7 @@ nemsMeetingSetup();
         content.replaceChildren();
         if (!currentUser) return;
         const canManage = editors.includes(currentUser.role);
-        for (const id of ['hvManageStores','hvManageProducts']) el(id).classList.toggle('hidden',!canManage);
+        for (const id of ['hvManageStores','hvManageProducts','hvFileHistory']) el(id).classList.toggle('hidden',!canManage);
         const current = el('hvStore').value;
         const today = new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Manila',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
         el('hvDate').max = today;
