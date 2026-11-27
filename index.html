@@ -5267,7 +5267,7 @@ nemsMeetingSetup();
             <div class="grid">
                 <div><label for="hvDate">Inventory date</label><input type="date" id="hvDate"></div>
                 <div><label for="hvStore">Store</label><select id="hvStore"></select></div>
-                <div><label for="hvShift">Shift</label><select id="hvShift"><option>OPENING</option><option>CLOSING</option><option value="BOTH">Opening + Closing</option></select></div>
+                <div><label for="hvShift">Shift</label><select id="hvShift"><option value="BOTH">Opening + Closing</option><option>OPENING</option><option>CLOSING</option></select></div>
             </div>
             <button type="button" id="hvLoad">Load counts</button>
             <button type="button" id="hvCompliance">View compliance</button>
@@ -5288,14 +5288,38 @@ nemsMeetingSetup();
         rows.join('')+'</tbody></table></div>';
     const option = (value,label) => '<option value="'+e(value)+'">'+e(label)+'</option>';
     const editors = ['ADMIN','OPC','IC'];
-    const content = el('hvContent');
-    const status = el('hvStatus');
+
+    const countsPanel = el('hvContent');
+    const pageStatus = el('hvStatus');
+    const dialog = document.createElement('dialog');
+    dialog.setAttribute('aria-labelledby','hvDialogTitle');
+    dialog.style.cssText = 'width:min(1100px,94vw);max-height:88vh;overflow:auto;padding:20px;border:1px solid #c7d2e1;border-radius:12px';
+    dialog.innerHTML = '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px">'+
+        '<h2 id="hvDialogTitle"></h2><form method="dialog"><button type="submit" class="secondary" autofocus>Close</button></form></div>'+
+        '<p id="hvDialogStatus" role="status"></p><div id="hvDialogBody"></div>';
+    page.append(dialog);
+    const content = el('hvDialogBody');
+    function openDialog(title,action) {
+        el('hvDialogTitle').textContent = title;
+        content.replaceChildren();
+        el('hvDialogStatus').textContent = '';
+        dialog.showModal();
+        return action;
+    }
+    let refreshCountsAfterDialog = false;
+    dialog.addEventListener('close',()=>{
+        request++;
+        content.replaceChildren();
+        if (refreshCountsAfterDialog && !page.classList.contains('hidden')) run(active=>loadCounts(active,countDrafts()));
+        refreshCountsAfterDialog = false;
+    });
     let request = 0;
 
     function run(action) {
         const current = ++request;
         const email = currentUser?.email;
         const active = () => current===request && email===currentUser?.email && !page.classList.contains('hidden');
+        const status = dialog.open ? el('hvDialogStatus') : pageStatus;
         status.textContent = 'Loading…';
         Promise.resolve().then(()=>action(active)).then(message=>{
             if(active()) status.textContent = message || '';
@@ -5323,63 +5347,91 @@ nemsMeetingSetup();
         return api(root+path,{method,body:JSON.stringify(data)});
     }
 
-    async function loadCounts(active) {
-        content.replaceChildren();
-        const params = parameters();
-        if (!params.get('store')) return 'Choose a store.';
-        const shift = el('hvShift').value;
-        const response = await api(root+'/counts?'+params);
-        if (!active()) return;
-        const displayedShifts = shift==='BOTH'?['OPENING','CLOSING']:[shift];
-        content.innerHTML = (response.canExport?'<button type="button" id="hvExport">Download counts Excel</button>':'')+
-            displayedShifts.map(name=>'<section id="hvCounts'+name+'"></section>').join('');
-        if (response.canExport) bind('hvExport',()=>downloadCounts(params,shift));
-        for (const name of displayedShifts) {
-            renderShift(el('hvCounts'+name),params,name,response,shift==='BOTH');
-        }
-        if (!response.rows.length) return 'No high-value items for this store and date.';
+
+    const shiftLabels = {OPENING:'Opening',CLOSING:'Closing'};
+    function countDrafts(exceptShift) {
+        return [...countsPanel.querySelectorAll('input[data-hv-shift]')]
+            .filter(input=>input.dataset.hvShift!==exceptShift && input.value!==input.defaultValue)
+            .map(input=>[input.id,input.value]);
     }
 
-    function renderShift(panel,params,shift,response,both) {
-        const id = name => name+shift;
-        const rows = response.rows.filter(row=>row.shift===shift);
-        const field = response.showSystem?'system_count':'actual';
-        const editable = response.canEdit && rows.length>0;
-        const names = [...new Set(rows.map(x=>x.counted_by).filter(Boolean))];
-        const shiftLabel = shift==='OPENING'?'Opening':'Closing';
-        panel.innerHTML = (both?'<h3>'+shiftLabel+'</h3>':'')+
-            (response.canImport?'<button type="button" id="'+id('hvTemplate')+'">Download '+shiftLabel+' import template</button>'+
-                '<label for="'+id('hvSystemFile')+'">Upload '+shiftLabel+' System counts for '+e(response.store.store_name)+' · '+e(params.get('date'))+'</label>'+
-                '<input type="file" id="'+id('hvSystemFile')+'" accept=".xlsx,.xls"> '+
-                '<button type="button" id="'+id('hvPreviewImport')+'">Preview '+shiftLabel+' Excel</button><div id="'+id('hvImportPreview')+'"></div>':'')+
-            (editable&&field==='actual'?'<label for="'+id('hvLeader')+'">'+shiftLabel+' Store Leader / Shift Leader who counted</label>'+
-                '<input id="'+id('hvLeader')+'" maxlength="120" value="'+e(names.length===1?names[0]:'')+'">':'')+
-            (rows.length?table(['SKU','Product','Counted by','Actual','System','Variance'],rows.map(row=>{
-                const input = '<input aria-label="'+e(shiftLabel+' '+row.product_name+' '+field)+'" type="number" min="0" step="1" max="2147483647" data-hv-product="'+
-                    e(row.product_id)+'" value="'+e(row[field])+'">';
-                return '<tr>'+cell(row.sku)+cell(row.product_name)+cell(row.counted_by)+
-                    '<td>'+(editable&&field==='actual'?input:e(row.actual))+'</td>'+
-                    '<td>'+(editable&&field==='system_count'?input:e(response.showSystem?row.system_count:'***'))+'</td>'+
-                    cell(response.showSystem?row.variance:row.variance_status)+'</tr>';
-            })):'')+(editable?'<button type="button" id="'+id('hvSave')+'">Save '+shiftLabel.toLowerCase()+' counts</button>':'');
-        if (response.canImport) {
-            bind(id('hvTemplate'),()=>downloadCounts(params,shift,true));
-            bind(id('hvPreviewImport'),now=>previewSystemFile(params,shift,now));
+    async function loadCounts(active,drafts=[]) {
+        const params = parameters();
+        if (!params.get('store')) {
+            countsPanel.replaceChildren();
+            return 'Choose a store.';
         }
-        if (editable) bind(id('hvSave'),async now=>{
-            const counts = [...panel.querySelectorAll('[data-hv-product]')].filter(input=>input.value!==''&&input.value!==input.defaultValue)
+        const selection = el('hvShift').value;
+        const data = await api(root+'/counts?'+params);
+        if (!active()) return;
+        const shown = selection==='BOTH'?['OPENING','CLOSING']:[selection];
+        const byProduct = new Map();
+        for (const row of data.rows) {
+            if (!byProduct.has(row.product_id)) byProduct.set(row.product_id,{product:row});
+            byProduct.get(row.product_id)[row.shift] = row;
+        }
+        const edit = data.canEdit && byProduct.size>0;
+        const editableField = data.showSystem?'system_count':'actual';
+        function countCell(row,shift,field) {
+            if (field==='system_count'&&!data.showSystem) return cell('***');
+            if (!row || !edit || field!==editableField) return cell(row?.[field]);
+            return '<td><input type="number" min="0" step="1" max="2147483647" style="min-width:5rem" id="hvQty'+shift+e(row.product_id)+
+                '" data-hv-product="'+e(row.product_id)+'" data-hv-shift="'+shift+'" aria-label="'+
+                e(shiftLabels[shift]+' '+field+' for '+row.product_name)+'" value="'+e(row[field])+'"></td>';
+        }
+        const headings = ['Stock #','Barcode','Description',...shown.flatMap(shift=>
+            ['System','Actual','Variance','Counted by'].map(label=>shiftLabels[shift]+' '+label))];
+        const body = [...byProduct.values()].map(row=>'<tr>'+[row.product.sku,row.product.master_barcode,row.product.product_name].map(cell).join('')+
+            shown.map(shift=>countCell(row[shift],shift,'system_count')+countCell(row[shift],shift,'actual')+
+                cell(row[shift]?.[data.showSystem?'variance':'variance_status'])+cell(row[shift]?.counted_by)).join('')+'</tr>');
+        countsPanel.innerHTML = '<div class="row" style="gap:8px;flex-wrap:wrap">'+
+            (data.canImport?'<button type="button" id="hvUpload">Upload System Excel</button>':'')+
+            (data.canExport?'<button type="button" id="hvExport">Download Excel</button>':'')+'</div>'+
+            (edit&&!data.showSystem?'<div class="grid">'+shown.map(shift=>{
+                const names = [...new Set(data.rows.filter(row=>row.shift===shift).map(row=>row.counted_by).filter(Boolean))];
+                return '<div><label for="hvLeader'+shift+'">'+shiftLabels[shift]+' counted by</label><input id="hvLeader'+shift+
+                    '" data-hv-shift="'+shift+'" maxlength="120" value="'+e(names.length===1?names[0]:'')+'"></div>';
+            }).join('')+'</div>':'')+
+            (body.length?table(headings,body):'')+
+            (edit?'<div class="row" style="gap:8px">'+shown.map(shift=>'<button type="button" id="hvSave'+shift+
+                '">Save '+shiftLabels[shift]+' counts</button>').join('')+'</div>':'');
+        for (const [id,value] of drafts) {
+            const input = el(id);
+            if (input && countsPanel.contains(input)) input.value = value;
+        }
+        if (data.canExport) bind('hvExport',()=>downloadCounts(params,'BOTH'));
+        if (data.canImport) bindDialog('hvUpload','Upload System Excel',()=>async()=>{
+            content.innerHTML = '<p>'+e(data.store.store_name)+' · '+e(params.get('date'))+'</p>'+
+                '<label for="hvUploadShift">Upload shift</label><select id="hvUploadShift">'+
+                option('OPENING','Opening')+option('CLOSING','Closing')+'</select>'+
+                '<button type="button" id="hvTemplateDownload">Download import template</button>'+
+                '<label for="hvSystemFile">Excel file</label><input type="file" id="hvSystemFile" accept=".xlsx,.xls">'+
+                '<div id="hvImportPreview"></div>';
+            const shiftField = el('hvUploadShift');
+            shiftField.value = selection==='BOTH'?'OPENING':selection;
+            const fileField = el('hvSystemFile');
+            for (const field of [shiftField,fileField]) field.onchange = ()=>{
+                request++;
+                el('hvDialogStatus').textContent = '';
+                el('hvImportPreview').replaceChildren();
+                if (fileField.files.length) run(now=>previewSystemFile(params,shiftField.value,now));
+            };
+            bind('hvTemplateDownload',()=>downloadCounts(params,shiftField.value,true));
+        });
+        if (edit) for (const shift of shown) bind('hvSave'+shift,async now=>{
+            const counts = [...countsPanel.querySelectorAll('[data-hv-product][data-hv-shift="'+shift+'"]')]
+                .filter(input=>input.value!==''&&input.value!==input.defaultValue)
                 .map(input=>({product_id:input.dataset.hvProduct,value:Number(input.value)}));
             if (!counts.length) return 'Change or enter at least one count.';
-            await write('/counts','PUT',{store_id:params.get('store'),date:params.get('date'),shift,counts,counted_by:el(id('hvLeader'))?.value});
-            if (now()) {
-                for (const input of panel.querySelectorAll('[data-hv-product]')) {
-                    if (counts.some(row=>row.product_id===input.dataset.hvProduct)) input.defaultValue = input.value;
-                }
-                const data = await api(root+'/counts?'+params);
-                if (now()) renderShift(panel,params,shift,data,both);
-            }
-            return shiftLabel+' counts saved.';
+            await write('/counts','PUT',{store_id:params.get('store'),date:params.get('date'),shift,counts,counted_by:el('hvLeader'+shift)?.value});
+            if (now()) await loadCounts(now,countDrafts(shift));
+            return shiftLabels[shift]+' counts saved.';
         });
+        if (!body.length) return 'No high-value items for this store and date.';
+    }
+
+    function bindDialog(id,title,action) {
+        el(id).onclick = ()=>run(openDialog(title,action()));
     }
 
     async function showCompliance(active) {
@@ -5458,7 +5510,7 @@ nemsMeetingSetup();
     }
 
     async function previewSystemFile(params,shift,active) {
-        const file = el('hvSystemFile'+shift).files[0];
+        const file = el('hvSystemFile').files[0];
         if (!file || file.size>3*1024*1024) return 'Choose an Excel file under 3 MB.';
         const data = await new Promise((resolve,reject)=>{
             const reader = new FileReader();
@@ -5471,20 +5523,20 @@ nemsMeetingSetup();
         const result = await write('/import-system','POST',request);
         const importKey = crypto.randomUUID();
         if (!active()) return;
-        const preview = el('hvImportPreview'+shift);
+        const preview = el('hvImportPreview');
         preview.innerHTML = '<h3>'+e(shift)+' System counts from '+e(file.name)+'</h3><p>'+
             e(result.counts.length)+' ready to load · '+e(result.ignored)+' rows without a match in this high-value list · '+
             e(result.issue_count)+' issues</p>'+
             (result.issues.length?'<ul>'+result.issues.map(issue=>'<li>'+e(issue)+'</li>').join('')+'</ul>':'')+
             table(['Stock #','Barcode','Description','On-hand (Pcs)'],result.counts.map(row=>
                 '<tr>'+[row.sku,row.master_barcode,row.product_name,row.value].map(cell).join('')+'</tr>'))+
-            (result.counts.length?'<button type="button" id="hvApplyImport'+shift+'">Confirm and save '+e(shift.toLowerCase())+' System counts</button>':'');
+            (result.counts.length?'<button type="button" id="hvApplyImport'+shift+'">Confirm import · '+e(shift.toLowerCase())+' System counts</button>':'');
         if (result.counts.length) bind('hvApplyImport'+shift,async now=>{
             const saved = await write('/import-system','POST',{...request,confirm:true,import_key:importKey,
                 preview_counts:result.counts.map(row=>[String(row.product_id),row.value])});
             if (now()) {
-                const data = await api(root+'/counts?'+params);
-                if(now()) renderShift(el('hvCounts'+shift),params,shift,data,el('hvShift').value==='BOTH');
+                preview.replaceChildren();
+                await loadCounts(now,countDrafts(shift));
             }
             return saved.row_count+' System counts imported and recorded in history.';
         });
@@ -5512,6 +5564,7 @@ nemsMeetingSetup();
                     try {
                         if (button.dataset.hvDecision==='approve') {
                             await write('/products/'+encodeURIComponent(candidate.product_id),'PUT',{active:true,seed_sku:sku});
+                            refreshCountsAfterDialog = true;
                             if (now()) await searchProducts(now);
                             return 'Match approved and product activated.';
                         }
@@ -5549,7 +5602,9 @@ nemsMeetingSetup();
                         const seedSku = el('hvReview').value;
                         await write('/products/'+encodeURIComponent(button.dataset.hvId),'PUT',
                             {active:button.dataset.hvActive==='true'||Boolean(seedSku),seed_sku:seedSku||undefined});
-                        if(now()) await searchProducts(now);
+            refreshCountsAfterDialog = true;
+                        refreshCountsAfterDialog = true;
+            if(now()) await searchProducts(now);
                         return 'Product status saved.';
                     } finally { button.disabled = false; }
                 });
@@ -5571,7 +5626,7 @@ nemsMeetingSetup();
     }
 
     bind('hvLoad',loadCounts);
-    bind('hvFileHistory',async active=>{
+    bindDialog('hvFileHistory','Import / download history',()=>async active=>{
         content.replaceChildren();
         const params = parameters();
         const rows = await api(root+'/file-history?'+params);
@@ -5583,12 +5638,12 @@ nemsMeetingSetup();
                 new Date(row.recorded_at).toLocaleString('en-PH',{timeZone:'Asia/Manila'})].map(cell).join('')+'</tr>'));
         if (!rows.length) return 'No imports or downloads recorded for this store and date.';
     });
-    bind('hvHistory',showHistory);
-    bind('hvCompliance',showCompliance);
-    bind('hvManageStores',manageStores);
-    bind('hvManageProducts',manageProducts);
+    bindDialog('hvHistory','Count history',()=>showHistory);
+    bindDialog('hvCompliance','Store compliance',()=>showCompliance);
+    bindDialog('hvManageStores','Manage stores',()=>manageStores);
+    bindDialog('hvManageProducts','Manage products',()=>manageProducts);
     async function enter(active) {
-        content.replaceChildren();
+        countsPanel.replaceChildren();
         if (!currentUser) return;
         const canManage = editors.includes(currentUser.role);
         for (const id of ['hvManageStores','hvManageProducts','hvFileHistory']) el(id).classList.toggle('hidden',!canManage);
@@ -5608,7 +5663,7 @@ nemsMeetingSetup();
     showPage = function(name) {
         previousShowPage(name);
         if (name==='highvalue') run(enter);
-        else { request++; content.replaceChildren(); }
+        else { request++; countsPanel.replaceChildren(); if (dialog.open) dialog.close(); }
     };
 })();
 
