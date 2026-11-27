@@ -5267,11 +5267,12 @@ nemsMeetingSetup();
             <div class="grid">
                 <div><label for="hvDate">Inventory date</label><input type="date" id="hvDate"></div>
                 <div><label for="hvStore">Store</label><select id="hvStore"></select></div>
-                <div><label for="hvShift">Shift</label><select id="hvShift"><option>OPENING</option><option>CLOSING</option></select></div>
+                <div><label for="hvShift">Shift</label><select id="hvShift"><option>OPENING</option><option>CLOSING</option><option value="BOTH">Opening + Closing</option></select></div>
             </div>
             <button type="button" id="hvLoad">Load counts</button>
             <button type="button" id="hvCompliance">View compliance</button>
             <button type="button" id="hvHistory">View history</button>
+            <button type="button" id="hvFileHistory" class="hidden">Import / download history</button>
             <button type="button" id="hvManageStores">Manage stores</button>
             <button type="button" id="hvManageProducts">Manage products</button>
             <p id="hvStatus" role="status"></p>
@@ -5329,28 +5330,55 @@ nemsMeetingSetup();
         const shift = el('hvShift').value;
         const response = await api(root+'/counts?'+params);
         if (!active()) return;
+        const displayedShifts = shift==='BOTH'?['OPENING','CLOSING']:[shift];
+        content.innerHTML = (response.canExport?'<button type="button" id="hvExport">Download counts Excel</button>':'')+
+            displayedShifts.map(name=>'<section id="hvCounts'+name+'"></section>').join('');
+        if (response.canExport) bind('hvExport',()=>downloadCounts(params,shift));
+        for (const name of displayedShifts) {
+            renderShift(el('hvCounts'+name),params,name,response,shift==='BOTH');
+        }
+        if (!response.rows.length) return 'No high-value items for this store and date.';
+    }
+
+    function renderShift(panel,params,shift,response,both) {
+        const id = name => name+shift;
         const rows = response.rows.filter(row=>row.shift===shift);
-        if (!rows.length) return 'No high-value items for this store and date.';
         const field = response.showSystem?'system_count':'actual';
-        const editable = response.canEdit && response.canSave;
+        const editable = response.canEdit && rows.length>0;
         const names = [...new Set(rows.map(x=>x.counted_by).filter(Boolean))];
-        content.innerHTML = (editable&&field==='actual'?'<label for="hvLeader">Store Leader / Shift Leader who counted</label>'+
-            '<input id="hvLeader" maxlength="120" value="'+e(names.length===1?names[0]:'')+'">':'')+
-            table(['SKU','Product','Counted by','Actual','System','Variance'],rows.map(row=>{
-                const input = '<input aria-label="'+e(row.product_name+' '+field)+'" type="number" min="0" step="1" max="2147483647" data-hv-product="'+
+        const shiftLabel = shift==='OPENING'?'Opening':'Closing';
+        panel.innerHTML = (both?'<h3>'+shiftLabel+'</h3>':'')+
+            (response.canImport?'<button type="button" id="'+id('hvTemplate')+'">Download '+shiftLabel+' import template</button>'+
+                '<label for="'+id('hvSystemFile')+'">Upload '+shiftLabel+' System counts for '+e(response.store.store_name)+' · '+e(params.get('date'))+'</label>'+
+                '<input type="file" id="'+id('hvSystemFile')+'" accept=".xlsx,.xls"> '+
+                '<button type="button" id="'+id('hvPreviewImport')+'">Preview '+shiftLabel+' Excel</button><div id="'+id('hvImportPreview')+'"></div>':'')+
+            (editable&&field==='actual'?'<label for="'+id('hvLeader')+'">'+shiftLabel+' Store Leader / Shift Leader who counted</label>'+
+                '<input id="'+id('hvLeader')+'" maxlength="120" value="'+e(names.length===1?names[0]:'')+'">':'')+
+            (rows.length?table(['SKU','Product','Counted by','Actual','System','Variance'],rows.map(row=>{
+                const input = '<input aria-label="'+e(shiftLabel+' '+row.product_name+' '+field)+'" type="number" min="0" step="1" max="2147483647" data-hv-product="'+
                     e(row.product_id)+'" value="'+e(row[field])+'">';
                 return '<tr>'+cell(row.sku)+cell(row.product_name)+cell(row.counted_by)+
                     '<td>'+(editable&&field==='actual'?input:e(row.actual))+'</td>'+
                     '<td>'+(editable&&field==='system_count'?input:e(response.showSystem?row.system_count:'***'))+'</td>'+
                     cell(response.showSystem?row.variance:row.variance_status)+'</tr>';
-            }))+(editable?'<button type="button" id="hvSave">Save '+e(shift.toLowerCase())+' counts</button>':'');
-        if (editable) bind('hvSave',async now=>{
-            const counts = [...content.querySelectorAll('[data-hv-product]')].filter(input=>input.value!==''&&input.value!==input.defaultValue)
+            })):'')+(editable?'<button type="button" id="'+id('hvSave')+'">Save '+shiftLabel.toLowerCase()+' counts</button>':'');
+        if (response.canImport) {
+            bind(id('hvTemplate'),()=>downloadCounts(params,shift,true));
+            bind(id('hvPreviewImport'),now=>previewSystemFile(params,shift,now));
+        }
+        if (editable) bind(id('hvSave'),async now=>{
+            const counts = [...panel.querySelectorAll('[data-hv-product]')].filter(input=>input.value!==''&&input.value!==input.defaultValue)
                 .map(input=>({product_id:input.dataset.hvProduct,value:Number(input.value)}));
             if (!counts.length) return 'Change or enter at least one count.';
-            await write('/counts','PUT',{store_id:params.get('store'),date:params.get('date'),shift,counts,counted_by:el('hvLeader')?.value});
-            if (now()) await loadCounts(now);
-            return 'Counts saved.';
+            await write('/counts','PUT',{store_id:params.get('store'),date:params.get('date'),shift,counts,counted_by:el(id('hvLeader'))?.value});
+            if (now()) {
+                for (const input of panel.querySelectorAll('[data-hv-product]')) {
+                    if (counts.some(row=>row.product_id===input.dataset.hvProduct)) input.defaultValue = input.value;
+                }
+                const data = await api(root+'/counts?'+params);
+                if (now()) renderShift(panel,params,shift,data,both);
+            }
+            return shiftLabel+' counts saved.';
         });
     }
 
@@ -5412,6 +5440,90 @@ nemsMeetingSetup();
         });
     }
 
+    async function downloadCounts(params,shift,template=false) {
+        const query = new URLSearchParams(params);
+        query.set('format','xlsx');
+        query.set('shift',shift);
+        if (template) query.set('template','1');
+        const response = await fetch(root+'/counts?'+query,{headers:{Authorization:'Bearer '+token},cache:'no-store'});
+        if (!response.ok) throw Error((await response.json()).error||'Download failed');
+        const url = URL.createObjectURL(await response.blob());
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = 'NEMS_'+(template?'System_Template':'Counts')+'_'+params.get('date')+'_'+shift+'.xlsx';
+        document.body.append(link);
+        link.click();
+        link.remove();
+        setTimeout(()=>URL.revokeObjectURL(url),1000);
+    }
+
+    async function previewSystemFile(params,shift,active) {
+        const file = el('hvSystemFile'+shift).files[0];
+        if (!file || file.size>3*1024*1024) return 'Choose an Excel file under 3 MB.';
+        const data = await new Promise((resolve,reject)=>{
+            const reader = new FileReader();
+            reader.onload = ()=>resolve(String(reader.result).split(',')[1]);
+            reader.onerror = ()=>reject(Error('Could not read the file.'));
+            reader.readAsDataURL(file);
+        });
+        const request = {store_id:params.get('store'),date:params.get('date'),
+            shift,filename:file.name,file_base64:data};
+        const result = await write('/import-system','POST',request);
+        const importKey = crypto.randomUUID();
+        if (!active()) return;
+        const preview = el('hvImportPreview'+shift);
+        preview.innerHTML = '<h3>'+e(shift)+' System counts from '+e(file.name)+'</h3><p>'+
+            e(result.counts.length)+' ready to load · '+e(result.ignored)+' rows without a match in this high-value list · '+
+            e(result.issue_count)+' issues</p>'+
+            (result.issues.length?'<ul>'+result.issues.map(issue=>'<li>'+e(issue)+'</li>').join('')+'</ul>':'')+
+            table(['Stock #','Barcode','Description','On-hand (Pcs)'],result.counts.map(row=>
+                '<tr>'+[row.sku,row.master_barcode,row.product_name,row.value].map(cell).join('')+'</tr>'))+
+            (result.counts.length?'<button type="button" id="hvApplyImport'+shift+'">Confirm and save '+e(shift.toLowerCase())+' System counts</button>':'');
+        if (result.counts.length) bind('hvApplyImport'+shift,async now=>{
+            const saved = await write('/import-system','POST',{...request,confirm:true,import_key:importKey,
+                preview_counts:result.counts.map(row=>[String(row.product_id),row.value])});
+            if (now()) {
+                const data = await api(root+'/counts?'+params);
+                if(now()) renderShift(el('hvCounts'+shift),params,shift,data,el('hvShift').value==='BOTH');
+            }
+            return saved.row_count+' System counts imported and recorded in history.';
+        });
+    }
+
+    async function showSuggestions(active) {
+        const sku = el('hvReview').value;
+        const panel = el('hvSuggestions');
+        panel.replaceChildren();
+        if (!sku) return 'Choose a workbook item to compare.';
+        const {source,proposals} = await api(root+'/suggestions?'+new URLSearchParams({sku}));
+        if (!active()||el('hvReview')?.value!==sku) return;
+        panel.innerHTML = '<h3>Suggested matches</h3><p>Workbook item '+e(source.sku)+' · '+e(source.barcode)+' · '+e(source.name)+'</p>'+
+            (proposals.length?table(['SKU','Barcode','Description','Supplier','Match evidence','Review'],proposals.map((row,index)=>
+                '<tr>'+[row.sku,row.master_barcode,row.product_name,row.supplier_name,
+                    [row.same_barcode?'Exact barcode':'',row.same_sku?'Exact SKU':'',Math.round(row.score*100)+'% description overlap'].filter(Boolean).join(' · ')].map(cell).join('')+
+                '<td><button type="button" data-hv-review="'+index+'" data-hv-decision="approve">Approve</button> '+
+                '<button type="button" class="secondary" data-hv-review="'+index+'" data-hv-decision="reject">Reject</button></td></tr>')):
+                '<p>No remaining suggestions. You can still search the catalog below.</p>');
+        for (const button of panel.querySelectorAll('[data-hv-review]')) {
+            button.onclick = () => {
+                button.disabled = true;
+                const candidate = proposals[Number(button.dataset.hvReview)];
+                run(async now=>{
+                    try {
+                        if (button.dataset.hvDecision==='approve') {
+                            await write('/products/'+encodeURIComponent(candidate.product_id),'PUT',{active:true,seed_sku:sku});
+                            if (now()) await searchProducts(now);
+                            return 'Match approved and product activated.';
+                        }
+                        await write('/reject-match','POST',{sku,product_id:candidate.product_id});
+                        if (now()) await showSuggestions(now);
+                        return 'Suggestion rejected.';
+                    } finally { button.disabled = false; }
+                });
+            };
+        }
+    }
+
     async function searchProducts(active) {
         const requestParams = new URLSearchParams({q:el('hvSearch').value});
         const previousReview = el('hvReview')?.value;
@@ -5419,12 +5531,16 @@ nemsMeetingSetup();
         if (!active()) return;
         el('hvProductResults').innerHTML = '<label for="hvReview">Workbook row to match manually (optional)</label>'+
             '<select id="hvReview">'+option('','None')+review.map(x=>option(x.sku,x.sku+' · '+x.name+' · '+x.state)).join('')+
-            '</select>'+table(['SKU','Product','Barcode','Status','Action'],products.map(p=>'<tr>'+
+            '</select><button type="button" id="hvCompare">Compare selected workbook item</button><div id="hvSuggestions"></div>'+table(['SKU','Product','Barcode','Status','Action'],products.map(p=>'<tr>'+
                 [p.sku,p.product_name,p.master_barcode,p.active===null?'—':p.active?'Active':'Inactive'].map(cell).join('')+
                 '<td><button type="button" data-hv-id="'+e(p.product_id)+'" data-hv-active="'+String(!p.active)+'">'+
                 (p.active?'Set inactive':'Set active')+'</button></td></tr>'))+
             (products.length?'':'<p>No products found. Search by stock number, barcode, or description.</p>');
         if (review.some(x=>x.sku===previousReview)) el('hvReview').value = previousReview;
+        el('hvReview').onchange = () => run(showSuggestions);
+        bind('hvCompare',showSuggestions);
+        if (el('hvReview').value) await showSuggestions(active);
+        if (!active()) return;
         for (const button of el('hvProductResults').querySelectorAll('[data-hv-id]')) {
             button.onclick = () => {
                 button.disabled = true;
@@ -5455,6 +5571,18 @@ nemsMeetingSetup();
     }
 
     bind('hvLoad',loadCounts);
+    bind('hvFileHistory',async active=>{
+        content.replaceChildren();
+        const params = parameters();
+        const rows = await api(root+'/file-history?'+params);
+        if (!active()) return;
+        const actions = {IMPORT:'System counts imported',EXPORT:'Counts Excel downloaded',TEMPLATE:'Template downloaded'};
+        content.innerHTML = '<h3>Import / download history</h3><p>'+e(el('hvStore').selectedOptions[0]?.textContent)+' · '+
+            e(params.get('date'))+'</p>'+table(['Action','Filename','Shift','Rows','Account','Role','Time (PH)'],
+            rows.map(row=>'<tr>'+[actions[row.action],row.filename,row.shift,row.row_count,row.actor,row.actor_role,
+                new Date(row.recorded_at).toLocaleString('en-PH',{timeZone:'Asia/Manila'})].map(cell).join('')+'</tr>'));
+        if (!rows.length) return 'No imports or downloads recorded for this store and date.';
+    });
     bind('hvHistory',showHistory);
     bind('hvCompliance',showCompliance);
     bind('hvManageStores',manageStores);
@@ -5463,7 +5591,7 @@ nemsMeetingSetup();
         content.replaceChildren();
         if (!currentUser) return;
         const canManage = editors.includes(currentUser.role);
-        for (const id of ['hvManageStores','hvManageProducts']) el(id).classList.toggle('hidden',!canManage);
+        for (const id of ['hvManageStores','hvManageProducts','hvFileHistory']) el(id).classList.toggle('hidden',!canManage);
         const current = el('hvStore').value;
         const today = new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Manila',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
         el('hvDate').max = today;

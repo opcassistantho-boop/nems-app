@@ -1,10 +1,18 @@
 'use strict';
 
+const XLSX = require('xlsx');
 const seed = require('./nems-high-value-seed.json');
 const prefix = '/api/high-value';
+function nameTerms(name) {
+    return [...new Set(String(name||'').toLowerCase().match(/[a-z0-9]+/g)||[])];
+}
+function column(value) {
+    return String(value??'').toLowerCase().replace(/[^a-z0-9]/g,'');
+}
 const shifts = ['OPENING', 'CLOSING'];
 const managers = ['AS', 'AOM'];
 const editors = ['ADMIN', 'OPC', 'IC'];
+const transferRoles = [...editors, ...managers];
 const allStores = [...editors, 'HEAD'];
 const storeQuery = `SELECT s.store_id,s.store_name,s.store_email,
     COALESCE(h.status,CASE WHEN s.status='ACTIVE' THEN 'ACTIVE' ELSE 'CLOSED' END) AS inventory_status,
@@ -66,6 +74,23 @@ module.exports = function register({app,pool,authenticate,secureRoute,transactio
         return found;
     }
 
+    function recordFile(client,user,id,day,shift,action,filename,count,key=null) {
+        return client.query(`INSERT INTO public.nems_hv_file_history
+            (store_id,inventory_date,shift,action,filename,row_count,actor,actor_role,import_key)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,[id,day,shift,action,filename,count,user.email,user.role,key]);
+    }
+
+    route('get','/file-history',async(req,res)=>{
+        requireEditor(req.user);
+        const id = validateId(req.query.store);
+        const day = inventoryDate(req.query.date);
+        await store(pool,req.user,id);
+        const {rows} = await pool.query(`SELECT shift,action,filename,row_count,actor,actor_role,recorded_at
+            FROM public.nems_hv_file_history WHERE store_id=$1 AND inventory_date=$2
+            ORDER BY event_id DESC LIMIT 250`,[id,day]);
+        res.json(rows);
+    });
+
     route('get','/stores',async(req,res)=>res.json(await listStores(pool,req.user)));
 
     route('get','/managers',async(req,res)=>{
@@ -121,11 +146,19 @@ module.exports = function register({app,pool,authenticate,secureRoute,transactio
             throw appError(400,'Choose a product status and valid workbook row');
         }
         await transaction(async c=>{
+            if (seed_sku) {
+                const review = await c.query(`SELECT sku FROM public.nems_hv_seed
+                    WHERE sku=$1 AND state<>'MATCHED' FOR UPDATE`,[seed_sku]);
+                if (!review.rowCount) throw appError(409,'This workbook row has already been resolved. Refresh the list.');
+            }
             const result = await c.query(`INSERT INTO public.nems_hv_products(product_id,active)
                 SELECT product_id,$2 FROM public.products WHERE product_id=$1
                 ON CONFLICT(product_id) DO UPDATE SET active=excluded.active,changed_at=now()`,[id,active]);
             if (!result.rowCount) throw appError(404,'Product not found');
             if (seed_sku) await c.query("UPDATE public.nems_hv_seed SET state='MATCHED',product_id=$2 WHERE sku=$1",[seed_sku,id]);
+            if (active) await c.query(`INSERT INTO public.nems_hv_days(inventory_date,store_id,product_id)
+                SELECT DISTINCT inventory_date,store_id,$2::bigint FROM public.nems_hv_days WHERE inventory_date=$1
+                ON CONFLICT DO NOTHING`,[businessDate(),id]);
         });
         res.json({saved:true});
     });
@@ -155,6 +188,118 @@ module.exports = function register({app,pool,authenticate,secureRoute,transactio
         res.json({reviewed:seed.length,matched:totals.MATCHED||0,ambiguous:totals.AMBIGUOUS||0,unmatched:totals.UNMATCHED||0});
     });
 
+    route('get','/suggestions',async(req,res)=>{
+        requireEditor(req.user);
+        const source = seed.find(row=>row.sku===req.query.sku);
+        if (!source) throw appError(404,'Workbook item not found');
+        const terms = nameTerms(source.name);
+        const {rows} = await pool.query(`SELECT p.product_id,p.sku,p.product_name,p.master_barcode,
+            p.supplier_name,trim(p.sku::text)=$1 AS same_sku,
+            ($2<>'' AND trim(p.master_barcode::text)=$2) AS same_barcode,
+            COALESCE(h.active,false) AS active
+            FROM public.products p LEFT JOIN public.nems_hv_products h USING(product_id)
+            WHERE (trim(p.sku::text)=$1 OR ($2<>'' AND trim(p.master_barcode::text)=$2)
+                OR lower(p.product_name) LIKE $3)
+            AND NOT EXISTS (SELECT 1 FROM public.nems_hv_rejections r WHERE r.sku=$1 AND r.product_id=p.product_id)
+            ORDER BY (trim(p.sku::text)=$1 OR ($2<>'' AND trim(p.master_barcode::text)=$2)) DESC,
+                p.product_name,p.product_id LIMIT 250`,[source.sku,source.barcode,terms.length?'%'+terms[0]+'%':null]);
+        const proposals = rows.map(row=>{
+            const words = nameTerms(row.product_name);
+            const score = terms.filter(word=>words.includes(word)).length / (new Set([...terms,...words]).size||1);
+            return {...row,score};
+        }).filter(row=>row.same_sku||row.same_barcode||row.score>=0.3)
+            .sort((a,b)=>Number(b.same_barcode)-Number(a.same_barcode)||
+                Number(b.same_sku)-Number(a.same_sku)||b.score-a.score);
+        res.json({source,proposals:proposals.slice(0,12)});
+    });
+
+    route('post','/reject-match',async(req,res)=>{
+        requireEditor(req.user);
+        const sku = req.body?.sku;
+        const id = validateId(req.body?.product_id);
+        if (!seed.some(row=>row.sku===sku)) throw appError(404,'Workbook item not found');
+        await pool.query(`INSERT INTO public.nems_hv_rejections(sku,product_id,rejected_by)
+            SELECT $1,product_id,$3 FROM public.products WHERE product_id=$2
+            ON CONFLICT(sku,product_id) DO NOTHING`,[sku,id,req.user.email]);
+        res.json({saved:true});
+    });
+
+    route('post','/import-system',async(req,res)=>{
+        if (!transferRoles.includes(req.user.role)) throw appError(403,'System-count import is unavailable for this role');
+        const params = req.body || {};
+        const id = validateId(params.store_id);
+        const day = inventoryDate(params.date);
+        if (!shifts.includes(params.shift)) throw appError(400,'Select Opening or Closing');
+        const selected = await store(pool,req.user,id);
+        const {rows:catalog} = await pool.query(`SELECT p.product_id,p.sku,p.master_barcode,p.product_name
+            FROM (${expectedProducts}) expected JOIN public.products p USING(product_id)
+            WHERE $3 OR EXISTS (SELECT 1 FROM public.nems_hv_days WHERE inventory_date=$1 AND store_id=$2)`,
+            [day,id,selected.inventory_status==='ACTIVE']);
+        if (!catalog.length) throw appError(409,'No high-value products are available for this store and date');
+        const filename = String(params.filename||'').split(/[\\/]/).pop().trim();
+        const data = params.file_base64;
+        if (filename.length>255 || !/\.xlsx?$/i.test(filename) || typeof data!=='string'||data.length>4200000) {
+            throw appError(400,'Choose an Excel file (.xlsx or .xls) under 3 MB');
+        }
+        let sheet;
+        try {
+            const workbook = XLSX.read(Buffer.from(data,'base64'),{type:'buffer',sheetRows:5002});
+            sheet = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]],{header:1,raw:true,defval:null,blankrows:true});
+        } catch {
+            throw appError(400,'Could not read this Excel workbook');
+        }
+        if (sheet.length>5000) throw appError(400,'Use a file with at most 5,000 rows');
+        const header = sheet.findIndex(row=>row.some(v=>column(v)==='stock') && row.some(v=>column(v)==='onhandpcs'));
+        if (header<0) throw appError(400,'The first worksheet needs Stock # and On-hand (Pcs) headers');
+        const columns = sheet[header].map(column);
+        const cell = (row,key)=>row[columns.indexOf(key)];
+        const proposed = new Map();
+        const duplicates = new Set();
+        const issues = [];
+        let ignored = 0;
+        for (const [index,row] of sheet.entries()) {
+            if (index<=header) continue;
+            const sku = String(cell(row,'stock')??'').trim();
+            const barcode = String(cell(row,'barcode')??'').trim();
+            if (!sku&&!barcode) continue;
+            const bySku = catalog.filter(p=>sku && String(p.sku??'').trim()===sku);
+            const byBarcode = catalog.filter(p=>barcode && String(p.master_barcode??'').trim()===barcode);
+            const both = bySku.filter(p=>byBarcode.includes(p));
+            const candidates = both.length?both:bySku.length&&byBarcode.length?[]:byBarcode.length?byBarcode:bySku;
+            if (!bySku.length&&!byBarcode.length) { ignored++; continue; }
+            const raw = cell(row,'onhandpcs');
+            const quantity = typeof raw==='number'?raw:/^(?:\d+|\d{1,3}(?:,\d{3})+)$/.test(String(raw??'').trim())?
+                Number(String(raw).replaceAll(',','')):NaN;
+            const at = 'Row '+(index+1)+' ('+(sku||barcode)+')';
+            if (candidates.length!==1) { issues.push(at+': conflicting or multiple product matches'); continue; }
+            if (!Number.isInteger(quantity)||quantity<0||quantity>2147483647) {
+                issues.push(at+': enter a nonnegative whole number in On-hand (Pcs)'); continue;
+            }
+            const product = candidates[0];
+            const key = String(product.product_id);
+            if (proposed.has(key)||duplicates.has(key)) {
+                proposed.delete(key);
+                duplicates.add(key);
+                issues.push(at+': duplicate product, both quantities excluded');
+                continue;
+            }
+            proposed.set(key,{...product,value:quantity});
+        }
+        const counts = [...proposed.values()];
+        if (params.confirm===true) {
+            if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(params.import_key||'')) {
+                throw appError(400,'Preview the workbook again before saving');
+            }
+            const confirmed = counts.map(row=>[String(row.product_id),row.value]);
+            if (JSON.stringify(confirmed)!==JSON.stringify(params.preview_counts)) {
+                throw appError(409,'The product matches changed. Preview the workbook again.');
+            }
+            await saveCounts(req,{store_id:id,date:day,shift:params.shift,counts},{filename,key:params.import_key});
+            return res.json({saved:true,row_count:counts.length});
+        }
+        res.json({counts,issues:issues.slice(0,30),issue_count:issues.length,ignored});
+    });
+
     route('get','/counts',async(req,res)=>{
         const id = validateId(req.query.store);
         const day = inventoryDate(req.query.date);
@@ -171,15 +316,48 @@ module.exports = function register({app,pool,authenticate,secureRoute,transactio
                 AND c.product_id=p.product_id AND c.shift=shift.name
             WHERE $4 OR EXISTS (SELECT 1 FROM public.nems_hv_days WHERE inventory_date=$1 AND store_id=$2)
             ORDER BY p.product_name,p.product_id,shift.name DESC`,[day,id,showSystem,selected.inventory_status==='ACTIVE']);
-        res.json({rows:result.rows,showSystem,canEdit:!showSystem||managers.includes(req.user.role),canSave:result.rowCount>0,store:selected});
+        if (req.query.format==='xlsx') {
+            const shift = req.query.shift;
+            const template = req.query.template==='1';
+            if (!shifts.includes(shift) && (shift!=='BOTH'||template)) throw appError(400,'Select a shift');
+            if (req.user.role==='HEAD'||(template&&!transferRoles.includes(req.user.role))) {
+                throw appError(403,'This download is unavailable for this role');
+            }
+            const chosenShifts = shift==='BOTH'?shifts:[shift];
+            const heading = template?['Stock #','Barcode','Description','On-hand (Pcs)','Price (SRP)','Actual Cost','Total Price (SRP)']:
+                ['Stock #','Barcode','Description','Counted by','Actual (Pcs)',...(showSystem?['System (Pcs)']:[]),'Variance'];
+            const workbook = XLSX.utils.book_new();
+            const exported = new Map();
+            for (const name of chosenShifts) {
+                const rows = result.rows.filter(row=>row.shift===name);
+                const data = rows.map(row=>{
+                    const product = [String(row.sku??''),String(row.master_barcode??''),row.product_name];
+                    return template ? [...product,null,null,null,null] :
+                        [...product,row.counted_by,row.actual,...(showSystem?[row.system_count]:[]),showSystem?row.variance:row.variance_status];
+                });
+                XLSX.utils.book_append_sheet(workbook,XLSX.utils.aoa_to_sheet([heading,...data]),name);
+                exported.set(name,rows.length);
+            }
+            const filename = 'NEMS_'+(template?'System_Template':'Counts')+'_'+day+'_'+shift+'.xlsx';
+            const buffer = XLSX.write(workbook,{type:'buffer',bookType:'xlsx'});
+            await transaction(async c=>{
+                for (const [name,count] of exported) {
+                    await recordFile(c,req.user,id,day,name,template?'TEMPLATE':'EXPORT',filename,count);
+                }
+            });
+            res.set({'Content-Type':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                'Content-Disposition':'attachment; filename="'+filename+'"'});
+            return res.send(buffer);
+        }
+        res.json({rows:result.rows,showSystem,canEdit:!showSystem||managers.includes(req.user.role),canSave:result.rowCount>0,canImport:transferRoles.includes(req.user.role),canExport:req.user.role!=='HEAD',store:selected});
     });
 
-    route('put','/counts',async(req,res)=>{
-        const {store_id,date,shift,counts,counted_by} = req.body || {};
+    async function saveCounts(req,body,imported=null) {
+        const {store_id,date,shift,counts,counted_by} = body || {};
         const id = validateId(store_id);
         const day = inventoryDate(date);
         const actual = req.user.role==='STORE';
-        if (!actual && !managers.includes(req.user.role)) throw appError(403,'Count entry is unavailable for this role');
+        if (!actual && !(imported?transferRoles:managers).includes(req.user.role)) throw appError(403,'Count entry is unavailable for this role');
         const leader = actual ? String(counted_by||'').trim() : null;
         if (!shifts.includes(shift) || !Array.isArray(counts) || !counts.length || counts.length>500 ||
             (actual && (!leader || leader.length>120))) throw appError(400,'Choose a shift and enter counts and the shift leader name where required');
@@ -194,6 +372,12 @@ module.exports = function register({app,pool,authenticate,secureRoute,transactio
         await transaction(async c=>{
             await c.query('SELECT store_id FROM public.stores WHERE store_id=$1 FOR UPDATE',[id]);
             const selected = await store(c,req.user,id);
+            if (imported) {
+                const prior = await c.query(`SELECT 1 FROM public.nems_hv_file_history
+                    WHERE import_key=$1 AND actor=$2 AND store_id=$3 AND inventory_date=$4 AND shift=$5`,
+                    [imported.key,req.user.email,id,day,shift]);
+                if (prior.rowCount) return;
+            }
             const {rows} = await c.query(expectedProducts,[day,id]);
             const existing = await c.query('SELECT 1 FROM public.nems_hv_days WHERE inventory_date=$1 AND store_id=$2 LIMIT 1',[day,id]);
             if (!existing.rowCount && selected.inventory_status!=='ACTIVE') throw appError(409,'This store is outside the active inventory program');
@@ -218,7 +402,12 @@ module.exports = function register({app,pool,authenticate,secureRoute,transactio
             ON CONFLICT(inventory_date,store_id,product_id,shift)
             DO UPDATE SET ${field}=excluded.${field},counted_by=COALESCE(excluded.counted_by,nems_hv_counts.counted_by)`,
             [day,id,shift,req.user.email,JSON.stringify([...values].map(([product_id,value])=>({product_id,value}))),leader]);
+            if (imported) await recordFile(c,req.user,id,day,shift,'IMPORT',imported.filename,values.size,imported.key);
         });
+    }
+
+    route('put','/counts',async(req,res)=>{
+        await saveCounts(req,req.body);
         res.json({saved:true});
     });
 
