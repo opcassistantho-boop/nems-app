@@ -1812,6 +1812,10 @@ function renderMonitoring() {
                     )}
                 </td>
                 <td>
+                    ${item.monitoring_id != null && ['STORE', 'ADMIN'].includes(currentUser?.role)
+                        ? ['edit', 'delete'].map(action => `<button type="button" class="secondary small" data-entry-id="${escapeHtml(item.monitoring_id)}" data-expiry="${escapeHtml(String(item.expiration_date).slice(0,10))}" data-entry-action="${action}" onclick="changeMonitoringEntry(this)">${action === 'edit' ? 'Edit' : 'Delete entry'}</button>`).join(' ')
+                        : item.monitoring_id == null && ['STORE', 'ADMIN'].includes(currentUser?.role)
+                            ? '<small>From My Tasks</small>' : ''}
                     ${currentUser?.role === 'ADMIN' && item.category === 'EXPIRED'
                         ? (item.monitoring_id != null
                             ? `<button type="button" class="secondary small" onclick="disposeExpiredMonitoring(${Number(item.monitoring_id)}, '${String(item.expiration_date).slice(0,10)}')">Dispose Expired</button>`
@@ -1837,6 +1841,90 @@ function renderMonitoring() {
         'Showing ' + rows.length + ' records';
 }
  
+async function changeMonitoringEntry(button) {
+    const { entryId, expiry, entryAction } = button.dataset;
+    const url = '/api/monitoring/entries/' + encodeURIComponent(entryId);
+    const deleting = entryAction === 'delete';
+    const dialog = document.createElement('dialog');
+    dialog.setAttribute('aria-labelledby', 'monitoring-change-title');
+    dialog.style.cssText = 'width:min(480px,calc(100% - 32px));max-height:85vh;padding:24px;border:1px solid #c8d5e3;border-radius:12px;box-shadow:0 12px 48px #1235;color:#142f50';
+    dialog.innerHTML = `<style>dialog::backdrop{background:#10233b80}</style>
+        <form>
+            <h2 id="monitoring-change-title">${deleting ? 'Delete Monitoring entry' : 'Edit Monitoring entry'}</h2>
+            <p data-entry-status role="status">Loading entry…</p>
+            <p data-entry-label></p>
+            <div data-entry-fields hidden>${deleting
+                ? '<p>This removes all expiration dates and quantities on this entry.</p><ul data-entry-dates></ul>'
+                : '<label>Expiration date <input name="date" type="date" required></label><label>Quantity <input name="quantity" type="number" min="1" max="2147483647" step="1" required></label>'}
+            </div>
+            <div class="row"><button type="button" class="secondary" data-entry-cancel>Cancel</button>
+            <button type="submit" disabled>${deleting ? 'Delete entry' : 'Save changes'}</button></div>
+        </form>`;
+    const status = dialog.querySelector('[data-entry-status]');
+    const cancel = dialog.querySelector('[data-entry-cancel]');
+    const save = dialog.querySelector('[type="submit"]');
+    const form = dialog.querySelector('form');
+    let saving = false;
+    button.disabled = true;
+    dialog.addEventListener('close', () => {
+        dialog.remove();
+        button.disabled = false;
+        if (button.isConnected) button.focus({preventScroll:true});
+    }, { once:true });
+    dialog.addEventListener('cancel', event => { if (saving) event.preventDefault(); });
+    cancel.onclick = () => dialog.close();
+    document.body.append(dialog);
+    dialog.showModal();
+
+    try {
+        const record = await api(url);
+        if (!dialog.open) return;
+        const original = record.dates.find(entry => entry.date === expiry);
+        if (!original) throw new Error('The date changed. Close this window and refresh Monitoring.');
+        dialog.querySelector('[data-entry-label]').textContent =
+            [record.store, record.sku, record.product].filter(Boolean).join(' / ');
+        if (deleting) {
+            const list = dialog.querySelector('[data-entry-dates]');
+            for (const entry of record.dates) {
+                const item = document.createElement('li');
+                item.textContent = entry.date + ' · Qty ' + entry.qty;
+                list.append(item);
+            }
+        } else {
+            form.elements.date.value = original.date;
+            form.elements.quantity.value = original.qty;
+        }
+        status.textContent = '';
+        dialog.querySelector('[data-entry-fields]').hidden = false;
+        save.disabled = false;
+        form.onsubmit = async event => {
+            event.preventDefault();
+            if (saving) return;
+            const payload = { revision:record.revision };
+            if (!deleting) Object.assign(payload, { previousDate:expiry,
+                date:form.elements.date.value, quantity:Number(form.elements.quantity.value) });
+            saving = true;
+            save.disabled = cancel.disabled = true;
+            status.textContent = deleting ? 'Deleting…' : 'Saving…';
+            try {
+                const result = await api(url, { method:deleting ? 'DELETE' : 'PATCH', body:JSON.stringify(payload) });
+                const restorePosition = nemsSavePosition(button);
+                dialog.close();
+                showMessage(result.message);
+                await loadMonitoring();
+                restorePosition();
+            } catch (error) {
+                status.textContent = error.message;
+            } finally {
+                saving = false;
+                save.disabled = cancel.disabled = false;
+            }
+        };
+    } catch (error) {
+        if (dialog.open) status.textContent = error.message;
+    }
+}
+
 function nemsSavePosition(anchor) {
     const y=window.scrollY,x=window.scrollX,id=anchor?.id;
     const product=anchor?.closest('[data-nems-product]')?.dataset.nemsProduct;
@@ -4044,7 +4132,7 @@ function nemsUserSetup() {
         <form id="nemsUserForm"><div class="formgrid">
         <div><label>Email *</label><input type="email" id="nemsUserEmail" required maxlength="255"></div>
         <div><label>Full name *</label><input id="nemsUserName" required maxlength="255"></div>
-        <div><label>Role *</label><select id="nemsUserRole"><option>HEAD</option><option>AOM</option><option>AS</option><option>STORE</option><option>ADMIN</option></select></div>
+        <div><label>Role *</label><select id="nemsUserRole"><option>HEAD</option><option>AOM</option><option>AS</option><option>STORE</option><option>IC</option><option>OPC</option><option>ADMIN</option></select></div>
         <div id="nemsUserPasswordBox"><label>Temporary password (12+ characters) *</label><input type="password" id="nemsUserPassword" minlength="12" maxlength="128" autocomplete="new-password"></div>
         <div class="hidden" id="nemsUserStatusBox"><label>Approval status</label><select id="nemsUserStatus"><option value="INACTIVE">INACTIVE — not approved</option><option value="ACTIVE">ACTIVE — approved</option></select></div>
         <div class="hidden" id="nemsUserStoreBox"><label>STORE assignment *</label><select id="nemsUserStore"></select><p class="muted">STORE account email must match the registered store email.</p></div>
@@ -5162,6 +5250,334 @@ nemsMeetingSetup();
  window.addEventListener('resize',update);update();
 })();
 
+(function setupHighValueInventory() {
+    const nav = document.createElement('button');
+    nav.type = 'button';
+    nav.dataset.page = 'highvalue';
+    nav.textContent = 'High-Value Inventory';
+    nav.onclick = () => showPage('highvalue');
+    el('navigation').append(nav);
+
+    const page = document.createElement('section');
+    page.id = 'page-highvalue';
+    page.className = 'page hidden';
+    page.innerHTML = `
+        <div class="panel">
+            <h2>Daily High-Value Inventory</h2>
+            <div class="grid">
+                <div><label for="hvDate">Inventory date</label><input type="date" id="hvDate"></div>
+                <div><label for="hvStore">Store</label><select id="hvStore"></select></div>
+                <div><label for="hvShift">Shift</label><select id="hvShift"><option>OPENING</option><option>CLOSING</option></select></div>
+            </div>
+            <button type="button" id="hvLoad">Load counts</button>
+            <button type="button" id="hvCompliance">View compliance</button>
+            <button type="button" id="hvHistory">View history</button>
+            <button type="button" id="hvManageStores">Manage stores</button>
+            <button type="button" id="hvManageProducts">Manage products</button>
+            <p id="hvStatus" role="status"></p>
+            <div id="hvContent"></div>
+        </div>`;
+    el('page-dashboard').parentElement.append(page);
+
+    const root = '/api/high-value';
+    const e = value => escapeHtml(String(value ?? ''));
+    const cell = value => '<td>'+e(value)+'</td>';
+    const table = (headers,rows) => '<div class="tablewrap"><table><thead><tr>'+
+        headers.map(x=>'<th scope="col">'+e(x)+'</th>').join('')+'</tr></thead><tbody>'+
+        rows.join('')+'</tbody></table></div>';
+    const option = (value,label) => '<option value="'+e(value)+'">'+e(label)+'</option>';
+    const editors = ['ADMIN','OPC','IC'];
+    const content = el('hvContent');
+    const status = el('hvStatus');
+    let request = 0;
+
+    function run(action) {
+        const current = ++request;
+        const email = currentUser?.email;
+        const active = () => current===request && email===currentUser?.email && !page.classList.contains('hidden');
+        status.textContent = 'Loading…';
+        Promise.resolve().then(()=>action(active)).then(message=>{
+            if(active()) status.textContent = message || '';
+        }).catch(error=>{
+            if(active()) status.textContent = error.message;
+        });
+    }
+
+    function bind(id, action) {
+        const button = el(id);
+        button.onclick = () => {
+            button.disabled = true;
+            run(async active=>{
+                try { return await action(active); }
+                finally { button.disabled = false; }
+            });
+        };
+    }
+
+    function parameters() {
+        return new URLSearchParams({store:el('hvStore').value,date:el('hvDate').value});
+    }
+
+    function write(path,method,data) {
+        return api(root+path,{method,body:JSON.stringify(data)});
+    }
+
+    async function loadCounts(active) {
+        content.replaceChildren();
+        const params = parameters();
+        if (!params.get('store')) return 'Choose a store.';
+        const shift = el('hvShift').value;
+        const response = await api(root+'/counts?'+params);
+        if (!active()) return;
+        const rows = response.rows.filter(row=>row.shift===shift);
+        if (!rows.length) return 'No high-value items for this store and date.';
+        const field = response.showSystem?'system_count':'actual';
+        const editable = response.canEdit && response.canSave;
+        const names = [...new Set(rows.map(x=>x.counted_by).filter(Boolean))];
+        content.innerHTML = (editable&&field==='actual'?'<label for="hvLeader">Store Leader / Shift Leader who counted</label>'+
+            '<input id="hvLeader" maxlength="120" value="'+e(names.length===1?names[0]:'')+'">':'')+
+            table(['SKU','Product','Counted by','Actual','System','Variance'],rows.map(row=>{
+                const input = '<input aria-label="'+e(row.product_name+' '+field)+'" type="number" min="0" step="1" max="2147483647" data-hv-product="'+
+                    e(row.product_id)+'" value="'+e(row[field])+'">';
+                return '<tr>'+cell(row.sku)+cell(row.product_name)+cell(row.counted_by)+
+                    '<td>'+(editable&&field==='actual'?input:e(row.actual))+'</td>'+
+                    '<td>'+(editable&&field==='system_count'?input:e(response.showSystem?row.system_count:'***'))+'</td>'+
+                    cell(response.showSystem?row.variance:row.variance_status)+'</tr>';
+            }))+(editable?'<button type="button" id="hvSave">Save '+e(shift.toLowerCase())+' counts</button>':'');
+        content.insertAdjacentHTML('afterbegin','<button type="button" id="hvExport">Download counts Excel</button> '+
+            (editable&&field==='system_count'?'<button type="button" id="hvTemplate">Download import template</button>'+
+                '<label for="hvSystemFile">Upload '+e(shift.toLowerCase())+' System counts for '+e(response.store.store_name)+' · '+e(params.get('date'))+'</label>'+
+                '<input type="file" id="hvSystemFile" accept=".xlsx,.xls"> '+
+                '<button type="button" id="hvPreviewImport">Preview Excel</button><div id="hvImportPreview"></div>':''));
+        bind('hvExport',()=>downloadCounts(params,shift));
+        if (editable&&field==='system_count') {
+            bind('hvTemplate',()=>downloadCounts(params,shift,true));
+            bind('hvPreviewImport',now=>previewSystemFile(params,shift,now));
+        }
+        if (editable) bind('hvSave',async now=>{
+            const counts = [...content.querySelectorAll('[data-hv-product]')].filter(input=>input.value!==''&&input.value!==input.defaultValue)
+                .map(input=>({product_id:input.dataset.hvProduct,value:Number(input.value)}));
+            if (!counts.length) return 'Change or enter at least one count.';
+            await write('/counts','PUT',{store_id:params.get('store'),date:params.get('date'),shift,counts,counted_by:el('hvLeader')?.value});
+            if (now()) await loadCounts(now);
+            return 'Counts saved.';
+        });
+    }
+
+    async function showCompliance(active) {
+        content.replaceChildren();
+        const rows = await api(root+'/compliance?'+parameters());
+        if (!active()) return;
+        if (!rows.length) return 'No active stores with high-value items for this date.';
+        const groups = new Map();
+        const countRows = [];
+        for (const row of rows) {
+            const group = (row.as_name||'Unassigned AS')+' / '+(row.aom_name||'Unassigned AOM');
+            if (!groups.has(group)) groups.set(group,[0,0,0]);
+            const missing = row.opening_actual+row.opening_system+row.closing_actual+row.closing_system;
+            const classification = missing===0?0:missing===row.expected?2:1;
+            groups.get(group)[classification]++;
+            countRows.push('<tr>'+cell(row.store_name)+cell(group)+
+                [row.opening_actual,row.opening_system,row.closing_actual,row.closing_system].map(cell).join('')+
+                cell(['Complete','Incomplete','Missing'][classification])+'</tr>');
+        }
+        const colors = ['#237a56','#966019','#9d3044'];
+        content.innerHTML = '<h3>Daily store compliance</h3><p>Complete / Incomplete / Missing</p>'+
+            [...groups].map(([name,totals])=>{
+                const total = totals.reduce((a,b)=>a+b,0);
+                return '<p>'+e(name)+' — '+totals.join(' / ')+'</p><div aria-hidden="true" style="display:flex;height:12px;margin-bottom:12px">'+
+                    totals.map((n,i)=>'<span style="background:'+colors[i]+';width:'+(100*n/total)+'%"></span>').join('')+'</div>';
+            }).join('')+table(['Store','AS / AOM','Opening Actual missing','Opening System missing','Closing Actual missing','Closing System missing','Status'],countRows);
+    }
+
+    async function showHistory(active) {
+        content.replaceChildren();
+        const rows = await api(root+'/history?'+parameters());
+        if (!active()) return;
+        content.innerHTML = table(['Product','Shift','Field','Previous','Saved','Counted by (previous → saved)','Saved by','Time (PH)'],
+            rows.map(row=>'<tr>'+[row.product_name,row.shift,row.field==='actual'?'Actual':'System',row.old_value,row.new_value,
+                [row.old_counted_by,row.new_counted_by].filter(Boolean).join(' → '),row.actor,
+                new Date(row.saved_at).toLocaleString('en-PH',{timeZone:'Asia/Manila'})].map(cell).join('')+'</tr>'));
+        if (!rows.length) return 'No saved changes for this date.';
+    }
+
+    async function manageStores(active) {
+        const id = el('hvStore').value;
+        const [stores,people] = await Promise.all([api(root+'/stores'),api(root+'/managers')]);
+        if (!active()) return;
+        const selected = stores.find(x=>String(x.store_id)===id);
+        if (!selected) return 'Choose a store.';
+        const select = role=>option('','Unassigned')+people.filter(p=>p.role===role).map(p=>option(p.email,p.full_name+' · '+p.email)).join('');
+        content.innerHTML = '<h3>'+e(selected.store_name)+'</h3><label for="hvStoreStatus">Inventory status</label>'+
+            '<select id="hvStoreStatus"><option>PIPELINE</option><option>ACTIVE</option><option>CLOSED</option></select>'+
+            '<label for="hvAs">Assigned AS</label><select id="hvAs">'+select('AS')+'</select>'+
+            '<label for="hvAom">Assigned AOM</label><select id="hvAom">'+select('AOM')+'</select>'+
+            '<button type="button" id="hvStoreSave">Save store settings</button>';
+        el('hvStoreStatus').value = selected.inventory_status;
+        el('hvAs').value = selected.as_email||'';
+        el('hvAom').value = selected.aom_email||'';
+        bind('hvStoreSave',async()=>{
+            await write('/stores/'+encodeURIComponent(id),'PATCH',{status:el('hvStoreStatus').value,as_email:el('hvAs').value,aom_email:el('hvAom').value});
+            return 'Store status and NEMS assignments saved.';
+        });
+    }
+
+    async function downloadCounts(params,shift,template=false) {
+        const query = new URLSearchParams(params);
+        query.set('format','xlsx');
+        query.set('shift',shift);
+        if (template) query.set('template','1');
+        const response = await fetch(root+'/counts?'+query,{headers:{Authorization:'Bearer '+token},cache:'no-store'});
+        if (!response.ok) throw Error((await response.json()).error||'Download failed');
+        const url = URL.createObjectURL(await response.blob());
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = 'NEMS_'+(template?'System_Template':'Counts')+'_'+params.get('date')+'_'+shift+'.xlsx';
+        document.body.append(link);
+        link.click();
+        link.remove();
+        setTimeout(()=>URL.revokeObjectURL(url),1000);
+    }
+
+    async function previewSystemFile(params,shift,active) {
+        const file = el('hvSystemFile').files[0];
+        if (!file || file.size>3*1024*1024) return 'Choose an Excel file under 3 MB.';
+        const data = await new Promise((resolve,reject)=>{
+            const reader = new FileReader();
+            reader.onload = ()=>resolve(String(reader.result).split(',')[1]);
+            reader.onerror = ()=>reject(Error('Could not read the file.'));
+            reader.readAsDataURL(file);
+        });
+        const result = await write('/import-system','POST',{store_id:params.get('store'),date:params.get('date'),
+            shift,filename:file.name,file_base64:data});
+        if (!active()) return;
+        const preview = el('hvImportPreview');
+        preview.innerHTML = '<h3>'+e(shift)+' System counts from '+e(file.name)+'</h3><p>'+
+            e(result.counts.length)+' ready to load · '+e(result.ignored)+' rows without a match in this high-value list · '+
+            e(result.issue_count)+' issues</p>'+
+            (result.issues.length?'<ul>'+result.issues.map(issue=>'<li>'+e(issue)+'</li>').join('')+'</ul>':'')+
+            table(['Stock #','Barcode','Description','On-hand (Pcs)'],result.counts.map(row=>
+                '<tr>'+[row.sku,row.master_barcode,row.product_name,row.value].map(cell).join('')+'</tr>'))+
+            (result.counts.length?'<button type="button" id="hvApplyImport">Load these quantities into System</button>':'');
+        if (result.counts.length) bind('hvApplyImport',async()=>{
+            const quantities = new Map(result.counts.map(row=>[String(row.product_id),row.value]));
+            for (const input of content.querySelectorAll('[data-hv-product]')) {
+                if (quantities.has(input.dataset.hvProduct)) input.value = quantities.get(input.dataset.hvProduct);
+            }
+            preview.replaceChildren();
+            return 'Quantities loaded into '+shift.toLowerCase()+' System. Click Save to record them.';
+        });
+    }
+
+    async function showSuggestions(active) {
+        const sku = el('hvReview').value;
+        const panel = el('hvSuggestions');
+        panel.replaceChildren();
+        if (!sku) return;
+        const {source,proposals} = await api(root+'/suggestions?'+new URLSearchParams({sku}));
+        if (!active()||el('hvReview')?.value!==sku) return;
+        panel.innerHTML = '<h3>Suggested matches</h3><p>Workbook item '+e(source.sku)+' · '+e(source.barcode)+' · '+e(source.name)+'</p>'+
+            (proposals.length?table(['SKU','Barcode','Description','Supplier','Match evidence','Review'],proposals.map((row,index)=>
+                '<tr>'+[row.sku,row.master_barcode,row.product_name,row.supplier_name,
+                    [row.same_barcode?'Exact barcode':'',row.same_sku?'Exact SKU':'',Math.round(row.score*100)+'% description overlap'].filter(Boolean).join(' · ')].map(cell).join('')+
+                '<td><button type="button" data-hv-review="'+index+'" data-hv-decision="approve">Approve</button> '+
+                '<button type="button" class="secondary" data-hv-review="'+index+'" data-hv-decision="reject">Reject</button></td></tr>')):
+                '<p>No remaining suggestions. You can still search the catalog below.</p>');
+        for (const button of panel.querySelectorAll('[data-hv-review]')) {
+            button.onclick = () => {
+                button.disabled = true;
+                const candidate = proposals[Number(button.dataset.hvReview)];
+                run(async now=>{
+                    try {
+                        if (button.dataset.hvDecision==='approve') {
+                            await write('/products/'+encodeURIComponent(candidate.product_id),'PUT',{active:true,seed_sku:sku});
+                            if (now()) await searchProducts(now);
+                            return 'Match approved and product activated.';
+                        }
+                        await write('/reject-match','POST',{sku,product_id:candidate.product_id});
+                        if (now()) await showSuggestions(now);
+                        return 'Suggestion rejected.';
+                    } finally { button.disabled = false; }
+                });
+            };
+        }
+    }
+
+    async function searchProducts(active) {
+        const requestParams = new URLSearchParams({q:el('hvSearch').value});
+        const previousReview = el('hvReview')?.value;
+        const {products,review} = await api(root+'/products?'+requestParams);
+        if (!active()) return;
+        el('hvProductResults').innerHTML = '<label for="hvReview">Workbook row to match manually (optional)</label>'+
+            '<select id="hvReview">'+option('','None')+review.map(x=>option(x.sku,x.sku+' · '+x.name+' · '+x.state)).join('')+
+            '</select><div id="hvSuggestions"></div>'+table(['SKU','Product','Barcode','Status','Action'],products.map(p=>'<tr>'+
+                [p.sku,p.product_name,p.master_barcode,p.active===null?'—':p.active?'Active':'Inactive'].map(cell).join('')+
+                '<td><button type="button" data-hv-id="'+e(p.product_id)+'" data-hv-active="'+String(!p.active)+'">'+
+                (p.active?'Set inactive':'Set active')+'</button></td></tr>'))+
+            (products.length?'':'<p>No products found. Search by stock number, barcode, or description.</p>');
+        if (review.some(x=>x.sku===previousReview)) el('hvReview').value = previousReview;
+        el('hvReview').onchange = () => run(showSuggestions);
+        if (el('hvReview').value) await showSuggestions(active);
+        if (!active()) return;
+        for (const button of el('hvProductResults').querySelectorAll('[data-hv-id]')) {
+            button.onclick = () => {
+                button.disabled = true;
+                run(async now=>{
+                    try {
+                        const seedSku = el('hvReview').value;
+                        await write('/products/'+encodeURIComponent(button.dataset.hvId),'PUT',
+                            {active:button.dataset.hvActive==='true'||Boolean(seedSku),seed_sku:seedSku||undefined});
+                        if(now()) await searchProducts(now);
+                        return 'Product status saved.';
+                    } finally { button.disabled = false; }
+                });
+            };
+        }
+    }
+
+    async function manageProducts(active) {
+        content.innerHTML = '<label for="hvSearch">Search NEMS products</label><input type="search" id="hvSearch">'+
+            '<button type="button" id="hvSearchButton">Search</button> '+
+            '<button type="button" id="hvSeed">Match the 89 workbook items</button><div id="hvProductResults"></div>';
+        bind('hvSearchButton',searchProducts);
+        bind('hvSeed',async now=>{
+            const result = await write('/seed','POST',{});
+            if(now()) await searchProducts(now);
+            return result.matched+' matched, '+result.ambiguous+' ambiguous, '+result.unmatched+' unmatched.';
+        });
+        await searchProducts(active);
+    }
+
+    bind('hvLoad',loadCounts);
+    bind('hvHistory',showHistory);
+    bind('hvCompliance',showCompliance);
+    bind('hvManageStores',manageStores);
+    bind('hvManageProducts',manageProducts);
+    async function enter(active) {
+        content.replaceChildren();
+        if (!currentUser) return;
+        const canManage = editors.includes(currentUser.role);
+        for (const id of ['hvManageStores','hvManageProducts']) el(id).classList.toggle('hidden',!canManage);
+        const current = el('hvStore').value;
+        const today = new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Manila',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+        el('hvDate').max = today;
+        el('hvDate').value ||= today;
+        const stores = await api(root+'/stores');
+        if (!active()) return;
+        el('hvStore').innerHTML = stores.map(s=>option(s.store_id,s.store_name)).join('');
+        if (stores.some(s=>String(s.store_id)===current)) el('hvStore').value = current;
+        return loadCounts(active);
+    }
+
+    for (const id of ['hvStore','hvDate','hvShift']) el(id).onchange = () => run(loadCounts);
+    const previousShowPage = showPage;
+    showPage = function(name) {
+        previousShowPage(name);
+        if (name==='highvalue') run(enter);
+        else { request++; content.replaceChildren(); }
+    };
+})();
+
 // Run after every feature has registered its page and navigation handlers.
 (async function nemsRestoreSession() {
     if (nemsRecoveryAccessToken || /(?:^|[?#&])(access_token|code|error)=/.test(location.hash + location.search)) return;
@@ -5183,7 +5599,7 @@ nemsMeetingSetup();
             throw new Error('Cannot reconnect right now. Check your connection and refresh to retry.');
         }
         const user = await response.json();
-        if (!user?.email || !['STORE','ADMIN','HEAD','AS','AOM'].includes(user.role)) { logout(); throw new Error('Please log in again.'); }
+        if (!user?.email || !['STORE','ADMIN','HEAD','AS','AOM','IC','OPC'].includes(user.role)) { logout(); throw new Error('Please log in again.'); }
         nemsStartSession(saved.token, user, page || 'dashboard');
     } catch (error) {
         token = ''; currentUser = null;
