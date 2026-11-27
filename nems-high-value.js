@@ -9,6 +9,21 @@ function nameTerms(name) {
 function column(value) {
     return String(value??'').toLowerCase().replace(/[^a-z0-9]/g,'');
 }
+const systemImportHeaders = {
+    sku:['stock','stockno','stocknumber','sku'],
+    barcode:['barcode','masterbarcode'],
+    description:['description','productname','itemdescription'],
+    quantity:['onhandpcs','onhandpc','onhandpieces','onhand'],
+    status:['status','itemstatus','productstatus','activestatus']
+};
+function systemImportHeader(row) {
+    const headers = row.map(column);
+    return Object.fromEntries(Object.entries(systemImportHeaders)
+        .map(([field,choices])=>[field,headers.findIndex(header=>choices.includes(header))]));
+}
+function normalizedDescription(value) {
+    return String(value??'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
+}
 const shifts = ['OPENING', 'CLOSING'];
 const managers = ['AS', 'AOM'];
 const editors = ['ADMIN', 'OPC', 'IC'];
@@ -260,33 +275,45 @@ module.exports = function register({app,pool,authenticate,secureRoute,transactio
         if (filename.length>255 || !/\.xlsx?$/i.test(filename) || typeof data!=='string'||data.length>4200000) {
             throw appError(400,'Choose an Excel file (.xlsx or .xls) under 3 MB');
         }
-        let sheet;
+        let workbook;
         try {
-            const workbook = XLSX.read(Buffer.from(data,'base64'),{type:'buffer',sheetRows:5002});
-            sheet = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]],{header:1,raw:true,defval:null,blankrows:true});
+            workbook = XLSX.read(Buffer.from(data,'base64'),{type:'buffer',sheetRows:5002});
         } catch {
             throw appError(400,'Could not read this Excel workbook');
         }
+        const byShift = workbook.SheetNames.filter(name=>shifts.includes(name.trim().toUpperCase()));
+        const sheetName = byShift.find(name=>name.trim().toUpperCase()===params.shift)||
+            (!byShift.length?workbook.SheetNames[0]:null);
+        if (!sheetName) throw appError(400,'This workbook does not contain a '+params.shift.toLowerCase()+' sheet');
+        const sheet = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName],{header:1,raw:true,defval:null,blankrows:true});
         if (sheet.length>5000) throw appError(400,'Use a file with at most 5,000 rows');
-        const header = sheet.findIndex(row=>row.some(v=>column(v)==='stock') && row.some(v=>column(v)==='onhandpcs'));
-        if (header<0) throw appError(400,'The first worksheet needs Stock # and On-hand (Pcs) headers');
-        const columns = sheet[header].map(column);
-        const cell = (row,key)=>row[columns.indexOf(key)];
+        const header = sheet.findIndex(row=>{
+            const columns = systemImportHeader(row);
+            return columns.sku>=0 && columns.quantity>=0;
+        });
+        if (header<0) throw appError(400,'The worksheet needs Stock No. or SKU, and On-hand (Pcs)');
+        const columns = systemImportHeader(sheet[header]);
+        const cell = (row,key)=>row[columns[key]];
         const proposed = new Map();
         const duplicates = new Set();
         const issues = [];
-        let ignored = 0;
+        let ignored = 0, inactive = 0;
         for (const [index,row] of sheet.entries()) {
             if (index<=header) continue;
-            const sku = String(cell(row,'stock')??'').trim();
+            const sku = String(cell(row,'sku')??'').trim();
             const barcode = String(cell(row,'barcode')??'').trim();
             if (!sku&&!barcode) continue;
+            const status = column(cell(row,'status'));
+            if (status && !['a','active'].includes(status)) { inactive++; continue; }
+            const description = normalizedDescription(cell(row,'description'));
             const bySku = catalog.filter(p=>sku && String(p.sku??'').trim()===sku);
             const byBarcode = catalog.filter(p=>barcode && String(p.master_barcode??'').trim()===barcode);
             const both = bySku.filter(p=>byBarcode.includes(p));
-            const candidates = both.length?both:bySku.length&&byBarcode.length?[]:byBarcode.length?byBarcode:bySku;
+            const matches = both.length?both:bySku.length&&byBarcode.length?[]:byBarcode.length?byBarcode:bySku;
+            const sameName = description?matches.filter(p=>normalizedDescription(p.product_name)===description):[];
+            const candidates = matches.length>1&&sameName.length?sameName:matches;
             if (!bySku.length&&!byBarcode.length) { ignored++; continue; }
-            const raw = cell(row,'onhandpcs');
+            const raw = cell(row,'quantity');
             const quantity = typeof raw==='number'?raw:/^(?:\d+|\d{1,3}(?:,\d{3})+)$/.test(String(raw??'').trim())?
                 Number(String(raw).replaceAll(',','')):NaN;
             const at = 'Row '+(index+1)+' ('+(sku||barcode)+')';
@@ -316,7 +343,7 @@ module.exports = function register({app,pool,authenticate,secureRoute,transactio
             await saveCounts(req,{store_id:id,date:day,shift:params.shift,counts},{filename,key:params.import_key});
             return res.json({saved:true,row_count:counts.length});
         }
-        res.json({counts,issues:issues.slice(0,30),issue_count:issues.length,ignored});
+        res.json({counts,issues:issues.slice(0,30),issue_count:issues.length,ignored,inactive});
     });
 
     route('get','/counts',async(req,res)=>{

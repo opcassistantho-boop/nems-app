@@ -1199,7 +1199,78 @@ function escapeHtml(value) {
     );
 }
  
+const nemsActionDialogs = new WeakMap();
+function nemsActionDialog(panel,title,onClose) {
+    let dialog = nemsActionDialogs.get(panel);
+    if (dialog) return dialog;
+    dialog = document.createElement('dialog');
+    dialog.dataset.nemsAction = '';
+    dialog.setAttribute('aria-label',title);
+    dialog.style.cssText='width:min(1050px,94vw);max-height:88vh;overflow:auto;padding:18px;border:1px solid #c7d2e1;border-radius:12px';
+    const close = document.createElement('button');
+    close.type='button';
+    close.className='secondary';
+    close.textContent='Close';
+    close.onclick=()=>dialog.close();
+    const toolbar = document.createElement('div');
+    toolbar.style.cssText='display:flex;justify-content:flex-end';
+    toolbar.append(close);
+    const notice = document.createElement('p');
+    notice.dataset.nemsDialogNotice='';
+    notice.hidden=true;
+    panel.before(dialog);
+    dialog.append(toolbar,notice,panel);
+    const observer = new MutationObserver(()=>{
+        if (dialog.open && panel.classList.contains('hidden')) dialog.close();
+    });
+    observer.observe(panel,{attributes:true,attributeFilter:['class']});
+    dialog.addEventListener('close',()=>{
+        if (!dialog.open) {
+            notice.hidden=true;
+            onClose?.();
+        }
+    });
+    nemsActionDialogs.set(panel,dialog);
+    return dialog;
+}
+
+function nemsOpenActionPanel(panel,title,onClose=()=>panel.classList.add('hidden')) {
+    const dialog = nemsActionDialog(panel,title,onClose);
+    panel.classList.remove('hidden');
+    if (!dialog.open) dialog.showModal();
+}
+
+function nemsAddActionLauncher(panel,title,parent=panel.parentNode) {
+    const opener = document.createElement('button');
+    opener.type='button';
+    opener.textContent=title;
+    if (parent===panel.parentNode) panel.before(opener);
+    else parent.append(opener);
+    nemsActionDialog(panel,title);
+    opener.onclick=()=>nemsOpenActionPanel(panel,title);
+    return opener;
+}
+
+function nemsFollowupAction(body,title,panel) {
+    if (!panel) {
+        panel=document.createElement('div');
+        panel.append(...body.childNodes);
+        body.append(panel);
+    }
+    nemsAddActionLauncher(panel,title);
+}
+
 function showMessage(message, error = false) {
+    const dialogs = [...document.querySelectorAll('dialog[open]')];
+    const topDialog = dialogs.at(-1);
+    const local = !topDialog?.lastElementChild?.classList.contains('hidden') && topDialog?.querySelector('[data-nems-dialog-notice]');
+    if (local) {
+        local.textContent=message;
+        local.className='message'+(error?' error':'');
+        local.setAttribute('role',error?'alert':'status');
+        local.hidden=false;
+        return;
+    }
     const box = el('notice');
  
     box.textContent = message;
@@ -1530,6 +1601,7 @@ function nemsStartSession(accessToken, user, page) {
 }
 
 function logout() {
+    document.querySelectorAll('dialog[data-nems-action][open]').forEach(dialog=>dialog.close());
     nemsReadEpoch++; nemsCatalogReads.clear();
     try { sessionStorage.removeItem(nemsSessionKey); sessionStorage.removeItem('nems-last-page'); } catch (_) {}
     nemsResetAlerts();
@@ -2171,9 +2243,7 @@ function newSupplier() {
  
     el('supplierEditor').classList.remove('hidden');
  
-    el('supplierEditor').scrollIntoView({
-        behavior:'smooth'
-    });
+    nemsOpenActionPanel(el('supplierEditor'),'Supplier');
 }
  
 function editSupplier(id) {
@@ -2197,9 +2267,7 @@ function editSupplier(id) {
  
     el('supplierEditor').classList.remove('hidden');
  
-    el('supplierEditor').scrollIntoView({
-        behavior:'smooth'
-    });
+    nemsOpenActionPanel(el('supplierEditor'),'Supplier');
 }
  
 function closeSupplierEditor() {
@@ -2389,9 +2457,7 @@ async function newProduct() {
  
         el('productEditor').classList.remove('hidden');
  
-        el('productEditor').scrollIntoView({
-            behavior:'smooth'
-        });
+        nemsOpenActionPanel(el('productEditor'),'Product');
  
     } catch (error) {
         showMessage(error.message, true);
@@ -2448,9 +2514,7 @@ async function editProduct(id) {
  
         el('productEditor').classList.remove('hidden');
  
-        el('productEditor').scrollIntoView({
-            behavior:'smooth'
-        });
+        nemsOpenActionPanel(el('productEditor'),'Product');
  
     } catch (error) {
         showMessage(error.message, true);
@@ -3519,10 +3583,11 @@ async function nemsTaskCreate(event) {
                 product_review:productReview
             })
         });
-        showMessage(result.message || 'Assignments created.');
         nemsSelectedStoreIds.clear();
         nemsSelectedSupplierIds.clear();
         await nemsTaskLoad();
+        nemsActionDialogs.get(el('nemsTaskForm'))?.close();
+        showMessage(result.message || 'Assignments created.');
     } catch (error) {
         showMessage(error.message, true);
     } finally {
@@ -3607,6 +3672,7 @@ function nemsTaskSetup() {
     });
     el('nemsTaskRefresh').addEventListener('click', nemsTaskLoad);
     el('nemsTaskForm').addEventListener('submit', nemsTaskCreate);
+    nemsAddActionLauncher(el('nemsTaskForm'),'Create assignments');
 }
  
 const nemsOriginalShowPage = showPage;
@@ -3733,7 +3799,7 @@ async function nemsOpenTaskProducts(id) {
     if (currentUser?.role !== 'STORE' || nemsStoreTasksBusy) return;
     nemsActiveTaskId = id;nemsTaskProductPage=1;nemsTaskOnlyRemaining=false;
     el('nemsTaskProductPanel').classList.remove('hidden');
-    el('nemsTaskProductPanel').scrollIntoView({behavior:'smooth', block:'start'});
+    nemsOpenActionPanel(el('nemsTaskProductPanel'),'Task products');
     el('nemsTaskProductRows').innerHTML = '<tr><td colspan="5">Loading products...</td></tr>';
     try {
         const [result,adminNote] = await Promise.all([api(`/api/store/tasks/${id}/products`),api(`/api/tasks/${id}/admin-note`)]);
@@ -3749,7 +3815,7 @@ async function nemsOpenTaskProducts(id) {
         el('nemsTaskProductSearch').value = '';
         nemsStopTaskCamera();
         nemsTaskProductRender();
-        el('nemsTaskProductPanel').scrollIntoView({behavior:'smooth', block:'start'});
+        nemsOpenActionPanel(el('nemsTaskProductPanel'),'Task products');
     } catch (error) {
         el('nemsTaskProductRows').innerHTML = '<tr><td colspan="5">Unable to load products.</td></tr>';
         showMessage(error.message, true);
@@ -4033,7 +4099,7 @@ function nemsUserOpen(email = null) {
         const assigned = new Set((user.assigned_store_ids || []).map(Number));
         el('nemsUserASStores').querySelectorAll('[data-nems-as-store]').forEach(c => { c.checked = assigned.has(Number(c.value)); });
     }
-    el('nemsUserEditor').scrollIntoView({ behavior:'smooth', block:'start' });
+    nemsOpenActionPanel(el('nemsUserEditor'),'User');
 }
  
 async function nemsUserSave(event) {
@@ -4234,7 +4300,7 @@ function nemsStoresOpen(id = null) {
     el('nemsStoreEmail').readOnly = !!store;
     el('nemsStoreStatusBox').classList.toggle('hidden', !store);
     el('nemsStoreEditor').classList.remove('hidden');
-    el('nemsStoreEditor').scrollIntoView({behavior:'smooth', block:'start'});
+    nemsOpenActionPanel(el('nemsStoreEditor'),'Store');
 }
  
 async function nemsStoresSave(event) {
@@ -4413,12 +4479,12 @@ async function nemsOpenProductVisibility(supplierId) {
         document.getElementById('nemsVisibilityFilter').addEventListener('change', nemsRenderVisibility);
         document.getElementById('nemsVisibilityHide').addEventListener('click', () => nemsSetVisibility(false));
         document.getElementById('nemsVisibilityShow').addEventListener('click', () => nemsSetVisibility(true));
-        document.getElementById('nemsVisibilityClose').addEventListener('click', () => panel.remove());
+        document.getElementById('nemsVisibilityClose').addEventListener('click', () => nemsActionDialogs.get(panel)?.close());
         document.getElementById('nemsVisibilitySelectAll').addEventListener('change', e => {
             panel.querySelectorAll('[data-nems-visible-product]').forEach(c => c.checked = e.target.checked);
         });
         nemsRenderVisibility();
-        panel.scrollIntoView({behavior:'smooth', block:'start'});
+        nemsOpenActionPanel(panel,'Supplier product visibility',()=>nemsActionDialogs.get(panel)?.remove());
     } catch (error) { showMessage(error.message, true); }
 }
  
@@ -4569,7 +4635,7 @@ async function nemsForgotPassword() {
 }
 function nemsOpenChangePassword() {
     el('nemsChangePasswordPanel').classList.remove('hidden');
-    el('nemsChangePasswordPanel').scrollIntoView({behavior:'smooth'});
+    nemsOpenActionPanel(el('nemsChangePasswordPanel'),'Change Password',nemsCloseChangePassword);
 }
 function nemsCloseChangePassword() {
     el('nemsChangePasswordPanel').classList.add('hidden');
@@ -4928,9 +4994,10 @@ async function nemsFeatureRender(){
                 form=`<h3>Report expired stock</h3><p>Report the action first. Your assigned AS reviews afterward. ON STORE stock stays visible for follow-up.</p><label for="nfExpiredSearch">Search expired stock</label><input id="nfExpiredSearch" type="search" placeholder="Search product or SKU"><p id="nfExpiredStockState" role="status" aria-live="polite"></p><div id="nfExpiredStockPager"></div><label>Expired product and date</label><select id="nfExpiredProduct"><option value="">Choose expired entry</option>${nemsFeatures.stock.map((r,i)=>`<option value="${i}">${escapeHtml(r.product_name)} · ${escapeHtml(String(r.expiration_date).slice(0,10))} · ${Number(r.quantity)} pcs</option>`).join('')}</select>
                 <label>Action</label><select id="nfExpiredStatus"><option>ON STORE</option><option>DISPOSE</option><option>TRANSFER TO DC</option></select><label>Employee Full Name</label><input id="nfExpiredEmployee" maxlength="120"><label>Store Remarks / Why the expired product remains ON STORE</label><textarea id="nfExpiredRemarks" maxlength="2000"></textarea><label><input id="nfOnStoreConfirm" type="checkbox" style="width:auto"> For ON STORE, I confirm that my remarks explain why this expired product remains in the store.</label><button type="button" id="nfReport">Submit for AS review</button>`;
             }
-            body.innerHTML=form+'<h3>Report and Validation History</h3>'+nfTable(['Store','Product / Expiry','Action / Quantity','Employee / Remarks','AS Decision','Review'],nemsFeatures.reports.map(r=>'<tr>'+nfCell(r.store_name)+nfCell(r.product_name+' · '+String(r.expiration_date).slice(0,10))+nfCell(r.product_status+' · '+r.quantity)+nfCell(r.employee_name+' · '+r.store_remarks)+nfCell(r.validation_status+' · '+(r.validated_by||'')+' · '+(r.validation_remarks||'')+' · '+(r.validated_at?dateTimeText(r.validated_at):''))+`<td>${currentUser.role==='AS'&&r.validation_status==='PENDING'?`<button type="button" data-nf-validate="${Number(r.report_id)}" data-decision="APPROVED">Approve</button><button type="button" class="danger" data-nf-validate="${Number(r.report_id)}" data-decision="REJECTED">Reject</button>`:''}</td></tr>`));
+            body.innerHTML=(form?'<div id="nfExpiredForm">'+form+'</div>':'')+'<h3>Report and Validation History</h3>'+nfTable(['Store','Product / Expiry','Action / Quantity','Employee / Remarks','AS Decision','Review'],nemsFeatures.reports.map(r=>'<tr>'+nfCell(r.store_name)+nfCell(r.product_name+' · '+String(r.expiration_date).slice(0,10))+nfCell(r.product_status+' · '+r.quantity)+nfCell(r.employee_name+' · '+r.store_remarks)+nfCell(r.validation_status+' · '+(r.validated_by||'')+' · '+(r.validation_remarks||'')+' · '+(r.validated_at?dateTimeText(r.validated_at):''))+`<td>${currentUser.role==='AS'&&r.validation_status==='PENDING'?`<button type="button" data-nf-validate="${Number(r.report_id)}" data-decision="APPROVED">Approve</button><button type="button" class="danger" data-nf-validate="${Number(r.report_id)}" data-decision="REJECTED">Reject</button>`:''}</td></tr>`));
             for(const [id,value,checked] of reportDraft){const field=el(id);if(field){field.value=value;field.checked=checked;}}
             if(el('nfExpiredSearch')){
+                nemsFollowupAction(body,'Report expired stock',el('nfExpiredForm'));
                 let stockPage=1,stockGeneration=0,stockTimer;
                 const loadStock=async()=>{const own=++stockGeneration,term=el('nfExpiredSearch').value;
                     const select=el('nfExpiredProduct'),selectedEntry=select.value!==''?nemsFeatures.stock[Number(select.value)]:reportChoice;
@@ -5000,11 +5067,13 @@ async function nemsFeatureRender(){
                     };
                 }catch(e){showMessage(e.message,true);}finally{b.disabled=false;}
             };
+            nemsFollowupAction(body,'Import products or suppliers');
         }else if(nemsFeatureTab==='barcodes'&&currentUser.role==='ADMIN'){
             body.innerHTML='<h3>Register Additional Product Barcode</h3><label>Product ID</label><input id="nfBarcodeProduct" type="number" min="1"><label>Exact barcode (leading zeroes preserved)</label><input id="nfBarcodeValue" maxlength="150"><button type="button" id="nfBarcodeSave">Register barcode</button>';
             el('nfBarcodeSave').onclick=async()=>{const id=Number(el('nfBarcodeProduct').value),barcode=el('nfBarcodeValue').value.trim();if(!id||!barcode)return showMessage('Product ID and barcode required.',true);if(!confirm(`Register exact barcode ${barcode} to product ID ${id}?`))return;
                 try{await api('/api/admin/products/'+id+'/barcodes',{method:'POST',body:JSON.stringify({barcode})});showMessage('Additional barcode registered.');}catch(e){showMessage(e.message,true);}
             };
+            nemsFollowupAction(body,'Register product barcode');
         }else if(nemsFeatureTab==='passwordchanges'&&currentUser.role==='ADMIN'){
             body.innerHTML='<h3>ADMIN Password Changes</h3><p>Records temporary passwords set through User Management. Passwords are never shown or stored in this history. CHANGED means Supabase confirmed the update. UNKNOWN means the outcome needs checking before another reset.</p>'+nfTable(['Requested','Account','ADMIN','Result','Details'],paged.records.map(r=>'<tr>'+nfCell(dateTimeText(r.requested_at))+nfCell(r.recipient_email)+nfCell(r.changed_by)+nfCell(r.change_status)+nfCell(r.result_code)+'</tr>'));
         }else if(nemsFeatureTab==='passwordhistory'&&currentUser.role==='ADMIN'){
@@ -5250,6 +5319,8 @@ nemsMeetingSetup();
  window.addEventListener('resize',update);update();
 })();
 
+nemsAddActionLauncher(el('storeForm'),'Encode store monitoring');
+
 (function setupHighValueInventory() {
     const nav = document.createElement('button');
     nav.type = 'button';
@@ -5274,6 +5345,7 @@ nemsMeetingSetup();
             <button type="button" id="hvHistory">View history</button>
             <button type="button" id="hvFileHistory" class="hidden">Import / download history</button>
             <button type="button" id="hvManageStores">Manage stores</button>
+            <button type="button" id="hvAddProduct">Add product</button>
             <button type="button" id="hvManageProducts">Manage products</button>
             <p id="hvStatus" role="status"></p>
             <div id="hvContent"></div>
@@ -5526,7 +5598,7 @@ nemsMeetingSetup();
         const preview = el('hvImportPreview');
         preview.innerHTML = '<h3>'+e(shift)+' System counts from '+e(file.name)+'</h3><p>'+
             e(result.counts.length)+' ready to load · '+e(result.ignored)+' rows without a match in this high-value list · '+
-            e(result.issue_count)+' issues</p>'+
+            e(result.inactive||0)+' inactive rows skipped · '+e(result.issue_count)+' issues</p>'+
             (result.issues.length?'<ul>'+result.issues.map(issue=>'<li>'+e(issue)+'</li>').join('')+'</ul>':'')+
             table(['Stock #','Barcode','Description','On-hand (Pcs)'],result.counts.map(row=>
                 '<tr>'+[row.sku,row.master_barcode,row.product_name,row.value].map(cell).join('')+'</tr>'))+
@@ -5642,11 +5714,15 @@ nemsMeetingSetup();
     bindDialog('hvCompliance','Store compliance',()=>showCompliance);
     bindDialog('hvManageStores','Manage stores',()=>manageStores);
     bindDialog('hvManageProducts','Manage products',()=>manageProducts);
+    bindDialog('hvAddProduct','Add product to High-Value Inventory',()=>async active=>{
+        await manageProducts(active);
+        if (active()) el('hvSearch').focus();
+    });
     async function enter(active) {
         countsPanel.replaceChildren();
         if (!currentUser) return;
         const canManage = editors.includes(currentUser.role);
-        for (const id of ['hvManageStores','hvManageProducts','hvFileHistory']) el(id).classList.toggle('hidden',!canManage);
+        for (const id of ['hvManageStores','hvManageProducts','hvFileHistory','hvAddProduct']) el(id).classList.toggle('hidden',!canManage);
         const current = el('hvStore').value;
         const today = new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Manila',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
         el('hvDate').max = today;
