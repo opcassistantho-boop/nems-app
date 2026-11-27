@@ -2708,9 +2708,16 @@ app.post('/api/admin/import/preview',authenticate,adminOnly,secureRoute(async(re
     const barcodes=(await pool.query('SELECT product_id,barcode FROM public.nems_product_barcodes ORDER BY barcode_id')).rows;
     const getKey=r=>type==='PRODUCTS'?`${String(r.sku).trim().toLowerCase()}\u0000${String(r.supplier_name).trim().toLowerCase()}`:String(r.supplier_name).trim().toLowerCase();
     const changes=[],seen=new Set(),seenIds=new Set(),conflicts=[],errors=[];
+    const statusColumn=headers.indexOf('status');
+    let skippedInactive=0;
     const resolutions=req.body.resolutions||{};
     if(typeof resolutions!=='object'||Array.isArray(resolutions))throw appError(400,'Invalid row selections');
     for(let i=1;i<cells.length;i++){
+        const status=String(cells[i][statusColumn]??'').trim().toUpperCase();
+        if(type==='PRODUCTS'&&(status==='I'||status==='INACTIVE')){
+            skippedInactive++;
+            continue;
+        }
         let supplied;
         try{
         supplied=collectImportValues(headers,cells[i],type);
@@ -2724,7 +2731,7 @@ app.post('/api/admin/import/preview',authenticate,adminOnly,secureRoute(async(re
             let value=supplied[f];
             if(type==='PRODUCTS'&&f==='status'){
                 const status=String(value??'').trim().toUpperCase();
-                if(status==='A'||status==='I')value=status==='A'?'ACTIVE':'INACTIVE';
+                if(status==='A')value='ACTIVE';
             }
             // Existing products retain their registered supplier even if this cell is blank.
             if(type==='PRODUCTS'&&f==='supplier_name'&&!String(value??'').trim())continue;
@@ -2818,14 +2825,15 @@ app.post('/api/admin/import/preview',authenticate,adminOnly,secureRoute(async(re
             errors.push({row:i+1,sku:String(supplied?.sku??cells[i][headers.indexOf('sku')]??''),product_name:String(supplied?.product_name??cells[i][headers.indexOf('product_name')]??''),supplier_name:String(supplied?.supplier_name??cells[i][headers.indexOf('supplier_name')]??''),message:error.message});
         }
     }
-    if(conflicts.length||errors.length)return res.json({requires_resolution:true,conflicts,errors,total_rows:cells.length-1,valid_rows:changes.length,
+    if(conflicts.length||errors.length)return res.json({requires_resolution:true,conflicts,errors,skipped_inactive:skippedInactive,total_rows:cells.length-1,valid_rows:changes.length,
         counts:{new:changes.filter(x=>x.action==='NEW').length,changed:changes.filter(x=>x.action==='CHANGED').length,unchanged:changes.filter(x=>x.action==='UNCHANGED').length}});
+    if(skippedInactive===cells.length-1) return res.json({skipped_inactive:skippedInactive,changes:[],counts:{new:0,changed:0,unchanged:0}});
     for(const [key,p] of importPreviews)if(p.expires<Date.now())importPreviews.delete(key);
     if(importPreviews.size>=20)throw appError(429,'Too many pending previews. Confirm an existing preview or wait 15 minutes.');
     const token=require('crypto').randomBytes(32).toString('hex');
     const preview={type,filename,changes,owner:req.user.email,expires:Date.now()+15*60*1000,fingerprint:importFingerprint(source.rows),supplierFingerprint:importFingerprint(supplierRows),barcodeFingerprint:importFingerprint(barcodes)};
     importPreviews.set(token,preview);
-    res.json({preview_token:token,expires_at:new Date(preview.expires).toISOString(),counts:{new:changes.filter(x=>x.action==='NEW').length,changed:changes.filter(x=>x.action==='CHANGED').length,unchanged:changes.filter(x=>x.action==='UNCHANGED').length},changes});
+    res.json({preview_token:token,skipped_inactive:skippedInactive,expires_at:new Date(preview.expires).toISOString(),counts:{new:changes.filter(x=>x.action==='NEW').length,changed:changes.filter(x=>x.action==='CHANGED').length,unchanged:changes.filter(x=>x.action==='UNCHANGED').length},changes});
 }));
 app.post('/api/admin/import/confirm',authenticate,adminOnly,secureRoute(async(req,res)=>{
     const token=req.body.preview_token,p=importPreviews.get(token);
