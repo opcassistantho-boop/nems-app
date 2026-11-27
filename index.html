@@ -5587,7 +5587,7 @@ nemsMeetingSetup();
             '</select><button type="button" id="hvCompare">Compare selected workbook item</button><div id="hvSuggestions"></div>'+table(['SKU','Product','Barcode','Status','Action'],products.map(p=>'<tr>'+
                 [p.sku,p.product_name,p.master_barcode,p.active===null?'—':p.active?'Active':'Inactive'].map(cell).join('')+
                 '<td><button type="button" data-hv-id="'+e(p.product_id)+'" data-hv-active="'+String(!p.active)+'">'+
-                (p.active?'Set inactive':'Set active')+'</button></td></tr>'))+
+                (p.active?'Remove from High-Value':'Add to High-Value')+'</button></td></tr>'))+
             (products.length?'':'<p>No products found. Search by stock number, barcode, or description.</p>');
         if (review.some(x=>x.sku===previousReview)) el('hvReview').value = previousReview;
         el('hvReview').onchange = () => run(showSuggestions);
@@ -5613,9 +5613,9 @@ nemsMeetingSetup();
     }
 
     async function manageProducts(active) {
-        content.innerHTML = '<label for="hvSearch">Search NEMS products</label><input type="search" id="hvSearch">'+
+        content.innerHTML = '<label for="hvSearch">Find a product to add or remove</label><input type="search" id="hvSearch">'+
             '<button type="button" id="hvSearchButton">Search</button> '+
-            '<button type="button" id="hvSeed">Match the 89 workbook items</button><div id="hvProductResults"></div>';
+            '<button type="button" id="hvSeed">Auto-match workbook items</button><div id="hvProductResults"></div>';
         bind('hvSearchButton',searchProducts);
         bind('hvSeed',async now=>{
             const result = await write('/seed','POST',{});
